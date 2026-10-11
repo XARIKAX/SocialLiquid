@@ -36,6 +36,8 @@ model User {
   handle    String?  @unique
   xHandle   String?
   avatarUrl String?
+  /// set when the wallet signed in. a row without it is a shadow user (someone followed the address).
+  claimedAt DateTime?
   createdAt DateTime @default(now())
 
   agentKey  AgentKey?

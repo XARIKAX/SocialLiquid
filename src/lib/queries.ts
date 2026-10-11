@@ -196,6 +196,6 @@ export async function resolveTrader(handleOrAddress: string) {
     return { address: s.toLowerCase(), user: u };
   }
   const u = await prisma.user.findUnique({ where: { handle: s } });
-  if (!u) return null;
+  if (!u?.claimedAt) return null;
   return { address: u.address, user: u };
 }
