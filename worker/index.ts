@@ -8,11 +8,13 @@ import "dotenv/config";
 import * as hl from "@nktkas/hyperliquid";
 import { prisma } from "../src/lib/db";
 import { HL_MOCK, IS_TESTNET } from "../src/lib/env";
-import { seedTrackedAddresses, syncAddress, trackUsers } from "../src/lib/indexer";
+import { refreshHlLeaderboard, seedTrackedAddresses, syncAddress, trackUsers } from "../src/lib/indexer";
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 5000);
 const WEIGHT_BUDGET_PER_MIN = Number(process.env.HL_WEIGHT_BUDGET_PER_MIN ?? 1000);
 const SEED_COUNT = Number(process.env.SEED_COUNT ?? 200);
+const HL_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 10);
+const HL_LEADERBOARD_REFRESH_MS = Number(process.env.HL_LEADERBOARD_REFRESH_MS ?? 60 * 60_000);
 const CONCURRENCY = 4;
 /** hyperliquid allows 10 unique users across user-specific ws subscriptions per ip */
 const WS_USER_CAP = 10;
@@ -115,9 +117,17 @@ async function syncWs() {
   }
 }
 
+let lastHlRefresh = 0;
+async function refreshHlBoard(reason: string) {
+  const n = await refreshHlLeaderboard(HL_TOP_N);
+  lastHlRefresh = Date.now();
+  log(`${reason}: mirrored hyperliquid leaderboard top ${n} (30d)`);
+}
+
 async function housekeeping() {
   for (;;) {
     try {
+      if (Date.now() - lastHlRefresh >= HL_LEADERBOARD_REFRESH_MS) await refreshHlBoard("refresh");
       const added = await trackUsers();
       if (added) log(`tracking ${added} new user address(es)`);
       await syncWs();
@@ -130,6 +140,7 @@ async function housekeeping() {
 
 async function main() {
   log(`starting. network=${HL_MOCK ? "mock" : IS_TESTNET ? "testnet" : "mainnet"} budget=${WEIGHT_BUDGET_PER_MIN}w/min floor=${POLL_INTERVAL_MS}ms`);
+  await refreshHlBoard("startup");
   const tracked = await prisma.trackedAddress.count();
   if (tracked < SEED_COUNT) {
     const n = await seedTrackedAddresses(SEED_COUNT);

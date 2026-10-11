@@ -243,3 +243,31 @@ export async function resolveTrader(handleOrAddress: string) {
   if (!u?.claimedAt) return null;
   return { address: u.address, user: u };
 }
+
+// ---------- hyperliquid leaderboard mirror (30d top N, figures as reported by hyperliquid) ----------
+
+export type HlBoardRow = {
+  rank: number;
+  user: UserLite;
+  accountValue: number;
+  pnl30d: number;
+  roi30d: number;
+  vlm30d: number;
+  pnl7d: number;
+};
+
+export async function hlLeaderboard(): Promise<{ rows: HlBoardRow[]; updatedAt: string | null }> {
+  const entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
+  if (!entries.length) return { rows: [], updatedAt: null };
+  const users = await usersByAddress(entries.map((e) => e.address));
+  const rows = entries.map((e) => ({
+    rank: e.rank,
+    user: users.get(e.address) ?? { id: "", address: e.address, handle: null, displayName: e.displayName, xHandle: null, avatarUrl: null, claimed: false },
+    accountValue: Number(e.accountValue),
+    pnl30d: Number(e.pnl30d),
+    roi30d: Number(e.roi30d),
+    vlm30d: Number(e.vlm30d),
+    pnl7d: Number(e.pnl7d),
+  }));
+  return { rows, updatedAt: entries[0].updatedAt.toISOString() };
+}

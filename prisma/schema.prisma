@@ -184,3 +184,19 @@ model TrackedAddress {
 
   @@index([lastPolledAt])
 }
+
+/// snapshot of hyperliquid's own leaderboard (stats-data endpoint), 30d window, top N.
+/// shown verbatim on /leaderboard so launch-day rankings match app.hyperliquid.xyz/leaderboard.
+model HlLeaderboardEntry {
+  rank         Int      @id
+  address      String
+  displayName  String?
+  accountValue Decimal  @db.Decimal(30, 6)
+  pnl30d       Decimal  @db.Decimal(30, 6)
+  roi30d       Decimal  @db.Decimal(20, 10)
+  vlm30d       Decimal  @db.Decimal(30, 6)
+  pnl7d        Decimal  @db.Decimal(30, 6)
+  updatedAt    DateTime @default(now())
+
+  @@index([address])
+}

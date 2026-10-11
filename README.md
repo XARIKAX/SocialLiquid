@@ -46,6 +46,7 @@ pnpm worker                     # indexer, in a second terminal
 | `HL_WEIGHT_BUDGET_PER_MIN` | info api weight budget for the worker (published limit 1200 / min / ip) |
 | `POLL_INTERVAL_MS` | floor on the per address poll interval |
 | `SEED_ADDRESSES` / `SEED_COUNT` | leaderboard seed fallback and size |
+| `HL_LEADERBOARD_TOP_N` / `HL_LEADERBOARD_REFRESH_MS` | how many hyperliquid leaderboard rows to mirror (10) and how often (1h) |
 | `HL_MOCK` | offline synthetic exchange |
 
 ## how trading works
@@ -61,7 +62,8 @@ pnpm worker                     # indexer, in a second terminal
 `/trade` and `/m/[coin]` are a full perps terminal on the hyperliquid api:
 
 - market header: coin selector with search and watchlist, mark, oracle, 24h change, volume, open interest, funding with the hourly countdown
-- chart: candles + volume, sma / ema / bollinger / vwap overlays, funding history tab, log scale, your entry and liquidation lines, open orders drawn as price lines, thesis markers
+- chart: candles + volume, sma / ema / bollinger / vwap overlays, funding history tab, your entry and liquidation lines, open orders drawn as price lines, thesis markers. tradingview-style chrome: hover nav (zoom in / out, pan, reset), range buttons 5y → 1d, go to date, live clock with utc offset, % / log / auto scales, snapshot to png, fullscreen. drawing rail with trend line, horizontal line and measure tools, lock, hide, clear, click to select and delete; drawings persist per coin in the browser
+- light and dark themes, toggled in the top bar and remembered per browser. the landing page is always dark
 - order book and recent trades, grouped by tick, sized in coin or usd, click a level to fill the ticket
 - ticket: cross / isolated, leverage, market, limit (gtc / ioc / alo), stop market, stop limit, take profit market / limit, scale ladders, twap; size in coin or usd with a percent slider; reduce only; attached tp / sl with gain and loss %; liquidation price, order value, margin, book-walk slippage estimate, fees. every order carries the builder code
 - bottom panel: traders and theses on the market, plus balances, positions (close, tp / sl on the position), open orders (cancel, cancel all), twap (terminate), trade history, funding history, order history, csv export
@@ -76,11 +78,13 @@ a thesis is bound to a position id at post time. when the worker sees that posit
 
 `worker/index.ts` polls every `TrackedAddress`. `clearinghouseState` is weight 2 and `userFills` is weight 20, so with 200 addresses a full pass at 1000 weight / min takes about 24 seconds, not 5. the worker is budget bound with a token bucket and only fetches fills when a position changed (or every 10 minutes). our own users are also subscribed to websocket `userFills`, capped at hyperliquid's 10 unique users per ip, so their trades show within a second.
 
+on startup and every hour the worker mirrors hyperliquid's own leaderboard (`stats-data.hyperliquid.xyz/Mainnet/leaderboard`, the feed behind app.hyperliquid.xyz/leaderboard) into `HlLeaderboardEntry`: the same 30-day window, the same exclusion rule (under 100k account value and under 10M volume), sorted by 30d pnl, top `HL_LEADERBOARD_TOP_N` (10). account value, pnl, roi and volume are stored exactly as hyperliquid reports them and shown on `/leaderboard` under the default "hyperliquid 30d" tab, so launch-day rankings match hyperliquid to the cent. the same ordering seeds the tracked address list, so those traders' positions are indexed first.
+
 positions and fills are mirrored from chain and never written by the client. `lib/indexer.ts` is shared by the worker and the trade route.
 
 ## layout
 
-`/` and `/m/[coin]`: feed on the left (feed / alerts / tokens / leaderboard tabs, filters for thesis only, following only, min size, market), chart and positions table in the centre, trade panel on the right. `/t/[handle]` works for any hyperliquid address, claimed or not. `/t/[handle]/thesis/[id]` is the share page with an og image and an x share button. `/leaderboard` ranks by 7d pnl, win rate, thesis accuracy, followers, minimum 5 closed trades.
+`/` and `/m/[coin]`: feed on the left (feed / alerts / tokens / leaderboard tabs, filters for thesis only, following only, min size, market), chart and positions table in the centre, trade panel on the right. `/t/[handle]` works for any hyperliquid address, claimed or not. `/t/[handle]/thesis/[id]` is the share page with an og image and an x share button. `/leaderboard` opens on hyperliquid's own 30d top 10, then ranks our indexed traders by 7d pnl, win rate, thesis accuracy, followers, minimum 5 closed trades.
 
 ## not in the mvp
 

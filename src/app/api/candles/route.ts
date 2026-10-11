@@ -5,7 +5,7 @@ import type { HlCandleInterval } from "@/lib/hl-types";
 
 export const dynamic = "force-dynamic";
 
-const INTERVALS: HlCandleInterval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+const INTERVALS: HlCandleInterval[] = ["1m", "5m", "15m", "1h", "4h", "1d", "1w"];
 const Q = z.object({
   coin: z.string().min(1).max(20),
   interval: z.enum(INTERVALS as [HlCandleInterval, ...HlCandleInterval[]]).default("1h"),
@@ -15,7 +15,7 @@ const Q = z.object({
 export const GET = handler(async (req: Request) => {
   const u = new URL(req.url);
   const q = Q.parse(Object.fromEntries(u.searchParams));
-  const ms = ({ "1m": 6e4, "5m": 3e5, "15m": 9e5, "1h": 3.6e6, "4h": 1.44e7, "1d": 8.64e7 } as Record<string, number>)[q.interval];
+  const ms = ({ "1m": 6e4, "5m": 3e5, "15m": 9e5, "1h": 3.6e6, "4h": 1.44e7, "1d": 8.64e7, "1w": 6.048e8 } as Record<string, number>)[q.interval];
   const end = Date.now();
   const candles = await HL.candleSnapshot(q.coin, q.interval, end - ms * q.bars, end);
   return json({

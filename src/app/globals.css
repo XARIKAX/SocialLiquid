@@ -23,6 +23,53 @@
   --radius-inner: 10px;
 }
 
+[data-theme="light"] {
+  --color-bg: #f3f4f7;
+  --color-panel: #ffffff;
+  --color-panel-2: #f3f4f7;
+  --color-panel-3: #e9ebf0;
+  --color-line: #e4e6eb;
+  --color-line-2: #d2d5dd;
+  --color-fg: #111216;
+  --color-fg-2: #2b2d35;
+  --color-muted: #5f6370;
+  --color-dim: #858a98;
+  --color-brand: #0ea5a0;
+  --color-brand-2: #14b8a6;
+  --color-up: #16a34a;
+  --color-down: #e5484d;
+  --color-thesis: #3b6cf7;
+  --color-warn: #b7791f;
+  color-scheme: light;
+}
+/* surfaces that are art-directed dark regardless of the user's theme (landing) */
+[data-theme="light"] .theme-dark {
+  --color-bg: #050507;
+  --color-panel: #0b0b0e;
+  --color-panel-2: #121216;
+  --color-panel-3: #18181d;
+  --color-line: #1b1b21;
+  --color-line-2: #26262e;
+  --color-fg: #f3f3f6;
+  --color-fg-2: #c6c6cf;
+  --color-muted: #9292a0;
+  --color-dim: #7d7d93;
+  --color-brand: #4de3c1;
+  --color-brand-2: #97fce4;
+  --color-up: #22d36b;
+  --color-down: #ff4d4f;
+  --color-thesis: #6b93ff;
+  --color-warn: #f5b236;
+  color-scheme: dark;
+}
+[data-theme="light"] .pill-up { background: rgb(22 163 74 / 0.12); }
+[data-theme="light"] .pill-down { background: rgb(229 72 77 / 0.12); }
+[data-theme="light"] .pill-liq { background: rgb(229 72 77 / 0.2); color: #b3261e; }
+[data-theme="light"] .pill-warn { background: rgb(183 121 31 / 0.14); }
+[data-theme="light"] .btn-primary,
+[data-theme="light"] .btn-up { color: #fff; }
+[data-theme="light"] .card { box-shadow: 0 1px 2px rgb(16 18 24 / 0.04); }
+
 html,
 body {
   background: var(--color-bg);
@@ -279,3 +326,12 @@ input[type="range"].slider::-moz-range-thumb {
   letter-spacing: -0.04em;
   font-weight: 500;
 }
+
+/* ---------- chart chrome ---------- */
+.chart-nav {
+  @apply absolute left-1/2 -translate-x-1/2 bottom-12 z-20 flex items-center gap-1 rounded-lg bg-panel/90 border border-line-2 p-1 opacity-0 transition-opacity;
+}
+.group\/chart:hover .chart-nav, .chart-nav:focus-within { opacity: 1; }
+.chart-nav button { @apply w-7 h-7 rounded-md text-muted hover:text-fg hover:bg-panel-3 inline-flex items-center justify-center; }
+.rail-btn { @apply w-8 h-8 rounded-lg inline-flex items-center justify-center text-muted hover:text-fg hover:bg-panel-2 transition-colors; }
+.rail-btn-active { @apply text-brand bg-brand/10; }

@@ -353,7 +353,7 @@ function Sparkline({ points }: { points: { t: number; v: number }[] }) {
           <stop offset="1" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <line x1={0} x2={w} y1={zero} y2={zero} stroke="#26262e" strokeDasharray="3 4" />
+      <line x1={0} x2={w} y1={zero} y2={zero} stroke="var(--color-line-2)" strokeDasharray="3 4" />
       <path d={`${d} L${sx(maxX).toFixed(1)},${zero} L${sx(minX).toFixed(1)},${zero} Z`} fill="url(#spark)" />
       <path d={d} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </svg>

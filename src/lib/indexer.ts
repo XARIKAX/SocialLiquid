@@ -3,6 +3,7 @@
  * (immediate sync after an order so a thesis can be bound to the position id).
  * positions and fills are mirrored from hyperliquid, never trusted from the client.
  */
+import type { HlLeaderboardRow } from "./hl-types";
 import { Prisma, type FeedEventType, type ThesisOutcome } from "@prisma/client";
 import { prisma } from "./db";
 import * as HL from "./hl";
@@ -200,12 +201,58 @@ export async function syncAddress(addressRaw: string, opts: { forceFills?: boole
 }
 
 /** seed TrackedAddress with the top N leaderboard addresses (by weekly pnl) so the feed is live before we have users. */
+/** hyperliquid's own leaderboard rule: hide accounts under 100k account value with under 10M 30d volume */
+export function hlLeaderboardEligible(r: HlLeaderboardRow): boolean {
+  const m = r.windowPerformances.find(([k]) => k === "month")?.[1];
+  return Number(r.accountValue) >= 100_000 || Number(m?.vlm ?? 0) >= 10_000_000;
+}
+
+/** same ordering as app.hyperliquid.xyz/leaderboard (30D, PnL desc) */
+export function hlLeaderboardRanked(rows: HlLeaderboardRow[]): HlLeaderboardRow[] {
+  return rows.filter(hlLeaderboardEligible).sort((a, b) => HL.leaderboardPnl(b, "month") - HL.leaderboardPnl(a, "month"));
+}
+
+/**
+ * mirror the top N of hyperliquid's leaderboard (30D) into HlLeaderboardEntry and make sure they are tracked.
+ * figures are stored exactly as the stats endpoint reports them. returns rows written, 0 if the fetch failed.
+ */
+export async function refreshHlLeaderboard(topN = 10): Promise<number> {
+  let ranked: HlLeaderboardRow[];
+  try {
+    ranked = hlLeaderboardRanked(await HL.leaderboard()).slice(0, topN);
+  } catch (e) {
+    console.warn("[indexer] hl leaderboard refresh failed:", (e as Error).message);
+    return 0;
+  }
+  if (!ranked.length) return 0;
+  const perf = (r: HlLeaderboardRow, w: "week" | "month") => r.windowPerformances.find(([k]) => k === w)?.[1] ?? { pnl: "0", roi: "0", vlm: "0" };
+  const now = new Date();
+  const data = ranked.map((r, i) => {
+    const m = perf(r, "month");
+    return {
+      rank: i + 1,
+      address: r.ethAddress.toLowerCase(),
+      displayName: r.displayName,
+      accountValue: r.accountValue,
+      pnl30d: m.pnl,
+      roi30d: m.roi,
+      vlm30d: m.vlm,
+      pnl7d: perf(r, "week").pnl,
+      updatedAt: now,
+    };
+  });
+  await prisma.$transaction([prisma.hlLeaderboardEntry.deleteMany({}), prisma.hlLeaderboardEntry.createMany({ data })]);
+  await prisma.trackedAddress.createMany({
+    data: data.map((d) => ({ address: d.address, source: "DISCOVERED" as const, displayName: d.displayName })),
+    skipDuplicates: true,
+  });
+  return data.length;
+}
+
 export async function seedTrackedAddresses(count: number): Promise<number> {
   let rows: { address: string; displayName: string | null }[] = [];
   try {
-    const lb = await HL.leaderboard();
-    rows = lb
-      .sort((a, b) => HL.leaderboardPnl(b, "week") - HL.leaderboardPnl(a, "week"))
+    rows = hlLeaderboardRanked(await HL.leaderboard())
       .slice(0, count)
       .map((r) => ({ address: r.ethAddress.toLowerCase(), displayName: r.displayName }));
   } catch (e) {

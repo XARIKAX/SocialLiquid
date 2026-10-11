@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { THEME_INIT } from "@/lib/theme";
 import "./globals.css";
 
 // geist sans, self hosted. not preloaded: text paints in the system fallback and swaps, which keeps first paint off the font's critical path
@@ -23,7 +24,10 @@ export const viewport: Viewport = { themeColor: "#050507", width: "device-width"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`dark ${geist.variable}`}>
+    <html lang="en" className={geist.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+      </head>
       <body className="font-sans">{children}</body>
     </html>
   );

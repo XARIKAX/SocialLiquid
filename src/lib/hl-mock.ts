@@ -467,7 +467,7 @@ export async function extraAgents(user: string) {
 export async function leaderboard(): Promise<HlLeaderboardRow[]> {
   return MOCK_TRADERS.map((addr, i) => ({
     ethAddress: addr,
-    accountValue: String(10_000 * (i + 1)),
+    accountValue: String(150_000 * (i + 1)),
     displayName: i % 3 === 0 ? `whale${i}` : null,
     prize: 0,
     windowPerformances: [

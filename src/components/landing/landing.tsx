@@ -13,7 +13,7 @@ type Props = {
 
 export function Landing(p: Props) {
   return (
-    <div className="bg-bg text-fg">
+    <div className="theme-dark bg-bg text-fg">
       <Nav />
       <Hero stats={p.stats} />
       <Preview {...p} />

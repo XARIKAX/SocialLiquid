@@ -8,6 +8,7 @@ import { api, HL_APP_URL_CLIENT } from "@/lib/client";
 import { fmtPct, fmtPx, fmtUsd, shortAddr } from "@/lib/format";
 import { Avatar, CoinIcon, Icon, Logo } from "./ui";
 import { useConnectModal } from "./connect-modal";
+import { useTheme } from "@/lib/theme";
 
 type SearchResult = { coins: { coin: string; markPx: number; change24h: number }[]; traders: { address: string; handle: string | null; avatarUrl: string | null }[] };
 
@@ -15,6 +16,7 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
   const { address, isConnected, signedIn, needsSignIn, signIn, busy, me, signOut } = useAuth();
   const bal = useBalance(signedIn ? address : null);
   const connect = useConnectModal();
+  const [theme, setTheme] = useTheme();
   const upnl = bal.data?.positions.reduce((a, p) => a + p.unrealizedPnl, 0) ?? 0;
   return (
     <header className="h-14 flex items-center gap-3 px-3 md:px-4 sticky top-0 z-30 bg-bg/90 backdrop-blur">
@@ -36,6 +38,9 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        <button className="btn btn-ghost h-9 w-9 px-0" onClick={() => setTheme(theme === "light" ? "dark" : "light")} title={theme === "light" ? "Dark mode" : "Light mode"} aria-label="toggle theme">
+          {theme === "light" ? <Icon.moon /> : <Icon.sun />}
+        </button>
         {signedIn && address ? (
           <>
             <div className="hidden sm:flex flex-col justify-center card px-3 h-10 rounded-[10px] leading-tight">
