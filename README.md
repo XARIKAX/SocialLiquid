@@ -20,12 +20,16 @@ we do not run an exchange. every order routes to hyperliquid with our builder co
 ```bash
 pnpm install
 cp .env.example .env            # fill in AGENT_KEY_SECRET and SESSION_SECRET (openssl rand -hex 32)
-pnpm db:push                    # creates the schema in DATABASE_URL
+pnpm db:push                    # creates the schema in DATABASE_URL (pnpm start also does this)
 pnpm dev                        # app on :3000
 pnpm worker                     # indexer, in a second terminal
 ```
 
 `NEXT_PUBLIC_HL_TESTNET=true` points everything at hyperliquid testnet. `HL_MOCK=true` swaps in a synthetic in-process exchange (deterministic prices, a dozen synthetic traders, a mock write side) so the whole stack runs with no network at all. never set `HL_MOCK` in production.
+
+## deploying
+
+`pnpm start` runs `prisma db push` before `next start`, so a fresh database gets its schema on first boot. `GET /api/health` reports whether the database, the schema, and the hyperliquid api are reachable, and which required env vars are missing. on railway: one web service with `pnpm start`, one worker service with `pnpm worker`, one postgres, `DATABASE_URL=${{Postgres.DATABASE_URL}}` on both.
 
 ## env
 

@@ -9,13 +9,19 @@ export async function marketInitial(coin: string) {
   const markets = await HL.markets().catch(() => []);
   const market = markets.find((m) => m.coin === coin);
   if (!market) return null;
-  const positions = await prisma.position.findMany({
-    where: { coin, closedAt: null },
-    orderBy: { sizeUsd: "desc" },
-    take: 200,
-    include: { theses: { orderBy: { createdAt: "desc" }, take: 1, include: { _count: { select: { likes: true } } } } },
-  });
-  const users = await usersByAddress(positions.map((p) => p.address));
+  // a db outage or missing schema must not take the page down; the client refetches and /api/health explains
+  const positions = await prisma.position
+    .findMany({
+      where: { coin, closedAt: null },
+      orderBy: { sizeUsd: "desc" },
+      take: 200,
+      include: { theses: { orderBy: { createdAt: "desc" }, take: 1, include: { _count: { select: { likes: true } } } } },
+    })
+    .catch((e: Error) => {
+      console.error("[ssr] positions query failed:", e.message.split("\n").filter(Boolean).slice(-1)[0]);
+      return [];
+    });
+  const users = await usersByAddress(positions.map((p) => p.address)).catch(() => new Map());
   const longUsd = positions.filter((p) => p.side === "LONG").reduce((a, p) => a + Number(p.sizeUsd), 0);
   const shortUsd = positions.filter((p) => p.side === "SHORT").reduce((a, p) => a + Number(p.sizeUsd), 0);
   return plain({
