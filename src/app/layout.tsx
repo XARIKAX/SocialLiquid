@@ -7,7 +7,7 @@ const geist = localFont({
   src: "../../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2",
   variable: "--font-geist-sans",
   display: "swap",
-  preload: false,
+  preload: true,
   weight: "100 900",
   fallback: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
   adjustFontFallback: "Arial",

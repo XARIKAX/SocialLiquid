@@ -27,9 +27,9 @@ export function MarketHeader({ coin, market, mid, longShort }: { coin: string; m
   const countdown = useCountdown();
   const abs = market ? market.markPx - market.prevDayPx : 0;
   return (
-    <div className="flex items-center gap-4 flex-wrap px-1">
+    <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 px-1">
       <CoinSelect coin={coin} market={market} />
-      <div className="flex items-stretch flex-wrap gap-x-5 gap-y-1 2xl:gap-x-7 text-[12.5px] flex-1 min-w-0 py-1 pr-1">
+      <div className="grid grid-cols-3 sm:flex sm:items-stretch sm:flex-wrap gap-x-4 gap-y-2 sm:gap-x-5 2xl:gap-x-7 text-[12.5px] flex-1 min-w-0 py-1 pr-1">
         <H label="Mark"><span className={up ? "text-up" : "text-down"}>{fmtPx(mid ?? market?.markPx)}</span></H>
         <H label="Oracle">{fmtPx(market?.oraclePx)}</H>
         <H label="24h Change"><span className={up ? "text-up" : "text-down"}>{market ? `${abs >= 0 ? "+" : ""}${fmtPx(abs)} / ${fmtPct(market.change24h)}` : "–"}</span></H>

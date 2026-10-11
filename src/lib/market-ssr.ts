@@ -4,11 +4,22 @@ import * as HL from "./hl";
 import { usersByAddress } from "./queries";
 import { plain } from "./api";
 
+const candleCache = new Map<string, { at: number; closes: number[] }>();
+async function recentCloses(coin: string): Promise<number[]> {
+  const hit = candleCache.get(coin);
+  if (hit && Date.now() - hit.at < 60_000) return hit.closes;
+  const c = await HL.candleSnapshot(coin, "1h", Date.now() - 72 * 3_600_000).catch(() => []);
+  const closes = c.map((x) => Number(x.c));
+  candleCache.set(coin, { at: Date.now(), closes });
+  return closes;
+}
+
 /** initial market payload for ssr (same shape as /api/market/[coin]) */
 export async function marketInitial(coin: string) {
   const markets = await HL.markets().catch(() => []);
   const market = markets.find((m) => m.coin === coin);
   if (!market) return null;
+  const closes = await recentCloses(coin);
   // a db outage or missing schema must not take the page down; the client refetches and /api/health explains
   const positions = await prisma.position
     .findMany({
@@ -26,6 +37,7 @@ export async function marketInitial(coin: string) {
   const shortUsd = positions.filter((p) => p.side === "SHORT").reduce((a, p) => a + Number(p.sizeUsd), 0);
   return plain({
     market,
+    closes,
     longShort: { longUsd, shortUsd, ratio: longUsd + shortUsd > 0 ? longUsd / (longUsd + shortUsd) : 0.5 },
     trades: [],
     flow24h: { longUsd: 0, shortUsd: 0, count: 0 },

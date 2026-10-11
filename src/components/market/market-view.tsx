@@ -20,9 +20,31 @@ import { BottomPanel } from "../trade/bottom-panel";
 import { useFeed } from "../feed/feed-column";
 import { Deferred } from "@/hooks/use-in-view";
 
-const Chart = dynamic(() => import("./chart").then((m) => m.Chart), { ssr: false, loading: () => <div className="h-full w-full skeleton rounded-none" /> });
+const Chart = dynamic(() => import("./chart").then((m) => m.Chart), { ssr: false, loading: () => null });
 
-type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[]; flow24h?: { longUsd: number; shortUsd: number; count: number } };
+type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[]; flow24h?: { longUsd: number; shortUsd: number; count: number }; closes?: number[] };
+
+/** server-rendered price shape shown until the real chart paints; it is the page's largest element on phones */
+function ChartPlaceholder({ closes }: { closes?: number[] }) {
+  if (!closes || closes.length < 2) return <div className="h-full w-full skeleton rounded-none" />;
+  const w = 800;
+  const h = 300;
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const pts = closes.map((v, i) => `${((i / (closes.length - 1)) * w).toFixed(1)},${(20 + (1 - (v - min) / Math.max(1e-9, max - min)) * (h - 60)).toFixed(1)}`);
+  const up = closes[closes.length - 1] >= closes[0];
+  const color = up ? "#22d36b" : "#ff4d4f";
+  return (
+    <div className="h-full w-full relative bg-panel">
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="absolute inset-x-0 top-10 bottom-0 w-full h-[calc(100%-2.5rem)]" aria-hidden>
+        <defs><linearGradient id="ph" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor={color} stopOpacity="0.22" /><stop offset="1" stopColor={color} stopOpacity="0" /></linearGradient></defs>
+        <path d={`M${pts.join(" L")} L${w},${h} L0,${h} Z`} fill="url(#ph)" />
+        <path d={`M${pts.join(" L")}`} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="absolute left-3 top-12 text-[11px] text-dim">Loading chart…</div>
+    </div>
+  );
+}
 
 export function MarketView({ coin, initial }: { coin: string; initial?: MarketData }) {
   const [thesisOnly, setThesisOnly] = useState(false);
@@ -69,12 +91,15 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
           <MarketHeader coin={coin} market={m} mid={mid} longShort={q.data?.longShort} />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-3">
-          <div className="card overflow-hidden h-[420px] lg:h-[460px] xl:h-[52vh] lg:min-h-[400px]">
-            <Chart coin={coin} markers={markers} lastPx={mid} lines={lines} />
+          <div className="card overflow-hidden h-[420px] lg:h-[460px] xl:h-[52vh] lg:min-h-[400px] relative">
+            <div className="absolute inset-0"><ChartPlaceholder closes={initial?.closes} /></div>
+            <div className="absolute inset-0"><Chart coin={coin} markers={markers} lastPx={mid} lines={lines} /></div>
           </div>
-          <div className="card overflow-hidden h-[400px] lg:h-[460px] xl:h-[52vh] lg:min-h-[400px]">
-            <OrderBook coin={coin} market={m} mid={mid} />
-          </div>
+          <Deferred minHeight={400} className="h-[400px] lg:h-[460px] xl:h-[52vh] lg:min-h-[400px]">
+            <div className="card overflow-hidden h-full">
+              <OrderBook coin={coin} market={m} mid={mid} />
+            </div>
+          </Deferred>
         </div>
         <div className="card overflow-hidden">
           <BottomPanel coin={coin} positions={q.data?.positions} trades={q.data?.trades} theses={thesisEvents.data} mid={mid} loading={q.isLoading && !initial} thesisOnly={thesisOnly} following={following} setThesisOnly={setThesisOnly} setFollowing={setFollowing} />
