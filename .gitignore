@@ -10,3 +10,5 @@ tsconfig.tsbuildinfo
 next-env.d.ts
 src/generated
 .hl-mock-state.json
+.hl-mock-state.json.lock
+.hl-mock-state.json.*.tmp

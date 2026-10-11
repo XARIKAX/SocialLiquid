@@ -51,8 +51,10 @@ export function PositionsTable({
   following,
   setThesisOnly,
   setFollowing,
+  initialTab = "positions",
 }: {
   coin: string;
+  initialTab?: Tab;
   positions: MarketPosition[] | undefined;
   trades: MarketTrade[] | undefined;
   theses: FeedItem[] | undefined;
@@ -64,7 +66,7 @@ export function PositionsTable({
   setFollowing: (v: boolean) => void;
 }) {
   const [sort, setSort] = useState<Sort>("size");
-  const [tab, setTab] = useState<Tab>("positions");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const { signedIn } = useAuth();
   const rows = useMemo(() => {
     const list = (positions ?? []).map((p) => ({ ...p, pnl: livePnl(p, mid) ?? p.unrealisedPnl }));

@@ -6,6 +6,14 @@
 import * as hl from "@nktkas/hyperliquid";
 import { HL_LEADERBOARD_URL, HL_MOCK, IS_TESTNET } from "./env";
 import type {
+  HlBookLevel,
+  HlFundingPayment,
+  HlFundingRate,
+  HlHistoricalOrder,
+  HlL2Book,
+  HlOpenOrder,
+  HlRecentTrade,
+  HlTwap,
   HlAllMids,
   HlAssetCtx,
   HlCandle,
@@ -33,6 +41,8 @@ export function info(): hl.InfoClient {
 export const WEIGHT = {
   allMids: 2,
   clearinghouseState: 2,
+  l2Book: 2,
+  recentTrades: 20,
   meta: 20,
   metaAndAssetCtxs: 20,
   userFills: 20,
@@ -151,6 +161,65 @@ export async function extraAgents(user: string): Promise<{ address: string; name
   return (await info().extraAgents({ user: user as `0x${string}` })) as { address: string; name: string; validUntil: number | null }[];
 }
 
+// ---------- market microstructure (short caches so every viewer shares one upstream call) ----------
+
+const tiny = new Map<string, { at: number; p: Promise<unknown> }>();
+function cached<T>(key: string, ttl: number, fn: () => Promise<T>): Promise<T> {
+  const hit = tiny.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.p as Promise<T>;
+  const p = fn().catch((e) => {
+    tiny.delete(key);
+    throw e;
+  });
+  tiny.set(key, { at: Date.now(), p });
+  return p;
+}
+
+export async function l2Book(coin: string, nSigFigs?: 2 | 3 | 4 | 5): Promise<HlL2Book> {
+  return cached(`book:${coin}:${nSigFigs ?? ""}`, 500, async () => {
+    if (HL_MOCK) return mock.l2Book(coin);
+    const r = (await info().l2Book({ coin, nSigFigs })) as unknown as HlL2Book | null;
+    if (!r) return { coin, time: Date.now(), levels: [[], []] as [HlBookLevel[], HlBookLevel[]] };
+    return r;
+  });
+}
+
+export async function recentTrades(coin: string): Promise<HlRecentTrade[]> {
+  return cached(`trades:${coin}`, 1000, async () => {
+    if (HL_MOCK) return mock.recentTrades(coin);
+    return (await info().recentTrades({ coin })) as unknown as HlRecentTrade[];
+  });
+}
+
+export async function fundingHistory(coin: string, startTime: number): Promise<HlFundingRate[]> {
+  return cached(`funding:${coin}:${Math.floor(startTime / 600_000)}`, 60_000, async () => {
+    if (HL_MOCK) return mock.fundingHistory(coin, startTime);
+    return (await info().fundingHistory({ coin, startTime })) as unknown as HlFundingRate[];
+  });
+}
+
+// ---------- per-account reads (authenticated users only; no cache) ----------
+
+export async function openOrders(address: string): Promise<HlOpenOrder[]> {
+  if (HL_MOCK) return mock.openOrders(address);
+  return (await info().frontendOpenOrders({ user: address as `0x${string}` })) as unknown as HlOpenOrder[];
+}
+
+export async function historicalOrders(address: string): Promise<HlHistoricalOrder[]> {
+  if (HL_MOCK) return mock.historicalOrders(address);
+  return (await info().historicalOrders({ user: address as `0x${string}` })) as unknown as HlHistoricalOrder[];
+}
+
+export async function userFunding(address: string, startTime: number): Promise<HlFundingPayment[]> {
+  if (HL_MOCK) return mock.userFunding(address, startTime);
+  return (await info().userFunding({ user: address as `0x${string}`, startTime })) as unknown as HlFundingPayment[];
+}
+
+export async function twapHistory(address: string): Promise<HlTwap[]> {
+  if (HL_MOCK) return mock.twapHistory(address);
+  return (await info().twapHistory({ user: address as `0x${string}` })) as unknown as HlTwap[];
+}
+
 // ---------- leaderboard (stats endpoint, not part of the info api) ----------
 
 export async function leaderboard(): Promise<HlLeaderboardRow[]> {
@@ -182,7 +251,15 @@ export function formatPx(px: number, szDecimals: number): string {
   return String(s);
 }
 
-export function formatSz(sz: number, szDecimals: number): string {
+export function formatSz(sz: number, szDecimals: number, mode: "floor" | "ceil" | "round" = "floor"): string {
   const f = Math.pow(10, szDecimals);
-  return String(Math.floor(sz * f) / f);
+  const fn = mode === "ceil" ? Math.ceil : mode === "round" ? Math.round : Math.floor;
+  return String(fn(sz * f - (mode === "ceil" ? 1e-9 : 0)) / f);
+}
+
+/** smallest price increment hyperliquid accepts at this price: 5 significant figures, integers always allowed */
+export function tickFor(px: number): number {
+  if (!(px > 0)) return 0.01;
+  const t = Math.pow(10, Math.floor(Math.log10(px)) - 4);
+  return Math.min(t, 1) === t ? Number(t.toPrecision(1)) : 1;
 }

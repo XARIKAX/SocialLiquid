@@ -115,3 +115,29 @@ export type MarketSummary = {
   funding: number;
   oraclePx: number;
 };
+
+export type HlBookLevel = { px: string; sz: string; n: number };
+export type HlL2Book = { coin: string; time: number; levels: [bids: HlBookLevel[], asks: HlBookLevel[]] };
+export type HlRecentTrade = { coin: string; side: "B" | "A"; px: string; sz: string; time: number; hash: string; tid: number };
+export type HlOpenOrder = {
+  coin: string;
+  side: "B" | "A";
+  limitPx: string;
+  sz: string;
+  oid: number;
+  timestamp: number;
+  origSz: string;
+  triggerCondition: string;
+  isTrigger: boolean;
+  triggerPx: string;
+  children: HlOpenOrder[];
+  isPositionTpsl: boolean;
+  reduceOnly: boolean;
+  orderType: string;
+  tif: string | null;
+  cloid: string | null;
+};
+export type HlHistoricalOrder = { order: HlOpenOrder; status: string; statusTimestamp: number };
+export type HlFundingPayment = { time: number; hash: string; delta: { type: "funding"; coin: string; usdc: string; szi: string; fundingRate: string } };
+export type HlFundingRate = { coin: string; fundingRate: string; premium: string; time: number };
+export type HlTwap = { time: number; state: { coin: string; executedNtl: string; executedSz: string; minutes: number; reduceOnly: boolean; randomize: boolean; side: "B" | "A"; sz: string; timestamp: number; user: string }; status: { status: string; description?: string }; twapId?: number };

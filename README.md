@@ -56,6 +56,18 @@ pnpm worker                     # indexer, in a second terminal
 4. every order is signed server side with the agent key and carries `builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP }`. market orders are ioc limits with a 3% slippage cap. tp / sl go in the same `normalTpsl` group.
 5. after a fill the server syncs the address immediately so the thesis can be bound to the mirrored position id.
 
+## the terminal
+
+`/trade` and `/m/[coin]` are a full perps terminal on the hyperliquid api:
+
+- market header: coin selector with search and watchlist, mark, oracle, 24h change, volume, open interest, funding with the hourly countdown
+- chart: candles + volume, sma / ema / bollinger / vwap overlays, funding history tab, log scale, your entry and liquidation lines, open orders drawn as price lines, thesis markers
+- order book and recent trades, grouped by tick, sized in coin or usd, click a level to fill the ticket
+- ticket: cross / isolated, leverage, market, limit (gtc / ioc / alo), stop market, stop limit, take profit market / limit, scale ladders, twap; size in coin or usd with a percent slider; reduce only; attached tp / sl with gain and loss %; liquidation price, order value, margin, book-walk slippage estimate, fees. every order carries the builder code
+- bottom panel: traders and theses on the market, plus balances, positions (close, tp / sl on the position), open orders (cancel, cancel all), twap (terminate), trade history, funding history, order history, csv export
+
+the server caches order book and trade reads for half a second so every viewer shares one upstream call.
+
 ## receipts
 
 a thesis is bound to a position id at post time. when the worker sees that position close it sets the outcome from on-chain fills: `LIQUIDATED` if a liquidation fill closed it, `DUMPED` if it closed within 60 minutes of the thesis, otherwise `PROFIT` or `LOSS` from realised pnl. the outcome is on the feed card, the profile, and the share page.

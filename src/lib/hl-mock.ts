@@ -8,6 +8,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
+  HlBookLevel,
+  HlFundingPayment,
+  HlFundingRate,
+  HlHistoricalOrder,
+  HlL2Book,
+  HlOpenOrder,
+  HlRecentTrade,
+  HlTwap,
   HlAllMids,
   HlAssetCtx,
   HlCandle,
@@ -133,38 +141,115 @@ export function intervalMs(i: HlCandleInterval): number {
 // ---------- shared mutable state ----------
 
 type MockPos = { coin: string; szi: number; entryPx: number; leverage: number; openedAt: number };
+type MockOrder = {
+  oid: number;
+  coin: string;
+  side: "B" | "A";
+  limitPx: number;
+  sz: number;
+  origSz: number;
+  reduceOnly: boolean;
+  isTrigger: boolean;
+  triggerPx: number;
+  tpsl: "tp" | "sl" | null;
+  isMarket: boolean;
+  tif: string;
+  timestamp: number;
+  isPositionTpsl: boolean;
+  leverage: number;
+};
+type MockHist = { order: MockOrder; status: string; statusTimestamp: number };
+type MockTwap = { twapId: number; coin: string; side: "B" | "A"; sz: number; executedSz: number; executedNtl: number; minutes: number; reduceOnly: boolean; randomize: boolean; timestamp: number; lastSlice: number; status: string; leverage: number };
 type MockState = {
   nextTid: number;
+  nextOid?: number;
   positions: Record<string, MockPos[]>;
   fills: Record<string, HlFill[]>;
   lastTick: Record<string, number>;
   builderFees: Record<string, number>;
   agents: Record<string, { address: string; name: string }[]>;
+  orders?: Record<string, MockOrder[]>;
+  history?: Record<string, MockHist[]>;
+  twaps?: Record<string, MockTwap[]>;
+  leverage?: Record<string, number>;
 };
 
 const STATE_FILE = path.join(process.cwd(), ".hl-mock-state.json");
+const LOCK_FILE = `${STATE_FILE}.lock`;
+let lastGood: MockState | undefined;
 
+function emptyState(): MockState {
+  return { nextTid: 1, positions: {}, fills: {}, lastTick: {}, builderFees: {}, agents: {}, orders: {}, history: {}, twaps: {}, leverage: {} };
+}
+
+/** the next.js server and the worker share this file. never reset on a torn read: retry, then fall back to the last good copy. */
 function load(): MockState {
-  try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) as MockState;
-  } catch {
-    return { nextTid: 1, positions: {}, fills: {}, lastTick: {}, builderFees: {}, agents: {} };
+  for (let i = 0; i < 6; i++) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) as MockState;
+      lastGood = parsed;
+      return parsed;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return lastGood ?? emptyState();
+      spin(4);
+    }
+  }
+  return lastGood ?? emptyState();
+}
+
+/** atomic replace so a reader never sees a partial file */
+function save(s: MockState) {
+  const tmp = `${STATE_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(s));
+  fs.renameSync(tmp, STATE_FILE);
+  lastGood = s;
+}
+
+function spin(ms: number) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    /* busy wait, dev only */
   }
 }
 
-function save(s: MockState) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(s));
+/** tiny cross-process mutex around read-modify-write cycles */
+function lock(): () => void {
+  const deadline = Date.now() + 400;
+  for (;;) {
+    try {
+      const fd = fs.openSync(LOCK_FILE, "wx");
+      fs.closeSync(fd);
+      return () => {
+        try {
+          fs.unlinkSync(LOCK_FILE);
+        } catch {}
+      };
+    } catch {
+      // stale lock from a crashed process
+      try {
+        if (Date.now() - fs.statSync(LOCK_FILE).mtimeMs > 2000) fs.unlinkSync(LOCK_FILE);
+      } catch {}
+      if (Date.now() > deadline) return () => {};
+      spin(3);
+    }
+  }
 }
 
 function withState<T>(fn: (s: MockState) => T): T {
-  const s = load();
-  const r = fn(s);
-  save(s);
-  return r;
+  const release = lock();
+  try {
+    const s = load();
+    const r = fn(s);
+    save(s);
+    return r;
+  } finally {
+    release();
+  }
 }
 
 function pushFill(s: MockState, address: string, f: Omit<HlFill, "tid" | "hash" | "oid" | "crossed" | "feeToken" | "startPosition">, startPosition: number) {
-  const tid = s.nextTid++;
+  // time-based so two processes sharing the state file never hand out the same id (real hl tids are unique)
+  const tid = Date.now() * 1000 + (s.nextTid++ % 1000);
   const list = (s.fills[address] ??= []);
   list.push({
     ...f,
@@ -258,10 +343,69 @@ function tick(s: MockState, address: string) {
   }
 }
 
+/** fill resting limit orders that cross, fire triggers, and advance twaps for an address */
+function settle(s: MockState, address: string) {
+  const a = address.toLowerCase();
+  const now = Date.now();
+  const orders = (s.orders ??= {})[a] ?? [];
+  const history = ((s.history ??= {})[a] ??= []);
+  const keep: MockOrder[] = [];
+  for (const o of orders) {
+    const px = priceAt(o.coin, now);
+    const dir = o.side === "B" ? 1 : -1;
+    if (o.isTrigger) {
+      const fired = o.tpsl === "sl" ? (o.side === "A" ? px <= o.triggerPx : px >= o.triggerPx) : o.side === "A" ? px >= o.triggerPx : px <= o.triggerPx;
+      if (!fired) {
+        keep.push(o);
+        continue;
+      }
+      if (o.isMarket) {
+        fillOrder(s, a, o, px);
+        history.push({ order: o, status: "filled", statusTimestamp: now });
+      } else {
+        keep.push({ ...o, isTrigger: false });
+      }
+      continue;
+    }
+    const crosses = dir === 1 ? px <= o.limitPx : px >= o.limitPx;
+    if (crosses) {
+      fillOrder(s, a, o, o.limitPx);
+      history.push({ order: o, status: "filled", statusTimestamp: now });
+    } else keep.push(o);
+  }
+  s.orders[a] = keep;
+  // twaps: one slice per 30s
+  for (const t of (s.twaps ??= {})[a] ?? []) {
+    if (t.status !== "activated") continue;
+    const slices = Math.max(1, Math.round((t.minutes * 60) / 30));
+    const per = t.sz / slices;
+    while (now - t.lastSlice >= 30_000 && t.executedSz < t.sz - 1e-12) {
+      const px = priceAt(t.coin, t.lastSlice + 30_000);
+      const sz = Math.min(per, t.sz - t.executedSz);
+      applyTrade(s, a, t.coin, t.side === "B" ? sz : -sz, px, t.leverage);
+      t.executedSz += sz;
+      t.executedNtl += sz * px;
+      t.lastSlice += 30_000;
+    }
+    if (t.executedSz >= t.sz - 1e-12) t.status = "finished";
+  }
+}
+
+function fillOrder(s: MockState, a: string, o: MockOrder, px: number) {
+  const existing = (s.positions[a] ?? []).find((p) => p.coin === o.coin);
+  let delta = o.side === "B" ? o.sz : -o.sz;
+  if (o.reduceOnly) {
+    if (!existing || Math.sign(existing.szi) === Math.sign(delta)) return;
+    delta = Math.sign(delta) * Math.min(Math.abs(delta), Math.abs(existing.szi));
+  }
+  applyTrade(s, a, o.coin, delta, px, o.leverage, { builderFee: (Math.abs(delta) * px * 50) / 100_000 });
+}
+
 export async function clearinghouseState(address: string): Promise<HlClearinghouseState> {
   const a = address.toLowerCase();
   return withState((s) => {
     tick(s, a);
+    settle(s, a);
     const now = Date.now();
     const positions: HlPosition[] = (s.positions[a] ?? []).map((p) => {
       const mark = priceAt(p.coin, now);
@@ -271,7 +415,7 @@ export async function clearinghouseState(address: string): Promise<HlClearinghou
       return {
         coin: p.coin,
         szi: String(p.szi),
-        leverage: { type: "cross", value: p.leverage },
+        leverage: { type: ((s.leverage ?? {})[`${a}:${p.coin}:mode`] ?? 1) === 0 ? "isolated" : "cross", value: p.leverage, rawUsd: String(value / p.leverage) } as HlPosition["leverage"],
         entryPx: String(p.entryPx),
         positionValue: String(value),
         unrealizedPnl: String(upnl),
@@ -303,6 +447,7 @@ export async function userFills(address: string, since?: number): Promise<HlFill
   const a = address.toLowerCase();
   return withState((s) => {
     tick(s, a);
+    settle(s, a);
     const fills = s.fills[a] ?? [];
     const list = since !== undefined ? fills.filter((f) => f.time >= since) : fills;
     return [...list].reverse();
@@ -349,7 +494,7 @@ export async function mockApproveAgent(user: string, agentAddress: string, name:
   });
 }
 
-export async function mockPlaceOrder(args: {
+export type MockOrderInput = {
   user: string;
   coin: string;
   isBuy: boolean;
@@ -357,20 +502,203 @@ export async function mockPlaceOrder(args: {
   leverage: number;
   builderFeeTenthsBp: number;
   reduceOnly?: boolean;
-}): Promise<{ status: "ok"; filledPx: number; totalSz: number } | { status: "err"; error: string }> {
+  limitPx?: number;
+  tif?: "Gtc" | "Ioc" | "Alo";
+  trigger?: { triggerPx: number; isMarket: boolean; tpsl: "tp" | "sl" };
+  isPositionTpsl?: boolean;
+};
+
+export type MockOrderResult = { status: "filled"; filledPx: number; totalSz: number; oid: number } | { status: "resting"; oid: number } | { status: "err"; error: string };
+
+export async function mockPlaceOrder(args: MockOrderInput): Promise<MockOrderResult> {
   const u = UNIVERSE.find((x) => x.name === args.coin);
   if (!u) return { status: "err", error: `unknown coin ${args.coin}` };
-  const px = priceAt(args.coin, Date.now()) * (args.isBuy ? 1.0003 : 0.9997);
   return withState((s) => {
     const a = args.user.toLowerCase();
+    settle(s, a);
+    const oid = (s.nextOid = (s.nextOid ?? 1000) + 1);
+    const mid = priceAt(args.coin, Date.now());
+    const side: "B" | "A" = args.isBuy ? "B" : "A";
+    const base: MockOrder = {
+      oid,
+      coin: args.coin,
+      side,
+      limitPx: args.limitPx ?? mid,
+      sz: args.sz,
+      origSz: args.sz,
+      reduceOnly: !!args.reduceOnly,
+      isTrigger: !!args.trigger,
+      triggerPx: args.trigger?.triggerPx ?? 0,
+      tpsl: args.trigger?.tpsl ?? null,
+      isMarket: args.trigger?.isMarket ?? !args.limitPx,
+      tif: args.tif ?? (args.limitPx ? "Gtc" : "Ioc"),
+      timestamp: Date.now(),
+      isPositionTpsl: !!args.isPositionTpsl,
+      leverage: args.leverage,
+    };
+    const history = ((s.history ??= {})[a] ??= []);
+    const rest = () => {
+      ((s.orders ??= {})[a] ??= []).push(base);
+      return { status: "resting", oid } as const;
+    };
+    if (args.trigger) return rest();
+    const px = args.limitPx !== undefined ? args.limitPx : mid * (args.isBuy ? 1.0003 : 0.9997);
+    const crosses = args.limitPx === undefined || (args.isBuy ? args.limitPx >= mid : args.limitPx <= mid);
+    if (!crosses) {
+      if (args.tif === "Ioc") {
+        history.push({ order: base, status: "canceled", statusTimestamp: Date.now() });
+        return { status: "err", error: "ioc order could not match" };
+      }
+      return rest();
+    }
+    if (args.tif === "Alo") {
+      history.push({ order: base, status: "badAloPxRejected", statusTimestamp: Date.now() });
+      return { status: "err", error: "post only order would cross the book" };
+    }
     const existing = (s.positions[a] ?? []).find((p) => p.coin === args.coin);
     let delta = args.isBuy ? args.sz : -args.sz;
     if (args.reduceOnly) {
       if (!existing || Math.sign(existing.szi) === Math.sign(delta)) return { status: "err", error: "reduce only: nothing to reduce" };
       delta = Math.sign(delta) * Math.min(Math.abs(delta), Math.abs(existing.szi));
     }
-    const builderFee = (Math.abs(delta) * px * args.builderFeeTenthsBp) / 100_000;
-    applyTrade(s, a, args.coin, delta, px, args.leverage, { builderFee });
-    return { status: "ok", filledPx: px, totalSz: Math.abs(delta) };
+    const fillPx = args.limitPx !== undefined ? mid : px;
+    const builderFee = (Math.abs(delta) * fillPx * args.builderFeeTenthsBp) / 100_000;
+    applyTrade(s, a, args.coin, delta, fillPx, args.leverage, { builderFee });
+    history.push({ order: base, status: "filled", statusTimestamp: Date.now() });
+    return { status: "filled", filledPx: fillPx, totalSz: Math.abs(delta), oid };
   });
+}
+
+export async function mockCancel(user: string, oids: number[]) {
+  withState((s) => {
+    const a = user.toLowerCase();
+    const list = (s.orders ??= {})[a] ?? [];
+    const history = ((s.history ??= {})[a] ??= []);
+    s.orders[a] = list.filter((o) => {
+      if (!oids.includes(o.oid)) return true;
+      history.push({ order: o, status: "canceled", statusTimestamp: Date.now() });
+      return false;
+    });
+  });
+}
+
+export async function mockSetLeverage(user: string, coin: string, leverage: number, isCross: boolean) {
+  withState((s) => {
+    const a = user.toLowerCase();
+    (s.leverage ??= {})[`${a}:${coin}`] = leverage;
+    s.leverage[`${a}:${coin}:mode`] = isCross ? 1 : 0;
+    for (const p of s.positions[a] ?? []) if (p.coin === coin) p.leverage = leverage;
+  });
+}
+
+export async function mockTwap(user: string, coin: string, isBuy: boolean, sz: number, minutes: number, reduceOnly: boolean, randomize: boolean, leverage: number): Promise<number> {
+  return withState((s) => {
+    const a = user.toLowerCase();
+    const twapId = (s.nextOid = (s.nextOid ?? 1000) + 1);
+    ((s.twaps ??= {})[a] ??= []).push({ twapId, coin, side: isBuy ? "B" : "A", sz, executedSz: 0, executedNtl: 0, minutes, reduceOnly, randomize, timestamp: Date.now(), lastSlice: Date.now(), status: "activated", leverage });
+    return twapId;
+  });
+}
+
+export async function mockTwapCancel(user: string, twapId: number) {
+  withState((s) => {
+    for (const t of (s.twaps ??= {})[user.toLowerCase()] ?? []) if (t.twapId === twapId && t.status === "activated") t.status = "terminated";
+  });
+}
+
+function toOpenOrder(o: MockOrder): HlOpenOrder {
+  return {
+    coin: o.coin,
+    side: o.side,
+    limitPx: String(o.limitPx),
+    sz: String(o.sz),
+    oid: o.oid,
+    timestamp: o.timestamp,
+    origSz: String(o.origSz),
+    triggerCondition: o.isTrigger ? `${o.side === "B" ? "Price above" : "Price below"} ${o.triggerPx}` : "N/A",
+    isTrigger: o.isTrigger,
+    triggerPx: String(o.triggerPx),
+    children: [],
+    isPositionTpsl: o.isPositionTpsl,
+    reduceOnly: o.reduceOnly,
+    orderType: o.isTrigger ? (o.tpsl === "tp" ? (o.isMarket ? "Take Profit Market" : "Take Profit Limit") : o.isMarket ? "Stop Market" : "Stop Limit") : o.isMarket ? "Market" : "Limit",
+    tif: o.isTrigger ? null : o.tif,
+    cloid: null,
+  };
+}
+
+export async function openOrders(address: string): Promise<HlOpenOrder[]> {
+  return withState((s) => {
+    settle(s, address);
+    return ((s.orders ?? {})[address.toLowerCase()] ?? []).map(toOpenOrder);
+  });
+}
+
+export async function historicalOrders(address: string): Promise<HlHistoricalOrder[]> {
+  return withState((s) => {
+    settle(s, address);
+    return [...((s.history ?? {})[address.toLowerCase()] ?? [])].reverse().slice(0, 100).map((h) => ({ order: toOpenOrder(h.order), status: h.status, statusTimestamp: h.statusTimestamp }));
+  });
+}
+
+export async function twapHistory(address: string): Promise<HlTwap[]> {
+  return withState((s) => {
+    settle(s, address);
+    return [...((s.twaps ?? {})[address.toLowerCase()] ?? [])].reverse().map((t) => ({
+      time: t.timestamp,
+      twapId: t.twapId,
+      state: { coin: t.coin, executedNtl: String(t.executedNtl), executedSz: String(t.executedSz), minutes: t.minutes, reduceOnly: t.reduceOnly, randomize: t.randomize, side: t.side, sz: String(t.sz), timestamp: t.timestamp, user: address },
+      status: { status: t.status },
+    }));
+  });
+}
+
+export async function userFunding(address: string, startTime: number): Promise<HlFundingPayment[]> {
+  const s = load();
+  const a = address.toLowerCase();
+  const out: HlFundingPayment[] = [];
+  const hour = 3_600_000;
+  for (const p of s.positions[a] ?? []) {
+    for (let t = Math.ceil(Math.max(startTime, p.openedAt) / hour) * hour; t <= Date.now(); t += hour) {
+      const rate = (rand(`${p.coin}:f:${t}`) - 0.4) * 0.0002;
+      out.push({ time: t, hash: `0x${t.toString(16).padStart(64, "0")}`, delta: { type: "funding", coin: p.coin, usdc: String(-p.szi * priceAt(p.coin, t) * rate), szi: String(p.szi), fundingRate: String(rate) } });
+    }
+  }
+  return out.sort((x, y) => y.time - x.time);
+}
+
+export async function fundingHistory(coin: string, startTime: number): Promise<HlFundingRate[]> {
+  const out: HlFundingRate[] = [];
+  const hour = 3_600_000;
+  for (let t = Math.ceil(startTime / hour) * hour; t <= Date.now(); t += hour) {
+    const rate = (rand(`${coin}:f:${t}`) - 0.4) * 0.0002;
+    out.push({ coin, fundingRate: String(rate), premium: String(rate * 0.8), time: t });
+  }
+  return out;
+}
+
+export async function l2Book(coin: string): Promise<HlL2Book> {
+  const u = UNIVERSE.find((x) => x.name === coin);
+  const now = Date.now();
+  const mid = priceAt(coin, now);
+  const tick = mid > 1 ? Math.min(Math.pow(10, Math.floor(Math.log10(mid)) - 4), 1) : Math.pow(10, Math.floor(Math.log10(mid)) - 4);
+  const bucket = Math.floor(now / 1000);
+  const mk = (i: number, side: "b" | "a"): HlBookLevel => {
+    const px = side === "b" ? mid - tick * (i + 1) : mid + tick * (i + 1);
+    const sz = (0.2 + rand(`${coin}:${side}:${i}:${bucket}`) * 3) * (1 + i / 6) * (mid > 1000 ? 1 : mid > 10 ? 40 : 4000);
+    return { px: String(Number(px.toPrecision(6))), sz: String(Number(sz.toFixed(u?.szDecimals ?? 2))), n: 1 + Math.floor(rand(`${coin}:${side}:${i}:n:${bucket}`) * 8) };
+  };
+  return { coin, time: now, levels: [Array.from({ length: 20 }, (_, i) => mk(i, "b")), Array.from({ length: 20 }, (_, i) => mk(i, "a"))] };
+}
+
+export async function recentTrades(coin: string): Promise<HlRecentTrade[]> {
+  const now = Date.now();
+  const out: HlRecentTrade[] = [];
+  for (let i = 0; i < 40; i++) {
+    const t = now - i * 2500 - Math.floor(rand(`${coin}:rt:${i}:${Math.floor(now / 10_000)}`) * 2000);
+    const px = priceAt(coin, t) * (1 + (rand(`${coin}:rp:${i}`) - 0.5) * 0.0004);
+    const sz = (0.01 + rand(`${coin}:rs:${i}`) * 0.6) * (px > 1000 ? 1 : px > 10 ? 40 : 4000);
+    out.push({ coin, side: rand(`${coin}:rside:${i}:${Math.floor(t / 5000)}`) > 0.5 ? "B" : "A", px: String(Number(px.toPrecision(6))), sz: String(Number(sz.toFixed(3))), time: t, hash: `0x${i.toString(16).padStart(64, "0")}`, tid: 10_000_000 + i });
+  }
+  return out;
 }

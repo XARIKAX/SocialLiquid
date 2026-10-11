@@ -13,7 +13,7 @@ import { Avatar, CoinIcon, Empty, Icon, Pnl, Skeleton, Toggle } from "../ui";
 type Tab = "alerts" | "tokens" | "leaderboard" | "feed";
 const MIN_SIZES = [0, 1000, 10_000, 100_000];
 
-export function FeedColumn({ onNavigate }: { onNavigate?: () => void }) {
+export function FeedColumn({ onNavigate, onCollapse }: { onNavigate?: () => void; onCollapse?: () => void }) {
   const [tab, setTab] = useState<Tab>("feed");
   return (
     <div className="flex flex-col h-full">
@@ -31,7 +31,7 @@ export function FeedColumn({ onNavigate }: { onNavigate?: () => void }) {
             {label}
           </button>
         ))}
-        <span className="ml-auto text-dim pr-1"><Icon.collapse /></span>
+        <button className="ml-auto text-dim hover:text-fg p-1.5 rounded-md" onClick={onCollapse} title="collapse feed" aria-label="collapse feed"><Icon.collapse /></button>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto">
         {tab === "feed" && <Feed onNavigate={onNavigate} />}
