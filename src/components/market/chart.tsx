@@ -1,21 +1,27 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CandlestickSeries, ColorType, createChart, createSeriesMarkers, type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from "lightweight-charts";
+import { CandlestickSeries, ColorType, HistogramSeries, createChart, createSeriesMarkers, type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from "lightweight-charts";
 import { api } from "@/lib/client";
+import { fmtPx } from "@/lib/format";
+import { Toggle } from "../ui";
 
 type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
 export type ChartMarker = { time: number; side: "LONG" | "SHORT" | "CLOSE"; label: string; kind: "mine" | "thesis" };
 
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
+const UP = "#22d36b";
+const DOWN = "#ff4d4f";
 
 export function Chart({ coin, markers = [], lastPx }: { coin: string; markers?: ChartMarker[]; lastPx?: number }) {
   const [interval, setInterval_] = useState<(typeof INTERVALS)[number]>("1h");
   const [showMine, setShowMine] = useState(true);
   const [showThesis, setShowThesis] = useState(true);
+  const [legend, setLegend] = useState<Candle | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const markersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null);
 
   const q = useQuery({
@@ -27,45 +33,56 @@ export function Chart({ coin, markers = [], lastPx }: { coin: string; markers?: 
   useEffect(() => {
     if (!ref.current) return;
     const chart = createChart(ref.current, {
-      layout: { background: { type: ColorType.Solid, color: "#0a0a0c" }, textColor: "#8c8c98", fontSize: 11, attributionLogo: false },
-      grid: { vertLines: { color: "#16161c" }, horzLines: { color: "#16161c" } },
-      rightPriceScale: { borderColor: "#222229" },
-      timeScale: { borderColor: "#222229", timeVisible: true, secondsVisible: false },
-      crosshair: { horzLine: { color: "#4cc9f0", labelBackgroundColor: "#4cc9f0" }, vertLine: { color: "#4cc9f0", labelBackgroundColor: "#4cc9f0" } },
-      autoSize: true,
+      layout: { background: { type: ColorType.Solid, color: "#0b0b0e" }, textColor: "#8b8b98", fontSize: 11, fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif", attributionLogo: false },
+      grid: { vertLines: { color: "#131317" }, horzLines: { color: "#131317" } },
+      rightPriceScale: { borderColor: "#1b1b21", scaleMargins: { top: 0.08, bottom: 0.22 } },
+      timeScale: { borderColor: "#1b1b21", timeVisible: true, secondsVisible: false, rightOffset: 4 },
+      crosshair: { horzLine: { color: "#4de3c1", labelBackgroundColor: "#4de3c1", style: 3 }, vertLine: { color: "#4de3c1", labelBackgroundColor: "#4de3c1", style: 3 } },
       localization: { locale: "en-US" },
+      autoSize: true,
     });
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      upColor: UP,
+      downColor: DOWN,
+      wickUpColor: UP,
+      wickDownColor: DOWN,
       borderVisible: false,
-      priceFormat: { type: "price", precision: 5, minMove: 0.00001 },
+      priceLineColor: "#4de3c1",
+      priceLineStyle: 3,
     });
+    const vol = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol", color: "#26262e" });
+    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
     chartRef.current = chart;
     seriesRef.current = series;
+    volRef.current = vol;
     markersRef.current = createSeriesMarkers(series, []);
+    chart.subscribeCrosshairMove((param) => {
+      const d = param.seriesData.get(series) as { open: number; high: number; low: number; close: number; time: number } | undefined;
+      if (!d) return setLegend(null);
+      setLegend({ time: Number(param.time), open: d.open, high: d.high, low: d.low, close: d.close, volume: 0 });
+    });
     return () => {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      volRef.current = null;
       markersRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     const s = seriesRef.current;
-    if (!s || !q.data) return;
+    const v = volRef.current;
+    if (!s || !v || !q.data) return;
     const data = q.data.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close }));
     const last = data.at(-1);
     const precision = last ? (last.close >= 1000 ? 1 : last.close >= 1 ? 3 : last.close >= 0.01 ? 5 : 8) : 5;
     s.applyOptions({ priceFormat: { type: "price", precision, minMove: Math.pow(10, -precision) } });
     s.setData(data);
+    v.setData(q.data.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume, color: c.close >= c.open ? "rgba(34,211,107,0.22)" : "rgba(255,77,79,0.22)" })));
     chartRef.current?.timeScale().fitContent();
   }, [q.data]);
 
-  // live last price nudges the current bar
   useEffect(() => {
     const s = seriesRef.current;
     if (!s || !q.data?.length || !lastPx) return;
@@ -83,34 +100,46 @@ export function Chart({ coin, markers = [], lastPx }: { coin: string; markers?: 
         time: Math.floor(m.time / 1000) as UTCTimestamp,
         position: m.side === "SHORT" ? "aboveBar" : "belowBar",
         shape: m.kind === "thesis" ? "square" : m.side === "SHORT" ? "arrowDown" : m.side === "LONG" ? "arrowUp" : "circle",
-        color: m.kind === "thesis" ? "#4cc9f0" : m.side === "SHORT" ? "#ef4444" : m.side === "LONG" ? "#22c55e" : "#8c8c98",
-        text: m.label,
-        size: 1,
+        color: m.kind === "thesis" ? "#6b93ff" : m.side === "SHORT" ? DOWN : m.side === "LONG" ? UP : "#8b8b98",
+        // thesis squares stack when several traders post close together; labels only for the viewer's own trades
+        text: m.kind === "mine" ? m.label : undefined,
+        size: m.kind === "thesis" ? 0.8 : 1,
       }));
     markersRef.current.setMarkers(list);
   }, [markers, showMine, showThesis, q.data]);
 
+  const cur = legend ?? q.data?.at(-1) ?? null;
+  const up = cur ? cur.close >= cur.open : true;
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1 px-2 h-8 border-b border-line text-[11px]">
+      <div className="flex items-center gap-1 px-3 h-10 border-b border-line text-xs shrink-0">
         {INTERVALS.map((i) => (
-          <button key={i} className={`px-1.5 h-6 rounded ${interval === i ? "bg-panel-2 text-fg" : "text-muted hover:text-fg"}`} onClick={() => setInterval_(i)}>
+          <button key={i} className={`px-2 h-7 rounded-lg num ${interval === i ? "bg-panel-3 text-fg" : "text-muted hover:text-fg"}`} onClick={() => setInterval_(i)}>
             {i}
           </button>
         ))}
-        <span className="ml-auto flex items-center gap-1">
-          <button className={`px-1.5 h-6 rounded ${showMine ? "text-up" : "text-dim"}`} onClick={() => setShowMine((v) => !v)}>
-            ● my trades
-          </button>
-          <button className={`px-1.5 h-6 rounded ${showThesis ? "text-accent" : "text-dim"}`} onClick={() => setShowThesis((v) => !v)}>
-            ■ theses
-          </button>
+        <span className="mx-2 w-px h-4 bg-line-2" />
+        <span className="text-muted hidden sm:inline">Price</span>
+        <span className="ml-auto flex items-center gap-3">
+          <span className="text-dim hidden md:inline">Chart overlays</span>
+          <Toggle on={showMine} onChange={setShowMine} label="My trades" />
+          <Toggle on={showThesis} onChange={setShowThesis} label="Thesis" />
         </span>
       </div>
-      <div className="relative flex-1 min-h-[260px]">
+      <div className="relative flex-1 min-h-[280px]">
         <div ref={ref} className="absolute inset-0" />
-        {q.isLoading && <div className="absolute inset-0 skeleton" />}
-        {q.isError && <div className="absolute inset-0 flex items-center justify-center text-muted text-xs">chart unavailable: {(q.error as Error).message}</div>}
+        {cur && (
+          <div className="absolute left-3 top-2 z-10 text-[11px] num flex items-center gap-2 pointer-events-none">
+            <span className="text-fg-2 font-sans font-medium hidden sm:inline">{coin}-USD · {interval} · socialLiquid</span>
+            <span className="text-dim">O</span><span className={up ? "text-up" : "text-down"}>{fmtPx(cur.open)}</span>
+            <span className="text-dim">H</span><span className={up ? "text-up" : "text-down"}>{fmtPx(cur.high)}</span>
+            <span className="text-dim">L</span><span className={up ? "text-up" : "text-down"}>{fmtPx(cur.low)}</span>
+            <span className="text-dim">C</span><span className={up ? "text-up" : "text-down"}>{fmtPx(cur.close)}</span>
+          </div>
+        )}
+        {q.isLoading && <div className="absolute inset-0 skeleton rounded-none" />}
+        {q.isError && <div className="absolute inset-0 flex items-center justify-center text-muted text-xs">Chart unavailable: {(q.error as Error).message}</div>}
       </div>
     </div>
   );

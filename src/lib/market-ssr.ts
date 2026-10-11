@@ -27,6 +27,7 @@ export async function marketInitial(coin: string) {
   return plain({
     market,
     longShort: { longUsd, shortUsd, ratio: longUsd + shortUsd > 0 ? longUsd / (longUsd + shortUsd) : 0.5 },
+    trades: [],
     positions: positions.map((p) => ({
       id: p.id,
       address: p.address,

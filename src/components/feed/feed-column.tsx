@@ -8,21 +8,30 @@ import { fmtPct, fmtPx, fmtUsd, userLabel, userPath } from "@/lib/format";
 import { useMarkets, useMids } from "@/hooks/use-market";
 import { useAuth } from "@/hooks/use-auth";
 import { FeedCard } from "./feed-card";
-import { Avatar, Empty, Pnl, Skeleton, Toggle } from "../ui";
+import { Avatar, CoinIcon, Empty, Icon, Pnl, Skeleton, Toggle } from "../ui";
 
-type Tab = "feed" | "alerts" | "tokens" | "leaderboard";
+type Tab = "alerts" | "tokens" | "leaderboard" | "feed";
 const MIN_SIZES = [0, 1000, 10_000, 100_000];
 
 export function FeedColumn({ onNavigate }: { onNavigate?: () => void }) {
   const [tab, setTab] = useState<Tab>("feed");
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center border-b border-line px-1">
-        {(["feed", "alerts", "tokens", "leaderboard"] as Tab[]).map((t) => (
-          <button key={t} className={`tab ${tab === t ? "tab-active" : ""}`} onClick={() => setTab(t)}>
-            {t}
+      <div className="flex items-center gap-0.5 px-2 h-12 border-b border-line shrink-0">
+        {(
+          [
+            ["alerts", "Alerts", <Icon.bell key="b" />],
+            ["tokens", "Tokens", null],
+            ["leaderboard", "Leaderboard", null],
+            ["feed", "Feed", null],
+          ] as [Tab, string, React.ReactNode][]
+        ).map(([t, label, icon]) => (
+          <button key={t} className={`tab h-8 px-2.5 ${tab === t ? "tab-active" : ""}`} onClick={() => setTab(t)}>
+            {icon}
+            {label}
           </button>
         ))}
+        <span className="ml-auto text-dim pr-1"><Icon.collapse /></span>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto">
         {tab === "feed" && <Feed onNavigate={onNavigate} />}
@@ -56,9 +65,9 @@ function Feed({ onNavigate, alerts }: { onNavigate?: () => void; alerts?: boolea
   const [following, setFollowing] = useState(false);
   const [minUsd, setMinUsd] = useState(1000);
   const [coin, setCoin] = useState("");
+  const [limit, setLimit] = useState(30);
   const markets = useMarkets();
   const mids = useMids();
-  const [limit, setLimit] = useState(30);
   const q = useFeed({ coin: coin || undefined, minUsd, thesisOnly, following: alerts || following, limit });
   const [seen, setSeen] = useState<Set<string>>(new Set());
   const [fresh, setFresh] = useState<Set<string>>(new Set());
@@ -69,48 +78,58 @@ function Feed({ onNavigate, alerts }: { onNavigate?: () => void; alerts?: boolea
       const n = new Set(ids.filter((id) => !seen.has(id)));
       if (n.size) {
         setFresh(n);
-        setTimeout(() => setFresh(new Set()), 1500);
+        setTimeout(() => setFresh(new Set()), 1600);
       }
     }
     setSeen(new Set(ids));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q.data]);
+  const gated = (alerts || following) && !signedIn;
 
   return (
     <div>
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-line flex-wrap sticky top-0 bg-panel z-10">
-        <Toggle on={thesisOnly} onChange={setThesisOnly} label="thesis" />
-        {!alerts && <Toggle on={following} onChange={setFollowing} label="following" />}
-        <select className="input h-6 w-auto px-1 text-[11px]" value={minUsd} onChange={(e) => setMinUsd(Number(e.target.value))} aria-label="minimum size">
-          {MIN_SIZES.map((m) => (
-            <option key={m} value={m}>
-              {m ? `≥ ${fmtUsd(m, { compact: true })}` : "any size"}
-            </option>
-          ))}
-        </select>
-        <select className="input h-6 w-auto px-1 text-[11px]" value={coin} onChange={(e) => setCoin(e.target.value)} aria-label="market">
-          <option value="">all markets</option>
-          {markets.data?.map((m) => (
-            <option key={m.coin} value={m.coin}>
-              {m.coin}
-            </option>
-          ))}
-        </select>
-      </div>
-      {alerts && !signedIn && <Empty title="sign in to see alerts" hint="alerts are trades and theses from traders you follow." />}
-      {!alerts && following && !signedIn && <Empty title="sign in to filter by following" />}
-      {q.isLoading && <Skeleton rows={8} />}
-      {q.data && q.data.length === 0 && !q.isLoading && (alerts || following ? signedIn : true) && (
-        <Empty title={alerts || following ? "nothing from traders you follow yet" : "no events yet"} hint={alerts || following ? "follow a few traders from the leaderboard." : "the indexer writes events as tracked traders open and close positions. is `pnpm worker` running?"} />
-      )}
-      {q.data?.map((item) => (
-        <div key={item.id} className={fresh.has(item.id) ? (item.type === "SHORT" || item.type === "LIQUIDATED" ? "flash-down" : "flash-up") : ""}>
-          <FeedCard item={item} mid={mids.data ? Number(mids.data[item.coin]) : undefined} onNavigate={onNavigate} signedIn={signedIn} />
+      <div className="px-3 pt-2.5 pb-2 border-b border-line sticky top-0 bg-panel z-10 space-y-2">
+        <div className="flex items-center gap-2 text-xs text-muted">
+          <Icon.users /> <span className="font-medium text-fg-2">{alerts ? "Alerts" : "Traders"}</span>
+          <span className="ml-auto flex items-center gap-1 text-dim"><Icon.filter /> Filters</span>
         </div>
-      ))}
-      {q.data && q.data.length >= limit && limit < 100 && (
-        <button className="btn btn-ghost w-full h-9 text-muted" onClick={() => setLimit((l) => Math.min(100, l + 30))}>
-          load more
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <select className="btn btn-sm num pr-6 appearance-none bg-panel-2" value={minUsd} onChange={(e) => setMinUsd(Number(e.target.value))} aria-label="minimum size">
+            {MIN_SIZES.map((m) => (
+              <option key={m} value={m}>
+                {m ? `> ${fmtUsd(m, { compact: true })}` : "Any size"}
+              </option>
+            ))}
+          </select>
+          <select className="btn btn-sm pr-6 appearance-none bg-panel-2 max-w-[110px]" value={coin} onChange={(e) => setCoin(e.target.value)} aria-label="market">
+            <option value="">All markets</option>
+            {markets.data?.map((m) => (
+              <option key={m.coin} value={m.coin}>
+                {m.coin}
+              </option>
+            ))}
+          </select>
+          <Toggle on={thesisOnly} onChange={setThesisOnly} label="Thesis" />
+          {!alerts && <Toggle on={following} onChange={setFollowing} label="Following" />}
+        </div>
+      </div>
+      {gated && <Empty title={alerts ? "Sign in to see alerts" : "Sign in to filter by following"} hint="Alerts are trades and theses from traders you follow." icon={<Icon.bell />} />}
+      {!gated && q.isLoading && <Skeleton rows={8} h={64} />}
+      {!gated && q.data && q.data.length === 0 && (
+        <Empty
+          title={alerts || following ? "Nothing from traders you follow yet" : "No trades yet"}
+          hint={alerts || following ? "Follow a few traders from the leaderboard and their moves show up here." : "Positions appear here the moment a tracked trader opens or closes one on Hyperliquid."}
+        />
+      )}
+      {!gated &&
+        q.data?.map((item) => (
+          <div key={item.id} className={fresh.has(item.id) ? (item.type === "SHORT" || item.type === "LIQUIDATED" ? "flash-down" : "flash-up") : ""}>
+            <FeedCard item={item} mid={mids.data ? Number(mids.data[item.coin]) : undefined} onNavigate={onNavigate} signedIn={signedIn} />
+          </div>
+        ))}
+      {!gated && q.data && q.data.length >= limit && limit < 100 && (
+        <button className="btn btn-ghost w-full h-10 text-muted rounded-none" onClick={() => setLimit((l) => Math.min(100, l + 30))}>
+          Load more
         </button>
       )}
     </div>
@@ -122,41 +141,45 @@ export function Tokens({ onNavigate, full }: { onNavigate?: () => void; full?: b
   const mids = useMids();
   const [q, setQ] = useState("");
   const list = useMemo(() => (markets.data ?? []).filter((m) => m.coin.toLowerCase().includes(q.toLowerCase())), [markets.data, q]);
-  if (markets.isLoading) return <Skeleton rows={10} h={36} />;
+  if (markets.isLoading) return <Skeleton rows={10} h={44} />;
   return (
     <div>
-      <div className="p-2 sticky top-0 bg-panel border-b border-line">
-        <input className="input h-7" placeholder="filter" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="p-3 sticky top-0 bg-panel border-b border-line z-10">
+        <div className="flex items-center h-9 card-2 px-2.5 gap-2">
+          <span className="text-dim"><Icon.search /></span>
+          <input className="flex-1 bg-transparent outline-none text-[13px] placeholder:text-dim" placeholder="Filter markets" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
       </div>
-      <table className="w-full text-xs">
-        <thead className="text-[10px] uppercase text-dim">
-          <tr className="border-b border-line">
-            <th className="text-left font-medium px-3 py-1.5">market</th>
-            <th className="text-right font-medium px-2 py-1.5">price</th>
-            <th className="text-right font-medium px-2 py-1.5">24h</th>
-            {full && <th className="text-right font-medium px-2 py-1.5 hidden sm:table-cell">volume</th>}
-            {full && <th className="text-right font-medium px-2 py-1.5 hidden sm:table-cell">oi</th>}
-            {full && <th className="text-right font-medium px-3 py-1.5 hidden md:table-cell">funding</th>}
-            {!full && <th className="text-right font-medium px-3 py-1.5 hidden lg:table-cell">vol</th>}
+      <table className="w-full text-[13px]">
+        <thead className="text-[11px] text-dim">
+          <tr>
+            <th className="text-left font-medium px-4 py-2">Market</th>
+            <th className="text-right font-medium px-2 py-2">Price</th>
+            <th className="text-right font-medium px-3 py-2">24h</th>
+            {full && <th className="text-right font-medium px-3 py-2 hidden sm:table-cell">Volume</th>}
+            {full && <th className="text-right font-medium px-3 py-2 hidden sm:table-cell">Open interest</th>}
+            {full && <th className="text-right font-medium px-4 py-2 hidden md:table-cell">Funding</th>}
           </tr>
         </thead>
         <tbody>
           {list.map((m) => {
             const px = mids.data?.[m.coin] ? Number(mids.data[m.coin]) : m.markPx;
             return (
-              <tr key={m.coin} className="border-b border-line/60 hover:bg-panel-2">
-                <td className="px-3 py-1.5">
-                  <Link href={`/m/${m.coin}`} onClick={onNavigate} className="font-semibold hover:underline">
-                    {m.coin}
+              <tr key={m.coin} className="row-hover">
+                <td className="px-4 py-2">
+                  <Link href={`/m/${m.coin}`} onClick={onNavigate} className="flex items-center gap-2.5">
+                    <CoinIcon coin={m.coin} size={full ? 30 : 24} />
+                    <span className="leading-tight">
+                      <span className="font-semibold block">{m.coin}</span>
+                      <span className="text-[11px] text-dim">{m.maxLeverage}x · perp</span>
+                    </span>
                   </Link>
-                  <span className="text-dim ml-1">{m.maxLeverage}x</span>
                 </td>
-                <td className="num text-right px-2">{fmtPx(px)}</td>
-                <td className={`num text-right px-2 ${m.change24h >= 0 ? "text-up" : "text-down"}`}>{fmtPct(m.change24h)}</td>
-                {full && <td className="num text-right px-2 text-muted hidden sm:table-cell">{fmtUsd(m.volume24h, { compact: true })}</td>}
-                {full && <td className="num text-right px-2 text-muted hidden sm:table-cell">{fmtUsd(m.openInterestUsd, { compact: true })}</td>}
-                {full && <td className="num text-right px-3 text-muted hidden md:table-cell">{fmtPct(m.funding, 4)}</td>}
-                {!full && <td className="num text-right px-3 text-muted hidden lg:table-cell">{fmtUsd(m.volume24h, { compact: true })}</td>}
+                <td className="num text-right px-2 font-medium">{fmtPx(px)}</td>
+                <td className={`num text-right px-3 ${m.change24h >= 0 ? "text-up" : "text-down"}`}>{m.change24h >= 0 ? "▲" : "▼"} {fmtPct(Math.abs(m.change24h), 2, false)}</td>
+                {full && <td className="num text-right px-3 text-muted hidden sm:table-cell">{fmtUsd(m.volume24h, { compact: true })}</td>}
+                {full && <td className="num text-right px-3 text-muted hidden sm:table-cell">{fmtUsd(m.openInterestUsd, { compact: true })}</td>}
+                {full && <td className={`num text-right px-4 hidden md:table-cell ${m.funding >= 0 ? "text-up" : "text-down"}`}>{fmtPct(m.funding, 4)}</td>}
               </tr>
             );
           })}
@@ -168,23 +191,23 @@ export function Tokens({ onNavigate, full }: { onNavigate?: () => void; full?: b
 
 function MiniLeaderboard({ onNavigate }: { onNavigate?: () => void }) {
   const q = useQuery({ queryKey: ["leaderboard", "pnl7d"], queryFn: () => api<{ rows: LeaderboardRow[] }>("/api/leaderboard?by=pnl7d").then((r) => r.rows), refetchInterval: 30_000 });
-  if (q.isLoading) return <Skeleton rows={10} h={36} />;
-  if (!q.data?.length) return <Empty title="no ranked traders yet" hint="traders need 5 closed trades to rank." />;
+  if (q.isLoading) return <Skeleton rows={10} h={44} />;
+  if (!q.data?.length) return <Empty title="Nobody ranks yet" hint="Traders need 5 closed trades on record to appear. Give the indexer a little time." />;
   return (
     <div>
-      <div className="px-3 py-1.5 text-[10px] uppercase text-dim border-b border-line flex justify-between">
-        <span>7d realised pnl</span>
-        <Link href="/leaderboard" onClick={onNavigate} className="hover:text-fg normal-case">
-          full board →
-        </Link>
+      <div className="px-4 h-9 flex items-center justify-between text-[11px] text-dim border-b border-line">
+        <span>7d realised PnL</span>
+        <Link href="/leaderboard" onClick={onNavigate} className="hover:text-fg">Full board →</Link>
       </div>
-      {q.data.slice(0, 25).map((r) => (
-        <Link key={r.user.address} href={userPath(r.user)} onClick={onNavigate} className="flex items-center gap-2 px-3 h-9 border-b border-line/60 hover:bg-panel-2">
-          <span className="num text-dim w-5">{r.rank}</span>
-          <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={20} />
-          <span className="truncate text-xs">{userLabel(r.user)}</span>
-          <span className="ml-auto num text-[11px] text-muted">{r.stats.winRate !== null ? `${Math.round(r.stats.winRate * 100)}%` : ""}</span>
-          <Pnl value={r.stats.pnl7d} compact className="text-xs w-16 text-right" />
+      {q.data.slice(0, 30).map((r) => (
+        <Link key={r.user.address} href={userPath(r.user)} onClick={onNavigate} className="flex items-center gap-2.5 px-4 h-12 row-hover">
+          <span className={`num text-xs w-5 ${r.rank <= 3 ? "text-brand font-semibold" : "text-dim"}`}>{r.rank}</span>
+          <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={26} />
+          <span className="min-w-0 leading-tight">
+            <span className="block truncate text-[13px] font-medium">{userLabel(r.user)}</span>
+            <span className="block text-[11px] text-dim num">{r.stats.winRate !== null ? `${Math.round(r.stats.winRate * 100)}% win` : ""} · {r.stats.closedTrades} trades</span>
+          </span>
+          <Pnl value={r.stats.pnl7d} compact className="ml-auto text-[13px] font-semibold" />
         </Link>
       ))}
     </div>

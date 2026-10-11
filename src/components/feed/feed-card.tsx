@@ -6,75 +6,109 @@ import type { FeedItem } from "@/lib/queries";
 import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, timeAgo } from "@/lib/format";
 import { livePnl } from "@/hooks/use-market";
-import { Avatar, OutcomePill, Pnl, TraderLink } from "../ui";
+import { Avatar, CoinIcon, EventPill, Icon, OutcomePill, Pnl, TraderLink } from "../ui";
 
-const TAG: Record<string, { label: string; cls: string }> = {
-  LONG: { label: "long", cls: "bg-up/15 text-up" },
-  SHORT: { label: "short", cls: "bg-down/15 text-down" },
-  THESIS: { label: "thesis", cls: "bg-accent/15 text-accent" },
-  CLOSED: { label: "closed", cls: "bg-line text-muted" },
-  LIQUIDATED: { label: "liquidated", cls: "bg-down/30 text-down" },
-};
+type Payload = { side?: string; sizeUsd?: number; size?: number; leverage?: number; entryPx?: number; closePx?: number | null; realisedPnl?: number; holdMs?: number; text?: string };
 
 export function FeedCard({ item, mid, onNavigate, signedIn }: { item: FeedItem; mid?: number; onNavigate?: () => void; signedIn: boolean }) {
-  const p = item.payload as { side?: string; sizeUsd?: number; leverage?: number; entryPx?: number; closePx?: number; realisedPnl?: number; holdMs?: number; text?: string };
-  const tag = TAG[item.type];
-  const side = (p.side ?? item.position?.side) as string | undefined;
-  const sizeUsd = p.sizeUsd ?? item.position?.sizeUsd;
-  const lev = p.leverage ?? item.position?.leverage;
-  const entry = p.entryPx ?? item.position?.entryPx;
-  const isClosed = item.type === "CLOSED" || item.type === "LIQUIDATED";
+  const p = item.payload as Payload;
   const pos = item.position;
+  const side = (p.side ?? pos?.side) as string | undefined;
+  const sizeUsd = p.sizeUsd ?? pos?.sizeUsd;
+  const lev = p.leverage ?? pos?.leverage;
+  const entry = p.entryPx ?? pos?.entryPx;
+  const isClosed = item.type === "CLOSED" || item.type === "LIQUIDATED";
+  const isThesis = item.type === "THESIS";
   const live = pos && !pos.closedAt ? livePnl({ side: pos.side, size: pos.size, entryPx: pos.entryPx }, mid) : null;
-  const name = item.user?.handle ?? item.user?.displayName ?? null;
-  const tagLine = item.type === "THESIS" && side ? `${side.toLowerCase()} ${item.coin}` : item.coin;
+  const roe = live !== null && pos && pos.sizeUsd ? (live * pos.leverage) / pos.sizeUsd : null;
+  const handle = item.user?.handle;
+  const displayName = item.user?.displayName;
 
   return (
-    <article className="px-3 py-2.5 border-b border-line hover:bg-panel-2/60 transition-colors">
-      <div className="flex items-start gap-2">
-        <Avatar address={item.address} url={item.user?.avatarUrl} handle={name} size={28} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <TraderLink address={item.address} handle={item.user?.handle} displayName={item.user?.displayName} className="font-medium text-xs truncate max-w-[9rem]" />
-            {item.user?.xHandle && (
-              <a href={`https://x.com/${item.user.xHandle}`} target="_blank" rel="noreferrer" className="text-dim text-[10px] hover:text-fg">
-                @{item.user.xHandle}
-              </a>
-            )}
-            <span className={`pill ${tag.cls}`}>{tag.label}</span>
-            <Link href={`/m/${item.coin}`} onClick={onNavigate} className="font-semibold text-xs hover:underline">
-              {tagLine}
-            </Link>
-            <span className="ml-auto text-[10px] text-dim num">{timeAgo(item.time)}</span>
-          </div>
-
-          <div className="mt-1 flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[11px] text-muted num">
-            {sizeUsd !== undefined && <span className="text-fg">{fmtUsd(sizeUsd, { compact: true })}</span>}
-            {lev !== undefined && <span>{lev}x</span>}
-            {entry !== undefined && <span>@ {fmtPx(entry)}</span>}
-            {isClosed && p.closePx !== undefined && p.closePx !== null && <span>→ {fmtPx(p.closePx)}</span>}
-            {isClosed && p.holdMs !== undefined && <span>held {fmtDuration(p.holdMs)}</span>}
-            {isClosed && <Pnl value={p.realisedPnl ?? pos?.realisedPnl} className="ml-auto font-semibold" />}
-            {!isClosed && item.type !== "THESIS" && live !== null && <Pnl value={live} className="ml-auto" />}
-          </div>
-
-          {item.thesis && (
-            <ThesisBody item={item} live={live} signedIn={signedIn} />
+    <article className={`relative px-4 py-3 border-b border-line row-hover ${isThesis ? "thread" : ""}`}>
+      <div className="flex items-center gap-2.5">
+        <TraderLink address={item.address} handle={handle} displayName={displayName} className="shrink-0 hover:no-underline">
+          <Avatar address={item.address} url={item.user?.avatarUrl} handle={handle ?? displayName} size={32} />
+        </TraderLink>
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <TraderLink address={item.address} handle={handle} displayName={displayName} className="font-semibold text-[13px] truncate max-w-[10rem]" />
+          {item.user?.xHandle && (
+            <a href={`https://x.com/${item.user.xHandle}`} target="_blank" rel="noreferrer" className="text-dim hover:text-fg" title={`@${item.user.xHandle}`}>
+              <Icon.x />
+            </a>
           )}
+          <EventPill type={item.type} />
         </div>
+        <span className="text-[11px] text-dim num shrink-0">{timeAgo(item.time)}</span>
+      </div>
+
+      <div className="pl-[42px] mt-1.5">
+        {!isClosed && (
+          <div className="flex items-center gap-1.5 text-[13px] flex-wrap">
+            <Link href={`/m/${item.coin}`} onClick={onNavigate} className="flex items-center gap-1.5 font-semibold hover:underline underline-offset-2">
+              <CoinIcon coin={item.coin} size={18} />
+              {item.coin}
+            </Link>
+            {sizeUsd !== undefined && <span className="num font-semibold">{fmtUsd(sizeUsd, { compact: true })}</span>}
+            {entry !== undefined && (
+              <>
+                <span className="text-dim">at</span>
+                <span className="num text-fg-2">{fmtPx(entry)}</span>
+              </>
+            )}
+            {lev !== undefined && <span className="pill pill-neutral num">{lev}x</span>}
+            {isThesis && roe !== null && (
+              <span className={`num text-xs ${roe >= 0 ? "text-up" : "text-down"}`}>
+                ({roe >= 0 ? "▲" : "▼"} {Math.abs(roe * 100).toFixed(2)}%)
+              </span>
+            )}
+            {isThesis && pos && !pos.closedAt && <span className="w-1.5 h-1.5 rounded-full bg-thesis live-dot" />}
+            {!isThesis && live !== null && <Pnl value={live} className="ml-auto text-xs font-medium" />}
+          </div>
+        )}
+
+        {isClosed && (
+          <div className="card-2 flex items-center gap-2.5 px-3 py-2 mt-0.5">
+            <CoinIcon coin={item.coin} size={28} />
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="flex items-center gap-1.5">
+                <Link href={`/m/${item.coin}`} onClick={onNavigate} className="font-semibold text-[13px] hover:underline underline-offset-2">
+                  {item.coin}
+                </Link>
+                {side && <span className={`text-[11px] font-medium ${side === "LONG" ? "text-up" : "text-down"}`}>{side === "LONG" ? "Long" : "Short"}</span>}
+                {lev !== undefined && <span className="text-[11px] text-dim num">{lev}x</span>}
+              </div>
+              <div className="text-[11px] text-muted num mt-0.5 truncate">
+                {sizeUsd !== undefined && <span>{fmtUsd(sizeUsd, { compact: true })} · </span>}
+                {entry !== undefined && <span>{fmtPx(entry)}</span>}
+                {p.closePx !== undefined && p.closePx !== null && <span> → {fmtPx(p.closePx)}</span>}
+                {p.holdMs !== undefined && <span> · held {fmtDuration(p.holdMs)}</span>}
+              </div>
+            </div>
+            <div className="text-right leading-tight shrink-0">
+              <Pnl value={p.realisedPnl ?? pos?.realisedPnl} className="text-[13px] font-semibold block" />
+              {sizeUsd !== undefined && lev !== undefined && (p.realisedPnl ?? pos?.realisedPnl) !== undefined && (
+                <span className={`num text-[11px] ${(p.realisedPnl ?? pos?.realisedPnl ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                  {(p.realisedPnl ?? pos?.realisedPnl ?? 0) >= 0 ? "▲" : "▼"} {Math.abs((((p.realisedPnl ?? pos?.realisedPnl ?? 0) * lev) / sizeUsd) * 100).toFixed(2)}%
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {item.thesis && <ThesisBody item={item} signedIn={signedIn} />}
       </div>
     </article>
   );
 }
 
-function ThesisBody({ item, live, signedIn }: { item: FeedItem; live: number | null; signedIn: boolean }) {
+function ThesisBody({ item, signedIn }: { item: FeedItem; signedIn: boolean }) {
   const t = item.thesis!;
   const qc = useQueryClient();
   const [likes, setLikes] = useState(t.likes);
   const [liked, setLiked] = useState(t.likedByMe);
   const [busy, setBusy] = useState(false);
   const pos = item.position;
-  const settledPnl = pos?.closedAt ? pos.realisedPnl : null;
   const toggleLike = async () => {
     if (!signedIn || busy) return;
     setBusy(true);
@@ -88,17 +122,16 @@ function ThesisBody({ item, live, signedIn }: { item: FeedItem; live: number | n
     }
   };
   return (
-    <div className="mt-1.5">
-      <p className="text-xs text-fg/90 whitespace-pre-wrap break-words">{t.text}</p>
-      <div className="mt-1.5 flex items-center gap-2">
-        {t.outcome !== "OPEN" ? <OutcomePill outcome={t.outcome} /> : pos ? <span className="pill bg-accent/10 text-accent">live</span> : <span className="pill bg-line text-muted">no position</span>}
-        {t.outcome === "OPEN" && live !== null && <Pnl value={live} className="text-[11px]" />}
-        {settledPnl !== null && settledPnl !== undefined && <Pnl value={settledPnl} className="text-[11px]" />}
-        <button onClick={toggleLike} className={`ml-auto text-[11px] num ${liked ? "text-accent" : "text-dim hover:text-fg"} ${signedIn ? "" : "cursor-default"}`} title={signedIn ? "like" : "sign in to like"}>
-          ♥ {likes}
+    <div className="mt-2">
+      <p className="text-[13.5px] leading-snug text-fg whitespace-pre-wrap break-words">{t.text}</p>
+      <div className="mt-2 flex items-center gap-3">
+        <button onClick={toggleLike} className={`inline-flex items-center gap-1 text-xs num ${liked ? "text-down" : "text-dim hover:text-fg"} ${signedIn ? "" : "cursor-default"}`} title={signedIn ? "like" : "sign in to like"}>
+          <Icon.heart filled={liked} /> {likes}
         </button>
-        <Link href={`/t/${item.user?.handle ?? item.address}/thesis/${t.id}`} className="text-[11px] text-dim hover:text-fg">
-          ↗
+        {t.outcome !== "OPEN" && <OutcomePill outcome={t.outcome} />}
+        {t.outcome !== "OPEN" && pos?.closedAt && <Pnl value={pos.realisedPnl} className="text-xs" />}
+        <Link href={`/t/${item.user?.handle ?? item.address}/thesis/${t.id}`} className="ml-auto text-dim hover:text-fg" title="permalink">
+          <Icon.share />
         </Link>
       </div>
     </div>

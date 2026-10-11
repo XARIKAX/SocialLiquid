@@ -28,7 +28,8 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
     take: 200,
     include: { theses: { orderBy: { createdAt: "desc" }, take: 1, include: { _count: { select: { likes: true } } } } },
   });
-  const users = await usersByAddress(positions.map((p) => p.address));
+  const fills = await prisma.fill.findMany({ where: { coin }, orderBy: { time: "desc" }, take: 60 });
+  const users = await usersByAddress([...positions.map((p) => p.address), ...fills.map((f) => f.address)]);
   const longUsd = positions.filter((p) => p.side === "LONG").reduce((a, p) => a + Number(p.sizeUsd), 0);
   const shortUsd = positions.filter((p) => p.side === "SHORT").reduce((a, p) => a + Number(p.sizeUsd), 0);
 
@@ -49,6 +50,19 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
     plain({
       market,
       longShort: { longUsd, shortUsd, ratio: longUsd + shortUsd > 0 ? longUsd / (longUsd + shortUsd) : 0.5 },
+      trades: fills.map((f) => ({
+        id: f.id,
+        address: f.address,
+        user: users.get(f.address) ?? null,
+        dir: f.dir,
+        side: f.side,
+        px: Number(f.px),
+        sz: Number(f.sz),
+        usd: Number(f.px) * Number(f.sz),
+        closedPnl: Number(f.closedPnl),
+        liquidation: f.liquidation,
+        time: f.time.toISOString(),
+      })),
       positions: positions.map((p) => ({
         id: p.id,
         address: p.address,

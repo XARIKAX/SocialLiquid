@@ -2,9 +2,10 @@ import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <div className="p-10 text-center text-muted">
-      <div className="text-lg text-fg">nothing here</div>
-      <Link href="/" className="text-accent hover:underline text-xs">back to the feed</Link>
+    <div className="card p-12 text-center max-w-md mx-auto mt-10">
+      <div className="text-lg font-semibold">Nothing here</div>
+      <p className="text-sm text-muted mt-1">That market or trader does not exist.</p>
+      <Link href="/" className="btn btn-primary mt-4">Back to the feed</Link>
     </div>
   );
 }

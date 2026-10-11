@@ -1,93 +1,175 @@
 "use client";
 import Link from "next/link";
-import { fmtUsd, shortAddr, userLabel, userPath } from "@/lib/format";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { fmtUsd, userLabel, userPath } from "@/lib/format";
 
-export function Avatar({ address, url, size = 24, handle }: { address: string; url?: string | null; size?: number; handle?: string | null }) {
-  const hue = parseInt(address.slice(2, 8), 16) % 360;
-  const hue2 = parseInt(address.slice(-6), 16) % 360;
+/* ---------- identity ---------- */
+
+export function Avatar({ address, url, size = 28, handle, ring }: { address: string; url?: string | null; size?: number; handle?: string | null; ring?: boolean }) {
+  const h1 = parseInt(address.slice(2, 8), 16) % 360;
+  const h2 = (h1 + 40 + (parseInt(address.slice(-4), 16) % 80)) % 360;
   const label = (handle ?? address.slice(2, 4)).slice(0, 2).toUpperCase();
+  const cls = `rounded-full shrink-0 ${ring ? "ring-2 ring-bg" : ""}`;
   return url ? (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt="" width={size} height={size} className="rounded-full shrink-0 object-cover" style={{ width: size, height: size }} />
+    <img src={url} alt="" width={size} height={size} className={`${cls} object-cover`} style={{ width: size, height: size }} />
   ) : (
     <span
-      className="rounded-full shrink-0 inline-flex items-center justify-center font-bold text-black/80"
-      style={{ width: size, height: size, fontSize: size * 0.38, background: `linear-gradient(135deg, hsl(${hue} 70% 60%), hsl(${hue2} 70% 45%))` }}
+      className={`${cls} inline-flex items-center justify-center font-bold text-black/75`}
+      style={{ width: size, height: size, fontSize: Math.max(9, size * 0.36), background: `linear-gradient(135deg, hsl(${h1} 72% 62%), hsl(${h2} 70% 42%))` }}
     >
       {label}
     </span>
   );
 }
 
+const ICON_BASE = "https://app.hyperliquid.xyz/coins";
+
+export function CoinIcon({ coin, size = 20, className = "" }: { coin: string; size?: number; className?: string }) {
+  const [broken, setBroken] = useState(false);
+  const hue = (coin.charCodeAt(0) * 47 + (coin.charCodeAt(1) || 0) * 13) % 360;
+  if (broken)
+    return (
+      <span className={`rounded-full inline-flex items-center justify-center font-bold text-white/90 shrink-0 ${className}`} style={{ width: size, height: size, fontSize: size * 0.42, background: `hsl(${hue} 45% 32%)` }}>
+        {coin.slice(0, 1)}
+      </span>
+    );
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={`${ICON_BASE}/${coin}.svg`} alt="" width={size} height={size} onError={() => setBroken(true)} className={`rounded-full shrink-0 bg-panel-3 ${className}`} style={{ width: size, height: size }} />
+  );
+}
+
 export function TraderLink({ address, handle, displayName, className = "", children }: { address: string; handle?: string | null; displayName?: string | null; className?: string; children?: ReactNode }) {
   return (
-    <Link href={userPath({ handle, address })} className={`hover:underline ${className}`} onClick={(e) => e.stopPropagation()}>
+    <Link href={userPath({ handle, address })} className={`hover:underline underline-offset-2 ${className}`} onClick={(e) => e.stopPropagation()}>
       {children ?? userLabel({ handle, displayName, address })}
     </Link>
   );
 }
 
-export function Pnl({ value, className = "", compact, pct }: { value: number | null | undefined; className?: string; compact?: boolean; pct?: number | null }) {
+/* ---------- numbers ---------- */
+
+export function Pnl({ value, className = "", compact, pct, arrow }: { value: number | null | undefined; className?: string; compact?: boolean; pct?: number | null; arrow?: boolean }) {
   if (value === null || value === undefined) return <span className={`text-dim ${className}`}>–</span>;
   const c = value > 0 ? "text-up" : value < 0 ? "text-down" : "text-muted";
   return (
     <span className={`num ${c} ${className}`}>
       {fmtUsd(value, { sign: true, compact })}
-      {pct !== undefined && pct !== null && <span className="opacity-70 ml-1">({pct > 0 ? "+" : ""}{(pct * 100).toFixed(1)}%)</span>}
+      {pct !== undefined && pct !== null && (
+        <span className="ml-1 opacity-80 text-[0.9em]">
+          {arrow ? (pct >= 0 ? "▲" : "▼") : ""} {Math.abs(pct * 100).toFixed(2)}%
+        </span>
+      )}
     </span>
   );
 }
 
-export function SidePill({ side }: { side: string }) {
+export function Pct({ value, className = "", digits = 2 }: { value: number | null | undefined; className?: string; digits?: number }) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return <span className={`text-dim ${className}`}>–</span>;
+  const c = value > 0 ? "text-up" : value < 0 ? "text-down" : "text-muted";
+  return (
+    <span className={`num ${c} ${className}`}>
+      {value > 0 ? "▲" : value < 0 ? "▼" : ""} {Math.abs(value * 100).toFixed(digits)}%
+    </span>
+  );
+}
+
+/* ---------- tags ---------- */
+
+export function SidePill({ side, label }: { side: string; label?: string }) {
   const up = side === "LONG";
-  return <span className={`pill ${up ? "bg-up/15 text-up" : "bg-down/15 text-down"}`}>{side.toLowerCase()}</span>;
+  return <span className={`pill ${up ? "pill-up" : "pill-down"}`}>{label ?? (up ? "Long" : "Short")}</span>;
+}
+
+export function EventPill({ type }: { type: string }) {
+  const map: Record<string, [string, string]> = {
+    LONG: ["Long", "pill-up"],
+    SHORT: ["Short", "pill-down"],
+    THESIS: ["Thesis", "pill-thesis"],
+    CLOSED: ["Closed", "pill-neutral"],
+    LIQUIDATED: ["Liquidated", "pill-liq"],
+  };
+  const [label, cls] = map[type] ?? [type, "pill-neutral"];
+  return <span className={`pill ${cls}`}>{label}</span>;
 }
 
 export function OutcomePill({ outcome }: { outcome: string }) {
-  const map: Record<string, string> = {
-    OPEN: "bg-accent/15 text-accent",
-    PROFIT: "bg-up/15 text-up",
-    LOSS: "bg-down/15 text-down",
-    LIQUIDATED: "bg-down/25 text-down",
-    DUMPED: "bg-warn/20 text-warn",
+  const map: Record<string, [string, string]> = {
+    OPEN: ["Holding", "pill-brand"],
+    PROFIT: ["Closed in profit", "pill-up"],
+    LOSS: ["Closed at loss", "pill-down"],
+    LIQUIDATED: ["Liquidated", "pill-liq"],
+    DUMPED: ["Dumped < 1h", "pill-warn"],
   };
-  const label: Record<string, string> = { OPEN: "held", PROFIT: "closed in profit", LOSS: "closed at loss", LIQUIDATED: "liquidated", DUMPED: "dumped <1h" };
-  return <span className={`pill ${map[outcome] ?? ""}`}>{label[outcome] ?? outcome.toLowerCase()}</span>;
+  const [label, cls] = map[outcome] ?? [outcome, "pill-neutral"];
+  return <span className={`pill ${cls}`}>{label}</span>;
 }
 
-export function Empty({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center text-center py-10 px-4 text-muted">
-      <div className="text-sm">{title}</div>
-      {hint && <div className="text-xs text-dim mt-1 max-w-xs">{hint}</div>}
-    </div>
-  );
+/* ---------- layout bits ---------- */
+
+export function Card({ children, className = "", pad = true }: { children: ReactNode; className?: string; pad?: boolean }) {
+  return <section className={`card ${pad ? "p-4" : ""} ${className}`}>{children}</section>;
 }
 
-export function Skeleton({ rows = 5, h = 56 }: { rows?: number; h?: number }) {
+export function Chip({ label, children, className = "", tone }: { label: string; children: ReactNode; className?: string; tone?: "up" | "down" | null }) {
   return (
-    <div className="p-2 space-y-2">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="skeleton" style={{ height: h }} />
-      ))}
-    </div>
-  );
-}
-
-export function Stat({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
-  return (
-    <div className={`flex flex-col ${className}`}>
-      <span className="text-[10px] uppercase tracking-wide text-dim">{label}</span>
-      <span className="num text-xs">{children}</span>
+    <div className={`chip ${className}`}>
+      <span className="chip-label">{label}</span>
+      <span className={`chip-value num ${tone === "up" ? "text-up" : tone === "down" ? "text-down" : ""}`}>{children}</span>
     </div>
   );
 }
 
 export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <button type="button" onClick={() => onChange(!on)} className={`btn h-6 px-2 text-[11px] ${on ? "border-accent/60 text-accent bg-accent/10" : "text-muted"}`}>
+    <button type="button" onClick={() => onChange(!on)} className={`toggle ${on ? "toggle-on" : ""}`}>
+      <span className="toggle-box">{on && <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="#000" strokeWidth="2"><path d="M1.5 5.5l2.5 2.5 4.5-5" /></svg>}</span>
       {label}
     </button>
+  );
+}
+
+export function Empty({ title, hint, icon }: { title: string; hint?: string; icon?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-12 px-6">
+      <div className="w-10 h-10 rounded-full bg-panel-2 border border-line flex items-center justify-center text-muted mb-3">{icon ?? <Icon.spark />}</div>
+      <div className="text-[13px] font-medium text-fg-2">{title}</div>
+      {hint && <div className="text-xs text-dim mt-1 max-w-[260px] text-balance">{hint}</div>}
+    </div>
+  );
+}
+
+export function Skeleton({ rows = 5, h = 56, className = "" }: { rows?: number; h?: number; className?: string }) {
+  return (
+    <div className={`p-3 space-y-2 ${className}`}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="skeleton" style={{ height: h, opacity: 1 - i * 0.1 }} />
+      ))}
+    </div>
+  );
+}
+
+export function Stat({ label, children, className = "", big }: { label: string; children: ReactNode; className?: string; big?: boolean }) {
+  return (
+    <div className={`flex flex-col ${className}`}>
+      <span className="text-[11px] text-muted">{label}</span>
+      <span className={`num ${big ? "text-lg font-semibold" : "text-[13px] font-medium"}`}>{children}</span>
+    </div>
+  );
+}
+
+export { Icon } from "./icons";
+import { Icon } from "./icons";
+
+export function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+  const s = size === "lg" ? "text-2xl" : size === "sm" ? "text-base" : "text-[19px]";
+  return (
+    <span className={`inline-flex items-center gap-1.5 font-semibold tracking-[-0.03em] ${s} select-none`}>
+      <span className="text-brand"><Icon.drop /></span>
+      <span>
+        social<span className="text-brand">Liquid</span>
+      </span>
+    </span>
   );
 }

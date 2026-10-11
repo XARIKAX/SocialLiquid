@@ -47,7 +47,14 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
         thesis: row?.theses[0] ? { id: row.theses[0].id, text: row.theses[0].text } : null,
       };
     });
-  const recentClosed = await prisma.position.findMany({ where: { address: t.address, closedAt: { not: null } }, orderBy: { closedAt: "desc" }, take: 20 });
+  const recentClosed = await prisma.position.findMany({ where: { address: t.address, closedAt: { not: null } }, orderBy: { closedAt: "desc" }, take: 50 });
+  const series = await prisma.position.findMany({
+    where: { address: t.address, closedAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
+    orderBy: { closedAt: "asc" },
+    select: { closedAt: true, realisedPnl: true },
+  });
+  const fills = await prisma.fill.findMany({ where: { address: t.address }, orderBy: { time: "desc" }, take: 60 });
+  const following = t.user ? await prisma.follow.count({ where: { followerId: t.user.id } }) : 0;
   return json(
     plain({
       address: t.address,
@@ -57,7 +64,10 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
       isMe: s?.address === t.address,
       isFollowing: !!isFollowing,
       followers,
+      following,
       stats,
+      pnlSeries: series.map((p) => ({ t: p.closedAt!.getTime(), pnl: Number(p.realisedPnl ?? 0) })),
+      fills: fills.map((f) => ({ id: f.id, coin: f.coin, dir: f.dir, px: Number(f.px), sz: Number(f.sz), usd: Number(f.px) * Number(f.sz), closedPnl: Number(f.closedPnl), liquidation: f.liquidation, time: f.time.toISOString() })),
       accountValue: state ? Number(state.marginSummary.accountValue) : null,
       open,
       recentClosed: recentClosed.map((p) => ({

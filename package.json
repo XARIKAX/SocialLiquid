@@ -19,6 +19,7 @@
     "@nktkas/hyperliquid": "0.33.3",
     "@prisma/client": "6.19.3",
     "@tanstack/react-query": "^5.104.1",
+    "geist": "^1.7.2",
     "jose": "^6.1.0",
     "lightweight-charts": "^5.2.1",
     "next": "15.5.27",

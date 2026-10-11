@@ -2,12 +2,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useConnectModal } from "./connect-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
-import { api } from "@/lib/client";
+import { api, HL_APP_URL_CLIENT } from "@/lib/client";
 import { fmtPct, fmtPx, fmtUsd, shortAddr } from "@/lib/format";
-import { Avatar } from "./ui";
+import { Avatar, CoinIcon, Icon, Logo } from "./ui";
+import { useConnectModal } from "./connect-modal";
 
 type SearchResult = { coins: { coin: string; markPx: number; change24h: number }[]; traders: { address: string; handle: string | null; avatarUrl: string | null }[] };
 
@@ -15,42 +15,56 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
   const { address, isConnected, signedIn, needsSignIn, signIn, busy, me, signOut } = useAuth();
   const bal = useBalance(signedIn ? address : null);
   const connect = useConnectModal();
+  const upnl = bal.data?.positions.reduce((a, p) => a + p.unrealizedPnl, 0) ?? 0;
   return (
-    <header className="h-12 border-b border-line bg-panel flex items-center gap-3 px-3 sticky top-0 z-30">
-      <button className="md:hidden btn btn-ghost px-2" onClick={onToggleFeed} aria-label="toggle feed">
-        ☰
+    <header className="h-14 flex items-center gap-3 px-3 md:px-4 sticky top-0 z-30 bg-bg/90 backdrop-blur">
+      <button className="md:hidden btn btn-ghost px-2 h-9" onClick={onToggleFeed} aria-label="toggle feed">
+        <Icon.menu />
       </button>
-      <Link href="/" className="font-semibold tracking-tight text-base leading-none select-none">
-        <span className="text-fg">social</span>
-        <span className="text-accent">Liquid</span>
+      <Link href="/" className="shrink-0">
+        <Logo />
       </Link>
-      {me?.network && me.network !== "mainnet" && <span className="pill bg-warn/20 text-warn">{me.network}</span>}
-      <nav className="hidden md:flex items-center gap-1 ml-2 text-muted">
-        <Link className="btn btn-ghost h-7" href="/">feed</Link>
-        <Link className="btn btn-ghost h-7" href="/tokens">tokens</Link>
-        <Link className="btn btn-ghost h-7" href="/leaderboard">leaderboard</Link>
-      </nav>
-      <Search />
-      <div className="ml-auto flex items-center gap-2">
-        {signedIn && (
-          <Link href={`/t/${me?.user?.handle ?? address}`} className="hidden sm:flex items-center gap-2 btn btn-ghost h-8">
-            <Avatar address={address!} handle={me?.user?.handle} size={20} />
-            <span className="text-xs">{me?.user?.handle ?? shortAddr(address!)}</span>
-            <span className="num text-xs text-muted border-l border-line pl-2">{bal.data ? fmtUsd(bal.data.withdrawable) : "…"}</span>
-          </Link>
-        )}
-        {needsSignIn && (
-          <button className="btn btn-primary" onClick={signIn} disabled={busy}>
-            {busy ? "signing…" : "sign in"}
+      {me?.network && me.network !== "mainnet" && <span className="pill pill-warn uppercase tracking-wide">{me.network}</span>}
+
+      <div className="flex-1 flex justify-center">
+        <Search />
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        {signedIn && address ? (
+          <>
+            <div className="hidden sm:flex flex-col justify-center card px-3 h-10 rounded-[10px] leading-tight">
+              <span className="num text-[13px]">
+                {bal.data ? fmtUsd(bal.data.withdrawable) : "…"} <span className="text-muted font-normal">cash</span>
+              </span>
+              <a href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer" className="text-[11px] text-brand font-medium hover:underline">
+                Deposit more
+              </a>
+            </div>
+            <Link href={`/t/${me?.user?.handle ?? address}`} className="flex items-center gap-2.5 card pl-3 pr-1.5 h-10 rounded-[10px] hover:bg-panel-2 transition-colors">
+              <span className="flex flex-col justify-center leading-tight">
+                <span className="num text-[13px]">{bal.data ? fmtUsd(bal.data.accountValue) : "…"}</span>
+                <span className={`num text-[11px] ${upnl >= 0 ? "text-up" : "text-down"}`}>
+                  {fmtUsd(upnl, { sign: true })} <span className="text-dim">open</span>
+                </span>
+              </span>
+              <Avatar address={address} handle={me?.user?.handle} size={30} />
+            </Link>
+            <button className="btn btn-ghost h-9 px-2 text-xs" onClick={signOut} title="sign out">
+              ⎋
+            </button>
+          </>
+        ) : needsSignIn ? (
+          <button className="btn btn-primary h-10" onClick={signIn} disabled={busy}>
+            {busy ? "Signing…" : `Sign in · ${shortAddr(address!)}`}
           </button>
-        )}
-        {!isConnected ? (
-          <button className="btn btn-primary" onClick={connect.open}>
-            connect
+        ) : isConnected ? (
+          <button className="btn h-10" onClick={signOut}>
+            Disconnect
           </button>
         ) : (
-          <button className="btn" onClick={signOut} title={signedIn ? "sign out" : "disconnect"}>
-            {signedIn ? "sign out" : "disconnect"}
+          <button className="btn btn-primary h-10 px-4" onClick={connect.open}>
+            Connect
           </button>
         )}
       </div>
@@ -64,15 +78,26 @@ function Search() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!q.trim()) return setRes(null);
-    const t = setTimeout(() => api<SearchResult>(`/api/search?q=${encodeURIComponent(q)}`).then(setRes).catch(() => setRes(null)), 150);
+    const t = setTimeout(() => api<SearchResult>(`/api/search?q=${encodeURIComponent(q)}`).then(setRes).catch(() => setRes(null)), 120);
     return () => clearTimeout(t);
   }, [q]);
   useEffect(() => {
     const h = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "/" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
     document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    document.addEventListener("keydown", k);
+    return () => {
+      document.removeEventListener("mousedown", h);
+      document.removeEventListener("keydown", k);
+    };
   }, []);
   const go = (href: string) => {
     setOpen(false);
@@ -80,37 +105,49 @@ function Search() {
     router.push(href);
   };
   return (
-    <div ref={ref} className="relative hidden sm:block w-56 lg:w-72">
-      <input
-        className="input"
-        placeholder="search tokens or traders"
-        value={q}
-        onFocus={() => setOpen(true)}
-        onChange={(e) => {
-          setQ(e.target.value);
-          setOpen(true);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && res) {
-            const first = res.coins[0] ? `/m/${res.coins[0].coin}` : res.traders[0] ? `/t/${res.traders[0].handle ?? res.traders[0].address}` : null;
-            if (first) go(first);
-          }
-        }}
-      />
+    <div ref={ref} className="relative hidden sm:block w-full max-w-[520px]">
+      <div className="flex items-center h-10 card rounded-[12px] px-3 gap-2 focus-within:border-line-2">
+        <span className="text-dim"><Icon.search /></span>
+        <input
+          ref={inputRef}
+          className="flex-1 bg-transparent outline-none text-[13px] placeholder:text-dim"
+          placeholder="Search for tokens or traders…"
+          value={q}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setOpen(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && res) {
+              const first = res.coins[0] ? `/m/${res.coins[0].coin}` : res.traders[0] ? `/t/${res.traders[0].handle ?? res.traders[0].address}` : null;
+              if (first) go(first);
+            }
+            if (e.key === "Escape") setOpen(false);
+          }}
+        />
+        <button className="kbd hover:text-fg h-6 px-2" onClick={() => navigator.clipboard?.readText().then((t) => setQ(t.trim())).catch(() => {})}>Paste</button>
+        <span className="kbd h-6 px-2">/</span>
+      </div>
       {open && res && (res.coins.length > 0 || res.traders.length > 0) && (
-        <div className="absolute top-9 left-0 right-0 card shadow-xl p-1 z-40">
+        <div className="absolute top-12 left-0 right-0 card shadow-2xl shadow-black/60 p-1.5 z-40">
+          {res.coins.length > 0 && <div className="px-2 py-1 text-[11px] text-dim">Markets</div>}
           {res.coins.map((c) => (
-            <button key={c.coin} className="w-full flex items-center justify-between px-2 h-8 rounded hover:bg-panel-2 text-left" onClick={() => go(`/m/${c.coin}`)}>
-              <span className="font-medium">{c.coin}</span>
-              <span className="num text-xs text-muted">
+            <button key={c.coin} className="w-full flex items-center gap-2.5 px-2 h-10 rounded-lg hover:bg-panel-2 text-left" onClick={() => go(`/m/${c.coin}`)}>
+              <CoinIcon coin={c.coin} size={22} />
+              <span className="font-semibold">{c.coin}</span>
+              <span className="text-dim text-xs">perp</span>
+              <span className="ml-auto num text-xs">
                 {fmtPx(c.markPx)} <span className={c.change24h >= 0 ? "text-up" : "text-down"}>{fmtPct(c.change24h)}</span>
               </span>
             </button>
           ))}
+          {res.traders.length > 0 && <div className="px-2 py-1 text-[11px] text-dim">Traders</div>}
           {res.traders.map((t) => (
-            <button key={t.address} className="w-full flex items-center gap-2 px-2 h-8 rounded hover:bg-panel-2 text-left" onClick={() => go(`/t/${t.handle ?? t.address}`)}>
-              <Avatar address={t.address} url={t.avatarUrl} handle={t.handle} size={18} />
-              <span>{t.handle ?? shortAddr(t.address)}</span>
+            <button key={t.address} className="w-full flex items-center gap-2.5 px-2 h-10 rounded-lg hover:bg-panel-2 text-left" onClick={() => go(`/t/${t.handle ?? t.address}`)}>
+              <Avatar address={t.address} url={t.avatarUrl} handle={t.handle} size={22} />
+              <span className="font-medium">{t.handle ?? shortAddr(t.address)}</span>
+              {!t.handle && <span className="text-dim text-xs num">{shortAddr(t.address)}</span>}
             </button>
           ))}
         </div>

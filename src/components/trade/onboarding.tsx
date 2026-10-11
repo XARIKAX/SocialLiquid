@@ -2,39 +2,35 @@
 import { useState } from "react";
 import { useChainId, useWalletClient } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
-import { useConnectModal } from "../connect-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { api, HL_APP_URL_CLIENT } from "@/lib/client";
 import { approveAgentWithWallet, approveBuilderFeeWithWallet } from "@/lib/hl-client";
 import { fmtUsd } from "@/lib/format";
+import { Icon } from "../ui";
+import { useConnectModal } from "../connect-modal";
 
-type Prepare = {
-  agentAddress: string;
-  agentName: string;
-  needsAgentApproval: boolean;
-  needsBuilderApproval: boolean;
-  builder: string;
-  builderFeeTenthsBp: number;
-  maxFeeRate: string;
-};
+type Prepare = { agentAddress: string; agentName: string; needsAgentApproval: boolean; needsBuilderApproval: boolean; builder: string; builderFeeTenthsBp: number; maxFeeRate: string };
 
-/** returns null when the user is fully set up; otherwise the next onboarding step ui */
+/** renders children when the user is fully set up; otherwise the next onboarding step, inside the trade card */
 export function OnboardingGate({ children }: { children: React.ReactNode }) {
   const { isConnected, signedIn, needsSignIn, signIn, busy, error, me } = useAuth();
-  const { refresh } = useMeRefresh();
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: ["me"] });
   const connect = useConnectModal();
   if (!isConnected)
     return (
-      <Step title="connect a wallet" hint="hyperliquid signs with an evm key. any wallet works.">
-        <button className="btn btn-primary w-full" onClick={connect.open}>connect wallet</button>
+      <Step n={1} title="Connect a wallet" hint="Hyperliquid signs with an EVM key. Any wallet works. Connecting only reads your address.">
+        <button className="btn btn-primary w-full h-11 text-[15px]" onClick={connect.open}><Icon.wallet /> Connect wallet</button>
+        <Steps current={1} />
       </Step>
     );
   if (needsSignIn || !signedIn)
     return (
-      <Step title="sign in" hint="sign a message to prove you own this wallet. no gas, no permissions.">
-        <button className="btn btn-primary w-full" onClick={signIn} disabled={busy}>{busy ? "check your wallet…" : "sign in"}</button>
+      <Step n={2} title="Sign in" hint="Sign a message to prove you own this wallet. No gas, no permissions, authorises nothing on chain.">
+        <button className="btn btn-primary w-full h-11 text-[15px]" onClick={signIn} disabled={busy}>{busy ? "Check your wallet…" : "Sign in"}</button>
         {error && <p className="text-down text-xs mt-2">{error}</p>}
+        <Steps current={2} />
       </Step>
     );
   if (me?.invite.required && !me.invite.ok) return <InviteStep onDone={refresh} />;
@@ -43,16 +39,31 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function useMeRefresh() {
-  const qc = useQueryClient();
-  return { refresh: () => qc.invalidateQueries({ queryKey: ["me"] }) };
+function Steps({ current }: { current: number }) {
+  const labels = ["Connect", "Sign in", "Handle", "Enable trading"];
+  return (
+    <ol className="flex items-center gap-1.5 mt-4">
+      {labels.map((l, i) => {
+        const n = i + 1;
+        return (
+          <li key={l} className="flex items-center gap-1.5 flex-1 min-w-0">
+            <span className={`h-1 flex-1 rounded-full ${n < current ? "bg-brand" : n === current ? "bg-brand/60" : "bg-line-2"}`} />
+            <span className={`text-[10px] whitespace-nowrap ${n <= current ? "text-fg-2" : "text-dim"}`}>{l}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
-function Step({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="p-3">
-      <h2 className="text-sm font-semibold">{title}</h2>
-      {hint && <p className="text-xs text-muted mt-1 mb-3">{hint}</p>}
+    <div className="mt-3 card-2 p-4">
+      <div className="flex items-center gap-2">
+        <span className="w-5 h-5 rounded-full bg-brand/15 text-brand text-[11px] font-semibold inline-flex items-center justify-center num">{n}</span>
+        <h2 className="text-[15px] font-semibold">{title}</h2>
+      </div>
+      {hint && <p className="text-xs text-muted mt-1.5 mb-3 leading-snug">{hint}</p>}
       {children}
     </div>
   );
@@ -63,7 +74,7 @@ function InviteStep({ onDone }: { onDone: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return (
-    <Step title="invite code" hint="mainnet trading is invite only while we test with real money.">
+    <Step n={3} title="Invite code" hint="Mainnet trading is invite only while we test with real money.">
       <form
         className="flex gap-2"
         onSubmit={async (e) => {
@@ -80,10 +91,11 @@ function InviteStep({ onDone }: { onDone: () => void }) {
           }
         }}
       >
-        <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="code" autoFocus />
-        <button className="btn btn-primary" disabled={busy || !code}>enter</button>
+        <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Code" autoFocus />
+        <button className="btn btn-primary h-10" disabled={busy || !code}>Enter</button>
       </form>
       {err && <p className="text-down text-xs mt-2">{err}</p>}
+      <Steps current={3} />
     </Step>
   );
 }
@@ -94,7 +106,7 @@ function HandleStep({ onDone }: { onDone: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return (
-    <Step title="pick a handle" hint="this is your name on the feed and your profile url. x handle is optional.">
+    <Step n={3} title="Pick a handle" hint="Your name on the feed and your profile URL. The X handle is optional and shows next to your posts.">
       <form
         className="space-y-2"
         onSubmit={async (e) => {
@@ -111,11 +123,18 @@ function HandleStep({ onDone }: { onDone: () => void }) {
           }
         }}
       >
-        <input className="input" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="handle (a-z 0-9 _)" maxLength={20} autoFocus />
-        <input className="input" value={x} onChange={(e) => setX(e.target.value)} placeholder="@x handle (optional)" maxLength={16} />
-        <button className="btn btn-primary w-full" disabled={busy || handle.length < 3}>{busy ? "saving…" : "claim handle"}</button>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dim text-xs">socialliquid.xyz/t/</span>
+          <input className="input pl-[118px]" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="handle" maxLength={20} autoFocus />
+        </div>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dim"><Icon.x /></span>
+          <input className="input pl-8" value={x} onChange={(e) => setX(e.target.value)} placeholder="x handle (optional)" maxLength={16} />
+        </div>
+        <button className="btn btn-primary w-full h-10" disabled={busy || handle.length < 3}>{busy ? "Saving…" : "Claim handle"}</button>
       </form>
       {err && <p className="text-down text-xs mt-2">{err}</p>}
+      <Steps current={3} />
     </Step>
   );
 }
@@ -135,32 +154,32 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
     setErr(null);
     setLog([]);
     try {
-      push("creating your agent wallet…");
+      push("Creating your agent wallet…");
       const prep = await api<Prepare>("/api/agent/prepare", { method: "POST" });
       let agentSigned = false;
       let builderSigned = false;
       if (prep.needsAgentApproval) {
-        push(`approve agent ${prep.agentAddress.slice(0, 10)}… in your wallet`);
+        push(`Approve agent ${prep.agentAddress.slice(0, 10)}… in your wallet`);
         if (!mockMode) {
           if (!wallet) throw new Error("wallet not ready");
           await approveAgentWithWallet(wallet, chainId, prep.agentAddress, prep.agentName);
         }
         agentSigned = true;
-        push("agent approved");
-      } else push("agent already approved");
+        push("Agent approved");
+      } else push("Agent already approved");
       if (prep.needsBuilderApproval) {
-        push(`approve builder fee (max ${prep.maxFeeRate}, we charge ${prep.builderFeeTenthsBp / 1000}%)`);
+        push(`Approve builder fee (max ${prep.maxFeeRate}, we charge ${prep.builderFeeTenthsBp / 1000}%)`);
         if (!mockMode) {
           if (!wallet) throw new Error("wallet not ready");
           await approveBuilderFeeWithWallet(wallet, chainId, prep.builder, prep.maxFeeRate);
         }
         builderSigned = true;
-        push("builder fee approved");
-      } else push("builder fee already approved");
-      push("confirming on chain…");
+        push("Builder fee approved");
+      } else push("Builder fee already approved");
+      push("Confirming on chain…");
       const c = await api<{ agentApproved: boolean; builderApproved: boolean }>("/api/agent/confirm", { method: "POST", json: { agentSigned, builderSigned } });
-      if (!c.agentApproved || !c.builderApproved) throw new Error("approval not visible on chain yet. wait a few seconds and retry.");
-      push("done. you can trade.");
+      if (!c.agentApproved || !c.builderApproved) throw new Error("Approval not visible on chain yet. Wait a few seconds and retry.");
+      push("Done. You can trade.");
       onDone();
     } catch (e) {
       setErr((e as Error).message);
@@ -170,20 +189,21 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <Step title="enable trading" hint="two signatures from your main wallet, once: an api wallet so you don't sign every click, and a builder fee approval so our code goes on your fills. we never hold your main key.">
-      <ul className="text-xs text-muted space-y-1 mb-3">
-        <li>1. approve agent wallet <span className="text-dim">(approveAgent)</span></li>
-        <li>2. approve builder fee ≤ 0.1% <span className="text-dim">(approveBuilderFee)</span></li>
+    <Step n={4} title="Enable trading" hint="Two signatures from your main wallet, once. We never hold your main key.">
+      <ul className="text-xs text-fg-2 space-y-2 mb-3">
+        <li className="flex gap-2"><span className="text-brand">1.</span><span><b>Approve an API wallet</b> so you don't sign every click. <span className="text-dim">approveAgent</span></span></li>
+        <li className="flex gap-2"><span className="text-brand">2.</span><span><b>Approve the builder fee</b>, max 0.1%, so our code goes on your fills. <span className="text-dim">approveBuilderFee</span></span></li>
       </ul>
-      <button className="btn btn-primary w-full" onClick={run} disabled={busy}>{busy ? "working…" : "approve both"}</button>
+      <button className="btn btn-primary w-full h-11 text-[15px]" onClick={run} disabled={busy}>{busy ? "Working…" : "Approve both"}</button>
       {log.length > 0 && (
-        <ol className="mt-3 text-[11px] text-muted space-y-0.5">
+        <ol className="mt-3 text-[11px] text-muted space-y-1">
           {log.map((l, i) => (
-            <li key={i}>› {l}</li>
+            <li key={i} className="flex gap-1.5"><span className="text-brand"><Icon.check /></span>{l}</li>
           ))}
         </ol>
       )}
       {err && <p className="text-down text-xs mt-2">{err}</p>}
+      <Steps current={4} />
     </Step>
   );
 }
@@ -193,26 +213,17 @@ export function DepositBox({ address }: { address: string }) {
   const [open, setOpen] = useState(false);
   const low = bal.data !== undefined && bal.data.withdrawable < 10;
   return (
-    <div className="px-3 py-2 border-b border-line text-xs">
-      <div className="flex items-center justify-between">
-        <span className="text-muted">available</span>
-        <span className="num">{bal.data ? fmtUsd(bal.data.withdrawable) : "…"}</span>
+    <div className="text-xs">
+      <div className="flex items-center justify-between px-1">
+        <span className="text-muted">Available to trade</span>
+        <span className="num">{bal.data ? fmtUsd(bal.data.withdrawable) : "…"} <button className="text-brand font-medium ml-1 hover:underline" onClick={() => setOpen((v) => !v)}>{low ? "Deposit" : open ? "Hide" : "Deposit"}</button></span>
       </div>
-      <div className="flex items-center justify-between">
-        <span className="text-muted">account value</span>
-        <span className="num">{bal.data ? fmtUsd(bal.data.accountValue) : "…"}</span>
-      </div>
-      <button className="text-accent text-[11px] mt-1 hover:underline" onClick={() => setOpen((v) => !v)}>
-        {low ? "deposit usdc to start →" : open ? "hide deposit" : "deposit"}
-      </button>
       {(open || low) && (
-        <div className="mt-2 p-2 rounded bg-panel-2 text-[11px] text-muted space-y-1">
-          <p>1. hold usdc on <b className="text-fg">arbitrum</b> in this wallet.</p>
-          <p>2. bridge it to hyperliquid with the native bridge (min 5 usdc). it lands in your perps balance in ~1 min.</p>
-          <a className="btn btn-primary h-7 w-full mt-1" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">
-            open hyperliquid deposit ↗
-          </a>
-          <p className="text-dim">solana deposits via relay / debridge are coming in phase 2.</p>
+        <div className="card-2 p-3 mt-2 space-y-1.5 text-muted leading-snug">
+          <p><b className="text-fg-2">1.</b> Hold USDC on <b className="text-fg-2">Arbitrum</b> in this wallet.</p>
+          <p><b className="text-fg-2">2.</b> Bridge it to Hyperliquid with the native bridge (min 5 USDC). It lands in your perps balance in about a minute.</p>
+          <a className="btn btn-primary h-9 w-full mt-1" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Open Hyperliquid deposit <Icon.external /></a>
+          <p className="text-dim">Solana deposits via Relay or deBridge are coming in phase 2.</p>
         </div>
       )}
     </div>

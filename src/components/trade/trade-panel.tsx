@@ -6,7 +6,7 @@ import { useBalance } from "@/hooks/use-me";
 import { api } from "@/lib/client";
 import { fmtPx, fmtUsd } from "@/lib/format";
 import type { MarketSummary } from "@/lib/hl-types";
-import { Pnl } from "../ui";
+import { Icon, Toggle } from "../ui";
 import { DepositBox, OnboardingGate } from "./onboarding";
 
 const QUICK = [10, 100, 500, 1000];
@@ -14,25 +14,28 @@ const QUICK = [10, 100, 500, 1000];
 type OrderResponse = { order: { status: "filled" | "resting"; avgPx?: number; totalSz?: number; oid?: number }; positionId: string | null; thesis: { id: string } | null };
 
 export function TradePanel({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
+  const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
   return (
-    <div className="flex flex-col h-full">
-      <div className="h-9 flex items-center px-3 border-b border-line text-xs text-muted">
-        trade <span className="text-fg font-semibold ml-1">{coin}</span>
-        <span className="ml-auto num">{mid ? fmtPx(mid) : "…"}</span>
+    <section className="card p-3">
+      <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-1 flex-1 p-1 rounded-[12px] bg-panel-2 border border-line">
+          <button className={`h-10 rounded-[9px] text-[15px] font-semibold transition-colors ${side === "LONG" ? "bg-up/15 text-up" : "text-muted hover:text-fg"}`} onClick={() => setSide("LONG")}>Long</button>
+          <button className={`h-10 rounded-[9px] text-[15px] font-semibold transition-colors ${side === "SHORT" ? "bg-down/15 text-down" : "text-muted hover:text-fg"}`} onClick={() => setSide("SHORT")}>Short</button>
+        </div>
+        <span className="btn btn-ghost h-10 w-10 px-0 text-muted" title="settings"><Icon.gear /></span>
       </div>
       <OnboardingGate>
-        <OrderForm coin={coin} market={market} mid={mid} />
+        <OrderForm coin={coin} market={market} mid={mid} side={side} />
       </OnboardingGate>
-    </div>
+    </section>
   );
 }
 
-function OrderForm({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
+function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketSummary; mid?: number; side: "LONG" | "SHORT" }) {
   const { address } = useAuth();
   const qc = useQueryClient();
   const bal = useBalance(address);
-  const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
-  const [usd, setUsd] = useState("100");
+  const [usd, setUsd] = useState("");
   const [lev, setLev] = useState(5);
   const [type, setType] = useState<"market" | "limit">("market");
   const [limitPx, setLimitPx] = useState("");
@@ -53,6 +56,8 @@ function OrderForm({ coin, market, mid }: { coin: string; market?: MarketSummary
   const liq = useMemo(() => (px && lev ? px * (1 - (side === "LONG" ? 1 : -1) * 0.9 / lev) : null), [px, lev, side]);
   const myPos = bal.data?.positions.find((p) => p.coin === coin && p.szi !== 0);
   const fee = usdNum * 0.00045 + (usdNum * 50) / 100_000;
+  const avail = bal.data?.withdrawable ?? 0;
+  const tooBig = margin > avail && avail > 0;
 
   const submit = async () => {
     setBusy(true);
@@ -72,9 +77,10 @@ function OrderForm({ coin, market, mid }: { coin: string; market?: MarketSummary
           thesis: thesis.trim() || undefined,
         },
       });
-      if (r.order.status === "filled") setMsg({ ok: true, text: `filled ${r.order.totalSz} ${coin} @ ${fmtPx(r.order.avgPx)}${r.thesis ? " · thesis posted" : ""}` });
-      else setMsg({ ok: true, text: `resting limit order #${r.order.oid}${r.thesis ? " · thesis posted" : ""}` });
+      if (r.order.status === "filled") setMsg({ ok: true, text: `Filled ${r.order.totalSz} ${coin} at ${fmtPx(r.order.avgPx)}${r.thesis ? " · thesis posted" : ""}` });
+      else setMsg({ ok: true, text: `Resting limit order #${r.order.oid}${r.thesis ? " · thesis posted" : ""}` });
       setThesis("");
+      setUsd("");
       qc.invalidateQueries({ queryKey: ["balance"] });
       qc.invalidateQueries({ queryKey: ["feed"] });
       qc.invalidateQueries({ queryKey: ["market", coin] });
@@ -91,7 +97,7 @@ function OrderForm({ coin, market, mid }: { coin: string; market?: MarketSummary
     setMsg(null);
     try {
       await api("/api/trade/close", { method: "POST", json: { coin } });
-      setMsg({ ok: true, text: `closed ${coin}` });
+      setMsg({ ok: true, text: `Closed ${coin}` });
       qc.invalidateQueries({ queryKey: ["balance"] });
       qc.invalidateQueries({ queryKey: ["feed"] });
       qc.invalidateQueries({ queryKey: ["market", coin] });
@@ -102,101 +108,123 @@ function OrderForm({ coin, market, mid }: { coin: string; market?: MarketSummary
     }
   };
 
+  const disabled = busy || usdNum < 10 || (type === "limit" && !Number(limitPx));
+
   return (
-    <div className="flex flex-col text-xs">
-      {address && <DepositBox address={address} />}
-      <div className="p-3 space-y-3">
-        <div className="grid grid-cols-2 gap-1 p-0.5 rounded bg-panel-2">
-          <button className={`h-8 rounded font-semibold ${side === "LONG" ? "bg-up text-black" : "text-muted hover:text-fg"}`} onClick={() => setSide("LONG")}>long</button>
-          <button className={`h-8 rounded font-semibold ${side === "SHORT" ? "bg-down text-white" : "text-muted hover:text-fg"}`} onClick={() => setSide("SHORT")}>short</button>
-        </div>
-
-        <div className="flex items-center gap-2 text-[11px]">
-          {(["market", "limit"] as const).map((t) => (
-            <button key={t} className={`px-2 h-6 rounded ${type === t ? "bg-panel-2 text-fg" : "text-muted"}`} onClick={() => setType(t)}>{t}</button>
-          ))}
-          <button className={`ml-auto px-2 h-6 rounded ${tpsl ? "text-accent" : "text-muted"}`} onClick={() => setTpsl((v) => !v)}>tp / sl</button>
-        </div>
-
-        {type === "limit" && (
-          <label className="block">
-            <span className="text-muted">limit price</span>
-            <input className="input num mt-1" inputMode="decimal" value={limitPx} onChange={(e) => setLimitPx(e.target.value)} placeholder={mid ? fmtPx(mid) : ""} />
-          </label>
-        )}
-
-        <label className="block">
-          <span className="text-muted flex justify-between">
-            <span>size (usd)</span>
-            <span className="num text-dim">≈ {sz ? sz.toFixed(market?.szDecimals ?? 4) : "0"} {coin}</span>
-          </span>
-          <div className="relative mt-1">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-dim">$</span>
-            <input className="input num pl-5" inputMode="decimal" value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.]/g, ""))} />
-          </div>
-          <div className="grid grid-cols-4 gap-1 mt-1">
-            {QUICK.map((q) => (
-              <button key={q} className={`btn h-6 px-0 text-[11px] ${usdNum === q ? "border-accent/60 text-accent" : ""}`} onClick={() => setUsd(String(q))}>${q}</button>
-            ))}
-          </div>
-        </label>
-
-        <label className="block">
-          <span className="text-muted flex justify-between">
-            <span>leverage</span>
-            <span className="num text-fg">{lev}x</span>
-          </span>
-          <input type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} className="w-full mt-1" />
-          <div className="flex justify-between text-[10px] text-dim num"><span>1x</span><span>{maxLev}x</span></div>
-        </label>
-
-        {tpsl && (
-          <div className="grid grid-cols-2 gap-2">
-            <label>
-              <span className="text-up">take profit</span>
-              <input className="input num mt-1" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="price" />
-            </label>
-            <label>
-              <span className="text-down">stop loss</span>
-              <input className="input num mt-1" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value)} placeholder="price" />
-            </label>
-          </div>
-        )}
-
-        <div className="text-[11px] text-muted space-y-0.5 num">
-          <div className="flex justify-between"><span>margin</span><span>{fmtUsd(margin)}</span></div>
-          <div className="flex justify-between"><span>est. liq price</span><span>{liq ? fmtPx(liq) : "–"}</span></div>
-          <div className="flex justify-between"><span>fees (incl. 0.05% builder)</span><span>{fmtUsd(fee)}</span></div>
-        </div>
-
-        <label className="block">
-          <span className="text-muted flex justify-between">
-            <span>why this trade? <span className="text-dim">optional</span></span>
-            <span className="num text-dim">{thesis.length}/280</span>
-          </span>
-          <textarea className="input mt-1 h-16 py-1.5 resize-none" maxLength={280} value={thesis} onChange={(e) => setThesis(e.target.value)} placeholder="your thesis goes on the feed, bound to this position. close within 1h and it's tagged dumped." />
-        </label>
-
-        <button className={`btn w-full h-9 text-sm ${side === "LONG" ? "btn-up" : "btn-down"}`} onClick={submit} disabled={busy || usdNum < 10 || (type === "limit" && !Number(limitPx))}>
-          {busy ? "sending…" : `${side === "LONG" ? "long" : "short"} ${coin} ${usdNum ? fmtUsd(usdNum) : ""}`}
-        </button>
-        {usdNum > 0 && usdNum < 10 && <p className="text-dim text-[11px]">minimum order is $10</p>}
-        {msg && <p className={`text-[11px] ${msg.ok ? "text-up" : "text-down"}`}>{msg.text}</p>}
+    <div className="mt-3 space-y-3 text-[13px]">
+      {/* amount */}
+      <div className="card-2 px-4 py-3 flex items-center gap-2">
+        <span className={`num text-[28px] font-semibold leading-none ${usdNum ? "text-fg" : "text-dim"}`}>$</span>
+        <input
+          className="flex-1 min-w-0 bg-transparent outline-none num text-[28px] font-semibold leading-none placeholder:text-dim"
+          inputMode="decimal"
+          placeholder="0"
+          value={usd}
+          onChange={(e) => setUsd(e.target.value.replace(/[^0-9.]/g, ""))}
+          aria-label="order size in usd"
+        />
+        <span className="text-dim text-xs text-right leading-tight shrink-0">
+          {usdNum ? <span className="num">≈ {sz.toFixed(market?.szDecimals ?? 4)} {coin}</span> : "Enter amount"}
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5">
+        {QUICK.map((qv) => (
+          <button key={qv} className={`btn h-9 px-0 num ${usdNum === qv ? "border-brand/60 text-brand bg-brand/10" : ""}`} onClick={() => setUsd(String(qv))}>
+            ${qv}
+          </button>
+        ))}
       </div>
 
-      {myPos && (
-        <div className="mx-3 mb-3 p-2 rounded card space-y-1">
-          <div className="flex justify-between">
-            <span className="text-muted">your position</span>
-            <span className={myPos.szi > 0 ? "text-up" : "text-down"}>{myPos.szi > 0 ? "long" : "short"} {Math.abs(myPos.szi)} {coin}</span>
-          </div>
-          <div className="flex justify-between num"><span className="text-muted">entry</span><span>{fmtPx(myPos.entryPx)}</span></div>
-          <div className="flex justify-between num"><span className="text-muted">value</span><span>{fmtUsd(myPos.positionValue)}</span></div>
-          <div className="flex justify-between num"><span className="text-muted">pnl</span><Pnl value={myPos.unrealizedPnl} pct={myPos.returnOnEquity} /></div>
-          <div className="flex justify-between num"><span className="text-muted">liq</span><span>{myPos.liquidationPx ? fmtPx(myPos.liquidationPx) : "–"}</span></div>
-          <button className="btn w-full h-7 mt-1" onClick={close} disabled={busy}>close position</button>
+      {/* leverage */}
+      <div className="card-2 px-3 py-2.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted">Leverage</span>
+          <span className="num font-semibold text-fg">{lev}x</span>
+        </div>
+        <input type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} className="slider mt-2" style={{ ["--pct" as string]: `${((lev - 1) / Math.max(1, maxLev - 1)) * 100}%` }} aria-label="leverage" />
+        <div className="flex justify-between text-[10px] text-dim num mt-1">
+          {[1, Math.round(maxLev / 4), Math.round(maxLev / 2), Math.round((3 * maxLev) / 4), maxLev].map((v, i) => (
+            <button key={i} onClick={() => setLev(v)} className="hover:text-fg">{v}x</button>
+          ))}
+        </div>
+      </div>
+
+      {/* order type + tp/sl */}
+      <div className="flex items-center gap-2">
+        <span className="seg">
+          {(["market", "limit"] as const).map((t) => (
+            <button key={t} className={`seg-item capitalize ${type === t ? "seg-active" : ""}`} onClick={() => setType(t)}>{t}</button>
+          ))}
+        </span>
+        <span className="ml-auto"><Toggle on={tpsl} onChange={setTpsl} label="Take profit / Stop loss" /></span>
+      </div>
+      {type === "limit" && (
+        <div className="card-2 flex items-center px-3 h-10">
+          <span className="text-muted text-xs mr-2">Limit price</span>
+          <input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={limitPx} onChange={(e) => setLimitPx(e.target.value)} placeholder={mid ? fmtPx(mid) : ""} />
+          <button className="text-brand text-xs ml-2" onClick={() => mid && setLimitPx(String(Number(mid.toPrecision(6))))}>Mid</button>
         </div>
       )}
+      {tpsl && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="card-2 px-3 py-1.5">
+            <div className="text-[11px] text-up">Take profit</div>
+            <input className="w-full bg-transparent outline-none num" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="price" />
+          </div>
+          <div className="card-2 px-3 py-1.5">
+            <div className="text-[11px] text-down">Stop loss</div>
+            <input className="w-full bg-transparent outline-none num" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value)} placeholder="price" />
+          </div>
+        </div>
+      )}
+
+      {/* thesis */}
+      <div className="card-2 px-3 py-2">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-thesis font-medium">Why this trade?</span>
+          <span className="num text-dim">{thesis.length}/280</span>
+        </div>
+        <textarea className="w-full bg-transparent outline-none resize-none h-14 mt-1 text-[13px] placeholder:text-dim leading-snug" maxLength={280} value={thesis} onChange={(e) => setThesis(e.target.value)} placeholder="Optional. Goes on the feed bound to this position. Close inside an hour and it's tagged Dumped." />
+      </div>
+
+      {/* summary */}
+      <dl className="text-xs space-y-1.5 px-1">
+        <Row k="Liquidation price" v={liq && usdNum ? fmtPx(liq) : "N/A"} />
+        <Row k="Order value" v={usdNum ? fmtUsd(usdNum) : "N/A"} />
+        <Row k="Margin required" v={usdNum ? fmtUsd(margin) : "N/A"} warn={tooBig} />
+        <Row k="Fees" v={<span><span className="text-brand">◆</span> 0.045% + 0.05% builder{usdNum ? ` · ${fmtUsd(fee)}` : ""}</span>} />
+      </dl>
+
+      <button className={`btn w-full h-11 text-[15px] ${side === "LONG" ? "btn-up" : "btn-down"}`} onClick={submit} disabled={disabled}>
+        {busy ? "Sending…" : `${side === "LONG" ? "Long" : "Short"} ${coin}${usdNum ? ` · ${fmtUsd(usdNum)}` : ""}`}
+      </button>
+      {usdNum > 0 && usdNum < 10 && <p className="text-dim text-[11px] text-center">Minimum order is $10</p>}
+      {tooBig && <p className="text-warn text-[11px] text-center">Margin exceeds your available {fmtUsd(avail)}. Lower size or raise leverage.</p>}
+      {msg && <p className={`text-xs text-center ${msg.ok ? "text-up" : "text-down"}`}>{msg.text}</p>}
+
+      {address && <DepositBox address={address} />}
+
+      {myPos && (
+        <div className="card-2 px-3 py-2.5 space-y-1 text-xs">
+          <div className="flex justify-between">
+            <span className="text-muted">Current position</span>
+            <span className={`font-semibold ${myPos.szi > 0 ? "text-up" : "text-down"}`}>{myPos.szi > 0 ? "Long" : "Short"} {Math.abs(myPos.szi)} {coin}</span>
+          </div>
+          <div className="flex justify-between num"><span className="text-muted">Entry</span><span>{fmtPx(myPos.entryPx)}</span></div>
+          <div className="flex justify-between num"><span className="text-muted">Unrealised</span><span className={myPos.unrealizedPnl >= 0 ? "text-up" : "text-down"}>{fmtUsd(myPos.unrealizedPnl, { sign: true })} ({(myPos.returnOnEquity * 100).toFixed(2)}%)</span></div>
+          <div className="flex justify-between num"><span className="text-muted">Liq. price</span><span>{myPos.liquidationPx ? fmtPx(myPos.liquidationPx) : "–"}</span></div>
+          <button className="btn w-full h-9 mt-1" onClick={close} disabled={busy}>Close position</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({ k, v, warn }: { k: string; v: React.ReactNode; warn?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-muted underline decoration-dotted decoration-line-2 underline-offset-4">{k}</dt>
+      <dd className={`num text-right ${warn ? "text-warn" : "text-fg-2"}`}>{v}</dd>
     </div>
   );
 }

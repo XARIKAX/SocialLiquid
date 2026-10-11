@@ -4,9 +4,11 @@ export const metadata = { title: "tokens" };
 
 export default function TokensPage() {
   return (
-    <div className="max-w-4xl">
-      <div className="px-3 h-10 flex items-center border-b border-line text-sm font-semibold">tokens</div>
-      <Tokens full />
+    <div className="max-w-5xl space-y-3 pb-3">
+      <h1 className="text-[22px] font-semibold tracking-tight">Markets</h1>
+      <section className="card overflow-hidden">
+        <Tokens full />
+      </section>
     </div>
   );
 }
