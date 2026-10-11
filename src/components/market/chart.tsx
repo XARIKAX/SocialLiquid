@@ -33,6 +33,7 @@ export function Chart({ coin, markers = [], lastPx }: { coin: string; markers?: 
       timeScale: { borderColor: "#222229", timeVisible: true, secondsVisible: false },
       crosshair: { horzLine: { color: "#4cc9f0", labelBackgroundColor: "#4cc9f0" }, vertLine: { color: "#4cc9f0", labelBackgroundColor: "#4cc9f0" } },
       autoSize: true,
+      localization: { locale: "en-US" },
     });
     const series = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",

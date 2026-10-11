@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useChainId, useWalletClient } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useConnectModal } from "../connect-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { api, HL_APP_URL_CLIENT } from "@/lib/client";
@@ -23,10 +23,11 @@ type Prepare = {
 export function OnboardingGate({ children }: { children: React.ReactNode }) {
   const { isConnected, signedIn, needsSignIn, signIn, busy, error, me } = useAuth();
   const { refresh } = useMeRefresh();
+  const connect = useConnectModal();
   if (!isConnected)
     return (
       <Step title="connect a wallet" hint="hyperliquid signs with an evm key. any wallet works.">
-        <ConnectButton.Custom>{({ openConnectModal }) => <button className="btn btn-primary w-full" onClick={openConnectModal}>connect wallet</button>}</ConnectButton.Custom>
+        <button className="btn btn-primary w-full" onClick={connect.open}>connect wallet</button>
       </Step>
     );
   if (needsSignIn || !signedIn)
@@ -50,7 +51,7 @@ function useMeRefresh() {
 function Step({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="p-3">
-      <h3 className="text-sm font-semibold">{title}</h3>
+      <h2 className="text-sm font-semibold">{title}</h2>
       {hint && <p className="text-xs text-muted mt-1 mb-3">{hint}</p>}
       {children}
     </div>

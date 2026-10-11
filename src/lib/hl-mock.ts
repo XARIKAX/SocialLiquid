@@ -240,12 +240,12 @@ function tick(s: MockState, address: string) {
   const r = rand(`${a}:${bucket}`);
   const positions = (s.positions[a] ??= []);
   const open = positions.length;
-  if (open > 0 && r < 0.18) {
+  if (open > 0 && r < 0.4) {
     const p = positions[Math.floor(rand(`${a}:${bucket}:which`) * open)];
     const px = priceAt(p.coin, now);
     const liq = rand(`${a}:${bucket}:liq`) < 0.08;
     applyTrade(s, a, p.coin, -p.szi, liq ? px * (p.szi > 0 ? 0.985 : 1.015) : px, p.leverage, { liquidation: liq });
-  } else if (open < 3 && r > 0.72) {
+  } else if (open < 3 && r > 0.55) {
     const u = UNIVERSE[Math.floor(rand(`${a}:${bucket}:coin`) * UNIVERSE.length)];
     if (positions.some((p) => p.coin === u.name)) return;
     const px = priceAt(u.name, now);

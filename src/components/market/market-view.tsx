@@ -7,7 +7,11 @@ import { fmtPct, fmtPx, fmtUsd } from "@/lib/format";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { useMids } from "@/hooks/use-market";
-import { Chart, type ChartMarker } from "./chart";
+import dynamic from "next/dynamic";
+import type { ChartMarker } from "./chart";
+
+// lightweight-charts is client only and off the critical path
+const Chart = dynamic(() => import("./chart").then((m) => m.Chart), { ssr: false, loading: () => <div className="h-full w-full skeleton rounded-none" /> });
 import { PositionsTable, type MarketPosition } from "./positions-table";
 import { TradePanel } from "../trade/trade-panel";
 import { Stat } from "../ui";

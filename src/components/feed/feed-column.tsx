@@ -34,8 +34,9 @@ export function FeedColumn({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function useFeed(params: { coin?: string; minUsd: number; thesisOnly: boolean; following: boolean; address?: string }, enabled = true) {
+export function useFeed(params: { coin?: string; minUsd: number; thesisOnly: boolean; following: boolean; address?: string; limit?: number }, enabled = true) {
   const qs = new URLSearchParams();
+  if (params.limit) qs.set("limit", String(params.limit));
   if (params.coin) qs.set("coin", params.coin);
   if (params.minUsd) qs.set("minUsd", String(params.minUsd));
   if (params.thesisOnly) qs.set("thesis", "1");
@@ -57,7 +58,8 @@ function Feed({ onNavigate, alerts }: { onNavigate?: () => void; alerts?: boolea
   const [coin, setCoin] = useState("");
   const markets = useMarkets();
   const mids = useMids();
-  const q = useFeed({ coin: coin || undefined, minUsd, thesisOnly, following: alerts || following });
+  const [limit, setLimit] = useState(30);
+  const q = useFeed({ coin: coin || undefined, minUsd, thesisOnly, following: alerts || following, limit });
   const [seen, setSeen] = useState<Set<string>>(new Set());
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -106,6 +108,11 @@ function Feed({ onNavigate, alerts }: { onNavigate?: () => void; alerts?: boolea
           <FeedCard item={item} mid={mids.data ? Number(mids.data[item.coin]) : undefined} onNavigate={onNavigate} signedIn={signedIn} />
         </div>
       ))}
+      {q.data && q.data.length >= limit && limit < 100 && (
+        <button className="btn btn-ghost w-full h-9 text-muted" onClick={() => setLimit((l) => Math.min(100, l + 30))}>
+          load more
+        </button>
+      )}
     </div>
   );
 }

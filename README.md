@@ -1,0 +1,71 @@
+# socialLiquid
+
+social trading for perps. traders post a thesis, open the position on hyperliquid through our frontend, and everyone watches the live position, the pnl, and whether they held or dumped.
+
+we do not run an exchange. every order routes to hyperliquid with our builder code and we earn a builder fee on each fill. the product is the frontend, the social layer, and the indexer.
+
+## stack
+
+| layer | choice |
+| --- | --- |
+| frontend | next.js 15 (app router), typescript, tailwind v4 |
+| wallet | wagmi + viem, lean connect modal (injected, walletconnect, coinbase) |
+| exchange | hyperliquid via `@nktkas/hyperliquid`, builder codes |
+| backend | next.js route handlers + postgres + prisma |
+| indexer | node worker polling the info api, budget bound, plus websocket fills for our own users |
+| charts | tradingview lightweight-charts fed from `candleSnapshot` |
+
+## run it
+
+```bash
+pnpm install
+cp .env.example .env            # fill in AGENT_KEY_SECRET and SESSION_SECRET (openssl rand -hex 32)
+pnpm db:push                    # creates the schema in DATABASE_URL
+pnpm dev                        # app on :3000
+pnpm worker                     # indexer, in a second terminal
+```
+
+`NEXT_PUBLIC_HL_TESTNET=true` points everything at hyperliquid testnet. `HL_MOCK=true` swaps in a synthetic in-process exchange (deterministic prices, a dozen synthetic traders, a mock write side) so the whole stack runs with no network at all. never set `HL_MOCK` in production.
+
+## env
+
+| var | purpose |
+| --- | --- |
+| `DATABASE_URL` | postgres |
+| `BUILDER_ADDRESS` / `NEXT_PUBLIC_BUILDER_ADDRESS` | builder wallet. needs 100 usdc perps account value on mainnet or orders with our code are rejected |
+| `BUILDER_FEE_TENTHS_BP` | `50` = 0.05% per side. hard capped at 100 (0.1%) |
+| `AGENT_KEY_SECRET` | 32 byte hex. aes-256-gcm for agent private keys at rest |
+| `SESSION_SECRET` | signs the session cookie |
+| `INVITE_CODE` | mainnet gate. empty = open. testnet is always open |
+| `NEXT_PUBLIC_HL_TESTNET` | `true` for testnet |
+| `NEXT_PUBLIC_WALLETCONNECT_ID` | optional. without it the walletconnect option is hidden |
+| `HL_WEIGHT_BUDGET_PER_MIN` | info api weight budget for the worker (published limit 1200 / min / ip) |
+| `POLL_INTERVAL_MS` | floor on the per address poll interval |
+| `SEED_ADDRESSES` / `SEED_COUNT` | leaderboard seed fallback and size |
+| `HL_MOCK` | offline synthetic exchange |
+
+## how trading works
+
+1. connect a wallet and sign a nonce. that is the session. it authorises nothing on chain.
+2. claim a handle. optional x handle.
+3. enable trading, once. the server mints an agent (api) wallet and stores the key encrypted. the user's main wallet signs `approveAgent` for it and `approveBuilderFee` (max 0.1%) for our builder address, both client side through the sdk. we check `extraAgents` and `maxBuilderFee` and skip anything already approved. the main key never leaves the wallet.
+4. every order is signed server side with the agent key and carries `builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP }`. market orders are ioc limits with a 3% slippage cap. tp / sl go in the same `normalTpsl` group.
+5. after a fill the server syncs the address immediately so the thesis can be bound to the mirrored position id.
+
+## receipts
+
+a thesis is bound to a position id at post time. when the worker sees that position close it sets the outcome from on-chain fills: `LIQUIDATED` if a liquidation fill closed it, `DUMPED` if it closed within 60 minutes of the thesis, otherwise `PROFIT` or `LOSS` from realised pnl. the outcome is on the feed card, the profile, and the share page.
+
+## indexer
+
+`worker/index.ts` polls every `TrackedAddress`. `clearinghouseState` is weight 2 and `userFills` is weight 20, so with 200 addresses a full pass at 1000 weight / min takes about 24 seconds, not 5. the worker is budget bound with a token bucket and only fetches fills when a position changed (or every 10 minutes). our own users are also subscribed to websocket `userFills`, capped at hyperliquid's 10 unique users per ip, so their trades show within a second.
+
+positions and fills are mirrored from chain and never written by the client. `lib/indexer.ts` is shared by the worker and the trade route.
+
+## layout
+
+`/` and `/m/[coin]`: feed on the left (feed / alerts / tokens / leaderboard tabs, filters for thesis only, following only, min size, market), chart and positions table in the centre, trade panel on the right. `/t/[handle]` works for any hyperliquid address, claimed or not. `/t/[handle]/thesis/[id]` is the share page with an og image and an x share button. `/leaderboard` ranks by 7d pnl, win rate, thesis accuracy, followers, minimum 5 closed trades.
+
+## not in the mvp
+
+no custom contracts, no copy trading, no solana deposits (arbitrum usdc through the native bridge only), no spot, no comments, no mobile app. x handle is free text for now; oauth is a follow up.

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useConnectModal } from "./connect-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { api } from "@/lib/client";
@@ -12,8 +12,9 @@ import { Avatar } from "./ui";
 type SearchResult = { coins: { coin: string; markPx: number; change24h: number }[]; traders: { address: string; handle: string | null; avatarUrl: string | null }[] };
 
 export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
-  const { address, signedIn, needsSignIn, signIn, busy, me, signOut } = useAuth();
+  const { address, isConnected, signedIn, needsSignIn, signIn, busy, me, signOut } = useAuth();
   const bal = useBalance(signedIn ? address : null);
+  const connect = useConnectModal();
   return (
     <header className="h-12 border-b border-line bg-panel flex items-center gap-3 px-3 sticky top-0 z-30">
       <button className="md:hidden btn btn-ghost px-2" onClick={onToggleFeed} aria-label="toggle feed">
@@ -43,23 +44,15 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
             {busy ? "signing…" : "sign in"}
           </button>
         )}
-        <ConnectButton.Custom>
-          {({ account, chain, openConnectModal, openAccountModal, mounted }) => {
-            const ready = mounted;
-            if (!ready) return <div className="w-20 h-8" />;
-            if (!account || !chain)
-              return (
-                <button className="btn btn-primary" onClick={openConnectModal}>
-                  connect
-                </button>
-              );
-            return (
-              <button className="btn" onClick={signedIn ? signOut : openAccountModal} title={signedIn ? "sign out" : account.address}>
-                {signedIn ? "sign out" : shortAddr(account.address)}
-              </button>
-            );
-          }}
-        </ConnectButton.Custom>
+        {!isConnected ? (
+          <button className="btn btn-primary" onClick={connect.open}>
+            connect
+          </button>
+        ) : (
+          <button className="btn" onClick={signOut} title={signedIn ? "sign out" : "disconnect"}>
+            {signedIn ? "sign out" : "disconnect"}
+          </button>
+        )}
       </div>
     </header>
   );

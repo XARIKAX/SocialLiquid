@@ -7,8 +7,8 @@
   --color-line: #222229;
   --color-line-2: #2c2c35;
   --color-fg: #e8e8ec;
-  --color-muted: #8c8c98;
-  --color-dim: #5c5c68;
+  --color-muted: #9a9aa8;
+  --color-dim: #80809a;
   --color-accent: #4cc9f0;
   --color-accent-2: #7b61ff;
   --color-up: #22c55e;
@@ -22,7 +22,6 @@ html,
 body {
   background: var(--color-bg);
   color: var(--color-fg);
-  font-size: 13px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
 }
