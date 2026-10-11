@@ -70,7 +70,8 @@ async function pollLoop() {
   for (;;) {
     const due = await prisma.trackedAddress.findMany({
       where: { OR: [{ lastPolledAt: null }, { lastPolledAt: { lt: new Date(Date.now() - POLL_INTERVAL_MS) } }] },
-      orderBy: [{ source: "asc" }, { lastPolledAt: { sort: "asc", nulls: "first" } }],
+      // USER > MANUAL > DISCOVERED (enum sorts alphabetically, so desc), then least recently polled
+      orderBy: [{ source: "desc" }, { lastPolledAt: { sort: "asc", nulls: "first" } }],
       take: CONCURRENCY * 4,
     });
     if (due.length === 0) {

@@ -127,28 +127,61 @@ export type TraderStats = {
   thesisAccuracy: number | null;
 };
 
-export async function traderStats(address: string): Promise<TraderStats> {
-  const a = address.toLowerCase();
+/** stats for many addresses in three queries instead of two per address */
+export async function traderStatsBulk(addresses: string[]): Promise<Map<string, TraderStats>> {
+  const addrs = [...new Set(addresses.map((a) => a.toLowerCase()))];
+  const out = new Map<string, TraderStats>();
+  if (!addrs.length) return out;
   const now = Date.now();
-  const closed = await prisma.position.findMany({
-    where: { address: a, closedAt: { not: null } },
-    select: { realisedPnl: true, openedAt: true, closedAt: true },
-  });
-  const wins = closed.filter((p) => Number(p.realisedPnl ?? 0) > 0).length;
-  const pnl = (sinceMs: number) => closed.filter((p) => p.closedAt!.getTime() >= sinceMs).reduce((s, p) => s + Number(p.realisedPnl ?? 0), 0);
-  const holds = closed.map((p) => p.closedAt!.getTime() - p.openedAt.getTime());
-  const theses = await prisma.thesis.findMany({ where: { user: { address: a } }, select: { outcome: true } });
-  const settled = theses.filter((t) => t.outcome !== "OPEN");
-  return {
-    winRate: closed.length ? wins / closed.length : null,
-    closedTrades: closed.length,
-    pnl7d: pnl(now - 7 * 86_400_000),
-    pnl30d: pnl(now - 30 * 86_400_000),
-    pnlAll: pnl(0),
-    avgHoldMs: holds.length ? holds.reduce((s, x) => s + x, 0) / holds.length : null,
-    thesisCount: theses.length,
-    thesisAccuracy: settled.length ? settled.filter((t) => t.outcome === "PROFIT").length / settled.length : null,
+  const [closed, theses] = await Promise.all([
+    prisma.position.findMany({
+      where: { address: { in: addrs }, closedAt: { not: null } },
+      select: { address: true, realisedPnl: true, openedAt: true, closedAt: true },
+    }),
+    prisma.thesis.findMany({ where: { user: { address: { in: addrs } } }, select: { outcome: true, user: { select: { address: true } } } }),
+  ]);
+  type Acc = { n: number; wins: number; pnl7: number; pnl30: number; pnlAll: number; hold: number; th: number; settled: number; profit: number };
+  const acc = new Map<string, Acc>();
+  const get = (a: string) => {
+    let x = acc.get(a);
+    if (!x) acc.set(a, (x = { n: 0, wins: 0, pnl7: 0, pnl30: 0, pnlAll: 0, hold: 0, th: 0, settled: 0, profit: 0 }));
+    return x;
   };
+  for (const p of closed) {
+    const x = get(p.address);
+    const pnl = Number(p.realisedPnl ?? 0);
+    const t = p.closedAt!.getTime();
+    x.n++;
+    if (pnl > 0) x.wins++;
+    x.pnlAll += pnl;
+    if (t >= now - 7 * 86_400_000) x.pnl7 += pnl;
+    if (t >= now - 30 * 86_400_000) x.pnl30 += pnl;
+    x.hold += t - p.openedAt.getTime();
+  }
+  for (const t of theses) {
+    const x = get(t.user.address);
+    x.th++;
+    if (t.outcome !== "OPEN") x.settled++;
+    if (t.outcome === "PROFIT") x.profit++;
+  }
+  for (const a of addrs) {
+    const x = get(a);
+    out.set(a, {
+      winRate: x.n ? x.wins / x.n : null,
+      closedTrades: x.n,
+      pnl7d: x.pnl7,
+      pnl30d: x.pnl30,
+      pnlAll: x.pnlAll,
+      avgHoldMs: x.n ? x.hold / x.n : null,
+      thesisCount: x.th,
+      thesisAccuracy: x.settled ? x.profit / x.settled : null,
+    });
+  }
+  return out;
+}
+
+export async function traderStats(address: string): Promise<TraderStats> {
+  return (await traderStatsBulk([address])).get(address.toLowerCase())!;
 }
 
 export type LeaderboardRow = {
@@ -159,8 +192,18 @@ export type LeaderboardRow = {
 };
 
 const MIN_CLOSED = 5;
+const lbCache = new Map<string, { at: number; rows: LeaderboardRow[] }>();
 
 export async function leaderboardRows(by: "pnl7d" | "winRate" | "thesisAccuracy" | "followers", limit = 50): Promise<LeaderboardRow[]> {
+  const key = `${by}:${limit}`;
+  const hit = lbCache.get(key);
+  if (hit && Date.now() - hit.at < 30_000) return hit.rows;
+  const rows = await computeLeaderboard(by, limit);
+  lbCache.set(key, { at: Date.now(), rows });
+  return rows;
+}
+
+async function computeLeaderboard(by: "pnl7d" | "winRate" | "thesisAccuracy" | "followers", limit: number): Promise<LeaderboardRow[]> {
   // candidates: addresses with >= 5 closed positions
   const grouped = await prisma.position.groupBy({
     by: ["address"],
@@ -177,12 +220,11 @@ export async function leaderboardRows(by: "pnl7d" | "winRate" | "thesisAccuracy"
     ? await prisma.follow.groupBy({ by: ["followingId"], where: { followingId: { in: userIds } }, _count: { _all: true } })
     : [];
   const fc = new Map(followerCounts.map((f) => [f.followingId, f._count._all]));
-  const rows = await Promise.all(
-    addrs.map(async (a) => {
-      const user = users.get(a) ?? { id: "", address: a, handle: null, xHandle: null, avatarUrl: null };
-      return { rank: 0, user, stats: await traderStats(a), followers: user.id ? (fc.get(user.id) ?? 0) : 0 };
-    }),
-  );
+  const stats = await traderStatsBulk(addrs);
+  const rows: LeaderboardRow[] = addrs.map((a) => {
+    const user = users.get(a) ?? { id: "", address: a, handle: null, xHandle: null, avatarUrl: null };
+    return { rank: 0, user, stats: stats.get(a)!, followers: user.id ? (fc.get(user.id) ?? 0) : 0 };
+  });
   const key = (r: LeaderboardRow) =>
     by === "pnl7d" ? r.stats.pnl7d : by === "winRate" ? (r.stats.winRate ?? -1) : by === "thesisAccuracy" ? (r.stats.thesisAccuracy ?? -1) : r.followers;
   rows.sort((x, y) => key(y) - key(x));
