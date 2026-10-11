@@ -113,7 +113,7 @@ export function Chart({ coin, markers = [], lastPx }: { coin: string; markers?: 
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1 px-3 h-10 border-b border-line text-xs shrink-0">
+      <div className="flex items-center gap-1 px-3 h-10 border-b border-line text-xs shrink-0 overflow-x-auto">
         {INTERVALS.map((i) => (
           <button key={i} className={`px-2 h-7 rounded-lg num ${interval === i ? "bg-panel-3 text-fg" : "text-muted hover:text-fg"}`} onClick={() => setInterval_(i)}>
             {i}
@@ -121,7 +121,7 @@ export function Chart({ coin, markers = [], lastPx }: { coin: string; markers?: 
         ))}
         <span className="mx-2 w-px h-4 bg-line-2" />
         <span className="text-muted hidden sm:inline">Price</span>
-        <span className="ml-auto flex items-center gap-3">
+        <span className="ml-auto flex items-center gap-3 shrink-0 pl-2">
           <span className="text-dim hidden md:inline">Chart overlays</span>
           <Toggle on={showMine} onChange={setShowMine} label="My trades" />
           <Toggle on={showThesis} onChange={setShowThesis} label="Thesis" />

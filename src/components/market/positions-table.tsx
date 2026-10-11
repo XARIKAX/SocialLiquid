@@ -73,7 +73,7 @@ export function PositionsTable({
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-1 px-2 h-12 border-b border-line">
+      <div className="flex items-center gap-1 px-2 h-12 border-b border-line overflow-x-auto">
         {(
           [
             ["positions", `Positions (${positions?.length ?? 0})`],
@@ -85,7 +85,7 @@ export function PositionsTable({
             {label}
           </button>
         ))}
-        <span className="ml-auto flex items-center gap-3 pr-2">
+        <span className="ml-auto flex items-center gap-3 pr-2 shrink-0">
           {tab === "positions" && (
             <span className="seg hidden sm:inline-flex">
               {(["size", "pnl"] as Sort[]).map((s) => (

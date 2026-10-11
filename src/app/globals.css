@@ -102,7 +102,7 @@ body {
 .seg-active { @apply bg-panel-3 text-fg; }
 
 .toggle {
-  @apply inline-flex items-center gap-1.5 text-xs text-muted hover:text-fg cursor-pointer select-none;
+  @apply inline-flex items-center gap-1.5 text-xs text-muted hover:text-fg cursor-pointer select-none whitespace-nowrap shrink-0;
 }
 .toggle-box {
   @apply w-3.5 h-3.5 rounded border border-line-2 inline-flex items-center justify-center transition-colors;
