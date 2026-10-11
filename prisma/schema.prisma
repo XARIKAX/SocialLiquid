@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ThesisOutcome {
+  OPEN
+  PROFIT
+  LOSS
+  LIQUIDATED
+  DUMPED
+}
+
+enum FeedEventType {
+  LONG
+  SHORT
+  THESIS
+  CLOSED
+  LIQUIDATED
+}
+
+enum TrackedSource {
+  USER
+  MANUAL
+  DISCOVERED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  /// hyperliquid main wallet, lowercase
+  address   String   @unique
+  handle    String?  @unique
+  xHandle   String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+
+  agentKey  AgentKey?
+  theses    Thesis[]
+  likes     Like[]
+  followers Follow[] @relation("following")
+  following Follow[] @relation("follower")
+}
+
+model AgentKey {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentAddress     String
+  /// aes-256-gcm, key = AGENT_KEY_SECRET. never returned to the client.
+  encryptedPrivKey String
+  builderApprovedAt DateTime?
+  approvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+}
+
+/// one row per open -> close cycle. mirrored from clearinghouseState + userFills. never written by the client.
+model Position {
+  id          String    @id @default(cuid())
+  address     String
+  coin        String
+  /// LONG | SHORT
+  side        String
+  /// absolute size in coin units
+  size        Decimal   @db.Decimal(30, 10)
+  sizeUsd     Decimal   @db.Decimal(30, 6)
+  leverage    Int
+  entryPx     Decimal   @db.Decimal(30, 10)
+  openedAt    DateTime
+  closedAt    DateTime?
+  closePx     Decimal?  @db.Decimal(30, 10)
+  realisedPnl Decimal?  @db.Decimal(30, 6)
+  /// last seen unrealised pnl (refreshed by the indexer while open)
+  unrealisedPnl Decimal @default(0) @db.Decimal(30, 6)
+  liquidated  Boolean   @default(false)
+  updatedAt   DateTime  @updatedAt
+
+  theses     Thesis[]
+  feedEvents FeedEvent[]
+
+  @@index([address, coin, closedAt])
+  @@index([coin, closedAt])
+  @@index([closedAt])
+  @@index([openedAt(sort: Desc)])
+}
+
+/// raw fills from userFills. dedupe on hlFillId (= tid).
+model Fill {
+  id         String   @id @default(cuid())
+  hlFillId   BigInt   @unique
+  address    String
+  coin       String
+  /// B = buy, A = sell
+  side       String
+  dir        String
+  px         Decimal  @db.Decimal(30, 10)
+  sz         Decimal  @db.Decimal(30, 10)
+  fee        Decimal  @db.Decimal(30, 10)
+  builderFee Decimal? @db.Decimal(30, 10)
+  closedPnl  Decimal  @db.Decimal(30, 6)
+  hash       String
+  oid        BigInt
+  liquidation Boolean @default(false)
+  time       DateTime
+
+  @@index([address, time(sort: Desc)])
+  @@index([address, coin, time])
+}
+
+model Thesis {
+  id         String        @id @default(cuid())
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positionId String?
+  position   Position?     @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  coin       String
+  text       String        @db.VarChar(280)
+  createdAt  DateTime      @default(now())
+  outcome    ThesisOutcome @default(OPEN)
+
+  likes      Like[]
+  feedEvents FeedEvent[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([coin, createdAt(sort: Desc)])
+  @@index([positionId])
+}
+
+model Like {
+  userId   String
+  thesisId String
+  createdAt DateTime @default(now())
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  thesis   Thesis @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+
+  @@id([userId, thesisId])
+  @@index([thesisId])
+}
+
+/// denormalised feed, indexed on time desc
+model FeedEvent {
+  id         String        @id @default(cuid())
+  type       FeedEventType
+  address    String
+  coin       String
+  positionId String?
+  position   Position?     @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  thesisId   String?
+  thesis     Thesis?       @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  payload    Json
+  time       DateTime      @default(now())
+
+  @@index([time(sort: Desc)])
+  @@index([coin, time(sort: Desc)])
+  @@index([address, time(sort: Desc)])
+  @@index([type, time(sort: Desc)])
+}
+
+/// addresses the indexer polls
+model TrackedAddress {
+  address      String        @id
+  source       TrackedSource
+  displayName  String?
+  /// last fill time we have ingested, ms epoch, for incremental userFills
+  lastFillTime BigInt        @default(0)
+  lastPolledAt DateTime?
+  createdAt    DateTime      @default(now())
+
+  @@index([lastPolledAt])
+}
