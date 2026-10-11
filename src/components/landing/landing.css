@@ -1,0 +1,11 @@
+/* landing page styles. each section owns one file; base.css is the shared system.
+   everything sits in the components layer, so tailwind utilities still win when used inline. */
+@import "./styles/base.css" layer(components);
+@import "./styles/nav.css" layer(components);
+@import "./styles/hero.css" layer(components);
+@import "./styles/tape.css" layer(components);
+@import "./styles/features.css" layer(components);
+@import "./styles/terminal.css" layer(components);
+@import "./styles/how.css" layer(components);
+@import "./styles/cta.css" layer(components);
+@import "./styles/footer.css" layer(components);
