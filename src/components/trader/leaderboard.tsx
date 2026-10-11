@@ -52,7 +52,7 @@ export function LeaderboardTable() {
                     <Link href={`/t/${r.user.handle ?? r.user.address}`} className="flex items-center gap-2 hover:underline">
                       <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle} size={22} />
                       <span>{r.user.handle ?? shortAddr(r.user.address)}</span>
-                      {!r.user.id && <span className="pill bg-line text-dim">unclaimed</span>}
+                      {!r.user.claimed && <span className="pill bg-line text-dim">unclaimed</span>}
                     </Link>
                   </td>
                   <td className="text-right px-2"><Pnl value={r.stats.pnl7d} compact /></td>
