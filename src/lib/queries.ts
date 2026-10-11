@@ -3,7 +3,8 @@ import { Prisma, type FeedEventType } from "@prisma/client";
 import { prisma } from "./db";
 import { plain } from "./api";
 
-export type UserLite = { id: string; address: string; handle: string | null; xHandle: string | null; avatarUrl: string | null; claimed: boolean };
+/** handle is only set for claimed accounts and is what /t/[handle] resolves. displayName is the hyperliquid leaderboard name. */
+export type UserLite = { id: string; address: string; handle: string | null; displayName: string | null; xHandle: string | null; avatarUrl: string | null; claimed: boolean };
 
 export async function usersByAddress(addresses: string[]): Promise<Map<string, UserLite>> {
   const uniq = [...new Set(addresses.map((a) => a.toLowerCase()))];
@@ -15,8 +16,8 @@ export async function usersByAddress(addresses: string[]): Promise<Map<string, U
   const tracked = await prisma.trackedAddress.findMany({ where: { address: { in: uniq }, displayName: { not: null } }, select: { address: true, displayName: true } });
   const map = new Map<string, UserLite>();
   const names = new Map(tracked.map((t) => [t.address, t.displayName]));
-  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.handle ?? names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt });
-  for (const t of tracked) if (!map.has(t.address)) map.set(t.address, { id: "", address: t.address, handle: t.displayName, xHandle: null, avatarUrl: null, claimed: false });
+  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.claimedAt ? u.handle : null, displayName: names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt });
+  for (const t of tracked) if (!map.has(t.address)) map.set(t.address, { id: "", address: t.address, handle: null, displayName: t.displayName, xHandle: null, avatarUrl: null, claimed: false });
   return map;
 }
 
@@ -223,7 +224,7 @@ async function computeLeaderboard(by: "pnl7d" | "winRate" | "thesisAccuracy" | "
   const fc = new Map(followerCounts.map((f) => [f.followingId, f._count._all]));
   const stats = await traderStatsBulk(addrs);
   const rows: LeaderboardRow[] = addrs.map((a) => {
-    const user = users.get(a) ?? { id: "", address: a, handle: null, xHandle: null, avatarUrl: null, claimed: false };
+    const user = users.get(a) ?? { id: "", address: a, handle: null, displayName: null, xHandle: null, avatarUrl: null, claimed: false };
     return { rank: 0, user, stats: stats.get(a)!, followers: user.id ? (fc.get(user.id) ?? 0) : 0 };
   });
   const key = (r: LeaderboardRow) =>

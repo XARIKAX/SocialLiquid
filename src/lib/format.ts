@@ -62,6 +62,12 @@ export function isAddress(s: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(s);
 }
 
-export function displayName(u: { handle?: string | null; address: string; displayName?: string | null }): string {
+/** label for a trader: claimed handle, else hyperliquid display name, else short address */
+export function userLabel(u: { handle?: string | null; address: string; displayName?: string | null }): string {
   return u.handle ?? u.displayName ?? shortAddr(u.address);
+}
+
+/** profile path: only a claimed handle resolves, otherwise the address */
+export function userPath(u: { handle?: string | null; address: string }): string {
+  return `/t/${u.handle ?? u.address}`;
 }

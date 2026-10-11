@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/client";
 import type { FeedItem, LeaderboardRow } from "@/lib/queries";
-import { fmtPct, fmtPx, fmtUsd } from "@/lib/format";
+import { fmtPct, fmtPx, fmtUsd, userLabel, userPath } from "@/lib/format";
 import { useMarkets, useMids } from "@/hooks/use-market";
 import { useAuth } from "@/hooks/use-auth";
 import { FeedCard } from "./feed-card";
@@ -179,10 +179,10 @@ function MiniLeaderboard({ onNavigate }: { onNavigate?: () => void }) {
         </Link>
       </div>
       {q.data.slice(0, 25).map((r) => (
-        <Link key={r.user.address} href={`/t/${r.user.handle ?? r.user.address}`} onClick={onNavigate} className="flex items-center gap-2 px-3 h-9 border-b border-line/60 hover:bg-panel-2">
+        <Link key={r.user.address} href={userPath(r.user)} onClick={onNavigate} className="flex items-center gap-2 px-3 h-9 border-b border-line/60 hover:bg-panel-2">
           <span className="num text-dim w-5">{r.rank}</span>
-          <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle} size={20} />
-          <span className="truncate text-xs">{r.user.handle ?? `${r.user.address.slice(0, 6)}…${r.user.address.slice(-4)}`}</span>
+          <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={20} />
+          <span className="truncate text-xs">{userLabel(r.user)}</span>
           <span className="ml-auto num text-[11px] text-muted">{r.stats.winRate !== null ? `${Math.round(r.stats.winRate * 100)}%` : ""}</span>
           <Pnl value={r.stats.pnl7d} compact className="text-xs w-16 text-right" />
         </Link>

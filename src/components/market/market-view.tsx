@@ -42,7 +42,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
       if (e.type === "CLOSED" || e.type === "LIQUIDATED") out.push({ time: new Date(e.time).getTime(), side: "CLOSE", label: e.type.toLowerCase(), kind: "mine" });
     }
     for (const e of thesisEvents.data ?? []) {
-      out.push({ time: new Date(e.time).getTime(), side: (e.payload.side as "LONG" | "SHORT") ?? "LONG", label: e.user?.handle ?? e.address.slice(0, 6), kind: "thesis" });
+      out.push({ time: new Date(e.time).getTime(), side: (e.payload.side as "LONG" | "SHORT") ?? "LONG", label: e.user?.handle ?? e.user?.displayName ?? e.address.slice(0, 6), kind: "thesis" });
     }
     return out;
   }, [mine.data, thesisEvents.data]);

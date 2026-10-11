@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { fmtUsd, shortAddr } from "@/lib/format";
+import { fmtUsd, shortAddr, userLabel, userPath } from "@/lib/format";
 import type { ReactNode } from "react";
 
 export function Avatar({ address, url, size = 24, handle }: { address: string; url?: string | null; size?: number; handle?: string | null }) {
@@ -20,10 +20,10 @@ export function Avatar({ address, url, size = 24, handle }: { address: string; u
   );
 }
 
-export function TraderLink({ address, handle, className = "", children }: { address: string; handle?: string | null; className?: string; children?: ReactNode }) {
+export function TraderLink({ address, handle, displayName, className = "", children }: { address: string; handle?: string | null; displayName?: string | null; className?: string; children?: ReactNode }) {
   return (
-    <Link href={`/t/${handle ?? address}`} className={`hover:underline ${className}`} onClick={(e) => e.stopPropagation()}>
-      {children ?? handle ?? shortAddr(address)}
+    <Link href={userPath({ handle, address })} className={`hover:underline ${className}`} onClick={(e) => e.stopPropagation()}>
+      {children ?? userLabel({ handle, displayName, address })}
     </Link>
   );
 }

@@ -88,8 +88,8 @@ export function PositionsTable({
                 <tr key={p.id} className="border-b border-line/60 hover:bg-panel-2">
                   <td className="px-3 py-1.5">
                     <span className="flex items-center gap-2">
-                      <Avatar address={p.address} url={p.user?.avatarUrl} handle={p.user?.handle} size={18} />
-                      <TraderLink address={p.address} handle={p.user?.handle} className="truncate max-w-[8rem]" />
+                      <Avatar address={p.address} url={p.user?.avatarUrl} handle={p.user?.handle ?? p.user?.displayName} size={18} />
+                      <TraderLink address={p.address} handle={p.user?.handle} displayName={p.user?.displayName} className="truncate max-w-[8rem]" />
                     </span>
                   </td>
                   <td className="px-2"><SidePill side={p.side} /></td>

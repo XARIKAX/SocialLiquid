@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/client";
 import type { LeaderboardRow } from "@/lib/queries";
-import { fmtDuration, fmtPct, shortAddr } from "@/lib/format";
+import { fmtDuration, fmtPct, userLabel, userPath } from "@/lib/format";
 import { Avatar, Empty, Pnl, Skeleton } from "../ui";
 
 const BY = [
@@ -49,9 +49,9 @@ export function LeaderboardTable() {
                 <tr key={r.user.address} className="border-b border-line/60 hover:bg-panel-2">
                   <td className="num px-3 py-2 text-dim">{r.rank}</td>
                   <td className="px-2 py-2">
-                    <Link href={`/t/${r.user.handle ?? r.user.address}`} className="flex items-center gap-2 hover:underline">
-                      <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle} size={22} />
-                      <span>{r.user.handle ?? shortAddr(r.user.address)}</span>
+                    <Link href={userPath(r.user)} className="flex items-center gap-2 hover:underline">
+                      <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={22} />
+                      <span>{userLabel(r.user)}</span>
                       {!r.user.claimed && <span className="pill bg-line text-dim">unclaimed</span>}
                     </Link>
                   </td>

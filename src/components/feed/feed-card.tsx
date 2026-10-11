@@ -26,7 +26,7 @@ export function FeedCard({ item, mid, onNavigate, signedIn }: { item: FeedItem; 
   const isClosed = item.type === "CLOSED" || item.type === "LIQUIDATED";
   const pos = item.position;
   const live = pos && !pos.closedAt ? livePnl({ side: pos.side, size: pos.size, entryPx: pos.entryPx }, mid) : null;
-  const name = item.user?.handle ?? null;
+  const name = item.user?.handle ?? item.user?.displayName ?? null;
   const tagLine = item.type === "THESIS" && side ? `${side.toLowerCase()} ${item.coin}` : item.coin;
 
   return (
@@ -35,7 +35,7 @@ export function FeedCard({ item, mid, onNavigate, signedIn }: { item: FeedItem; 
         <Avatar address={item.address} url={item.user?.avatarUrl} handle={name} size={28} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <TraderLink address={item.address} handle={name} className="font-medium text-xs truncate max-w-[9rem]" />
+            <TraderLink address={item.address} handle={item.user?.handle} displayName={item.user?.displayName} className="font-medium text-xs truncate max-w-[9rem]" />
             {item.user?.xHandle && (
               <a href={`https://x.com/${item.user.xHandle}`} target="_blank" rel="noreferrer" className="text-dim text-[10px] hover:text-fg">
                 @{item.user.xHandle}
