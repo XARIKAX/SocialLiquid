@@ -19,7 +19,8 @@ export function RevealObserver() {
           io.unobserve(e.target);
         }
       },
-      { rootMargin: "0px 0px -8% 0px", threshold: 0.12 },
+      // any pixel past the bottom 10% of the viewport counts, so very tall cards reveal as soon as they arrive
+      { rootMargin: "0px 0px -10% 0px", threshold: 0 },
     );
     els.forEach((el) => io.observe(el));
     return () => io.disconnect();

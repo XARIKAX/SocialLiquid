@@ -1,1 +1,445 @@
-/* footer section styles. prefix every class with .lp-footer- */
+/* =====================================================================
+   footer: picks up the cta's horizon light at the top edge, quiet
+   columns in the middle, and a giant lit wordmark that dissolves into
+   the floor of the page.
+   ===================================================================== */
+
+.lp-footer {
+  --seam: rgb(10 25 29);
+  position: relative;
+  isolation: isolate;
+  padding-top: clamp(84px, 8.5vw, 128px);
+  /* opaque from the first pixel so the grain has a backdrop to blend with.
+     it starts in the horizon's afterglow and settles into ink. */
+  background: linear-gradient(180deg, var(--seam) 0px, rgb(8 16 20) 90px, rgb(6 9 12) 220px, #050507 380px, #040507 75%, #030405 100%);
+}
+
+/* the seam: an eased fade that starts above the footer, over the cta's last
+   stretch of horizon, so the light settles into the footer instead of stopping at an edge */
+.lp-footer-seam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 120px;
+  pointer-events: none;
+  background: linear-gradient(180deg,
+    rgb(10 25 29 / 0) 0%,
+    rgb(10 25 29 / 0.06) 25%,
+    rgb(10 25 29 / 0.22) 48%,
+    rgb(10 25 29 / 0.52) 70%,
+    rgb(10 25 29 / 0.84) 88%,
+    var(--seam) 100%);
+}
+/* the horizon's glow, centred on the seam so it is continuous across it */
+.lp-footer-spill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -120px;
+  height: 560px;
+  pointer-events: none;
+  background:
+    radial-gradient(400px 190px at 50% 120px, rgb(151 252 228 / 0.05), transparent 75%),
+    radial-gradient(760px 400px at 50% 120px, rgb(77 227 193 / 0.045), rgb(107 147 255 / 0.01) 55%, transparent 80%);
+}
+
+/* ---------- light ---------- */
+/* no z-index here on purpose: the grain must blend with the footer's own background */
+.lp-footer-light { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.lp-footer-floor {
+  position: absolute;
+  left: 50%;
+  bottom: -10%;
+  width: min(1500px, 150vw);
+  height: 62%;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(40% 58% at 50% 100%, rgb(77 227 193 / 0.15), rgb(77 227 193 / 0.04) 45%, transparent 72%),
+    radial-gradient(30% 50% at 22% 100%, rgb(107 147 255 / 0.06), transparent 70%),
+    radial-gradient(30% 50% at 80% 100%, rgb(151 252 228 / 0.04), transparent 70%);
+  animation: lp-breathe 10s ease-in-out infinite;
+}
+
+.lp-footer-inner { position: relative; }
+
+/* ---------- top: brand + columns ---------- */
+.lp-footer-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 52px;
+  padding-bottom: clamp(56px, 6vw, 88px);
+}
+@media (min-width: 960px) {
+  .lp-footer-top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr);
+    gap: 48px;
+  }
+}
+
+.lp-footer-brand { display: flex; flex-direction: column; align-items: flex-start; }
+.lp-footer-logo { display: inline-flex; border-radius: 10px; }
+.lp-footer-logo:focus-visible { outline: 2px solid var(--lp-mint); outline-offset: 5px; }
+.lp-footer-tag {
+  margin-top: 22px;
+  max-width: 320px;
+  font-size: clamp(24px, 2.1vw, 30px);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  font-weight: 420;
+  text-wrap: balance;
+}
+/* the hero's two lines: "where traders show" / "their receipts." each line is sized
+   to its own text so the lit and display gradients span the words, not the column */
+.lp-footer-tag > span,
+.lp-footer-tag > em { display: block; width: fit-content; padding-bottom: 0.06em; }
+
+.lp-footer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  margin-top: 30px;
+  padding: 0 15px 0 13px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--lp-text-2);
+  white-space: nowrap;
+  background:
+    radial-gradient(80% 120% at 0% 50%, rgb(77 227 193 / 0.09), transparent 60%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.065), rgb(255 255 255 / 0.015));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    inset 0 0 0 1px rgb(255 255 255 / 0.07),
+    0 12px 30px -16px rgb(0 0 0 / 0.9);
+}
+.lp-footer-status-sep { color: var(--lp-dim); }
+.lp-footer-status-ok { color: var(--lp-mint); text-shadow: 0 0 12px rgb(77 227 193 / 0.45); }
+
+/* columns */
+.lp-footer-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 40px 20px;
+}
+@media (min-width: 640px) { .lp-footer-cols { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px 24px; } }
+@media (min-width: 960px) { .lp-footer-cols { padding-top: 6px; } }
+
+.lp-footer-label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--lp-dim);
+}
+.lp-footer-label::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #e6fff9, var(--lp-teal) 70%);
+  box-shadow: 0 0 8px rgb(77 227 193 / 0.85);
+}
+.lp-footer-list { margin-top: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+
+.lp-footer-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  font-size: 14.5px;
+  letter-spacing: -0.01em;
+  color: var(--lp-text-2);
+  border-radius: 6px;
+  transition: color 0.35s var(--lp-ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.lp-footer-link-text { position: relative; }
+.lp-footer-link-text::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 1px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, var(--lp-mint), rgb(77 227 193 / 0.15));
+  box-shadow: 0 0 8px rgb(77 227 193 / 0.8);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  transition: transform 0.6s var(--lp-ease-out);
+}
+.lp-footer-link:hover { color: var(--lp-text); }
+.lp-footer-link:hover .lp-footer-link-text::after { transform: scaleX(1); }
+.lp-footer-link:focus-visible { outline: 2px solid var(--lp-mint); outline-offset: 4px; }
+.lp-footer-ext {
+  color: var(--lp-dim);
+  transition: transform 0.5s var(--lp-ease-out), color 0.3s, filter 0.3s;
+}
+.lp-footer-link:hover .lp-footer-ext {
+  color: var(--lp-mint);
+  transform: translate3d(2px, -2px, 0);
+  filter: drop-shadow(0 0 5px rgb(77 227 193 / 0.9));
+}
+
+/* ---------- rule with a travelling glint ---------- */
+.lp-footer-rule { position: relative; height: 1px; }
+/* a soft bloom where the light pools on the rule */
+.lp-footer-rule::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -14px;
+  width: min(760px, 70%);
+  height: 28px;
+  transform: translateX(-50%);
+  background: radial-gradient(50% 50% at 50% 50%, rgb(77 227 193 / 0.075), transparent 100%);
+  pointer-events: none;
+}
+.lp-footer-rule-line {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.09) 16%, rgb(151 252 228 / 0.42) 50%, rgb(255 255 255 / 0.09) 84%, transparent);
+  -webkit-mask: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+.lp-footer-rule-line::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -1px;
+  width: 16%;
+  height: 3px;
+  border-radius: 3px;
+  background: radial-gradient(50% 50% at 50% 50%, rgb(225 255 248 / 0.95), rgb(151 252 228 / 0.35) 45%, transparent 100%);
+  transform: translate3d(-100%, 0, 0);
+  animation: lp-footer-glint 11s var(--lp-ease-io) 1.5s infinite;
+}
+
+/* ---------- legal row ---------- */
+.lp-footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 28px;
+  padding-block: 24px;
+  font-size: 12.5px;
+  color: var(--lp-dim);
+}
+.lp-footer-copy { line-height: 1.6; }
+.lp-footer-legal-end { display: inline-flex; align-items: center; gap: 16px; }
+.lp-footer-built { display: inline-flex; align-items: center; gap: 8px; color: var(--lp-muted); white-space: nowrap; }
+.lp-footer-built .lp-mark { filter: drop-shadow(0 0 6px rgb(77 227 193 / 0.6)); }
+.lp-footer-up {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--lp-text-2);
+  background:
+    radial-gradient(90% 70% at 50% 0%, rgb(151 252 228 / 0.1), transparent 70%),
+    linear-gradient(180deg, rgb(28 38 44 / 0.9), rgb(11 15 19 / 0.95));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 1px 0 rgb(0 0 0 / 0.6), 0 12px 26px -12px rgb(0 0 0 / 0.95);
+  transition: color 0.3s, box-shadow 0.45s var(--lp-ease-out), transform 0.45s var(--lp-ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+/* lit rim: bright on top, a teal catch-light underneath */
+.lp-footer-up::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.22), rgb(255 255 255 / 0.06) 45%, rgb(77 227 193 / 0.22));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+  transition: opacity 0.4s;
+}
+.lp-footer-up svg { transition: transform 0.5s var(--lp-ease-out); }
+.lp-footer-up:hover {
+  color: var(--lp-mint);
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 rgb(214 255 245 / 0.18), inset 0 0 0 1px rgb(151 252 228 / 0.3), 0 0 22px -4px rgb(77 227 193 / 0.45);
+}
+.lp-footer-up:hover svg { transform: translateY(-2px); }
+.lp-footer-up:focus-visible { outline: 2px solid var(--lp-mint); outline-offset: 3px; }
+
+/* ---------- the signature ---------- */
+/* metrics (geist 500, line-height 1): cap top sits 0.145em below the line box top,
+   x-height at 0.315em, baseline at 0.855em, the q's tail ends near 1em.
+   every layer shares one line box, lifted 0.12em so the caps sit just inside the top edge.
+   the box keeps the whole word down to the baseline (the L's foot must read) and lets
+   only the descender melt into the page bottom. */
+.lp-footer-sig-wrap {
+  --sig-top: -0.12em;
+  position: relative;
+  container-type: inline-size;
+  margin-top: clamp(14px, 3vw, 40px);
+}
+.lp-footer-sig,
+.lp-footer-sig-halo {
+  /* sized to the container so it always spans edge to edge, never overflows */
+  font-size: 20.6cqi;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.06em;
+  white-space: nowrap;
+  user-select: none;
+}
+.lp-footer-sig {
+  position: relative;
+  height: 0.86em;
+  overflow: hidden;
+  /* solid to the x-height's lower half, then the floor takes it */
+  -webkit-mask: linear-gradient(180deg, #000 0%, #000 62%, rgb(0 0 0 / 0.72) 84%, rgb(0 0 0 / 0.22) 94%, transparent 100%);
+  mask: linear-gradient(180deg, #000 0%, #000 62%, rgb(0 0 0 / 0.72) 84%, rgb(0 0 0 / 0.22) 94%, transparent 100%);
+}
+.lp-footer-sig > span { display: block; position: absolute; left: -0.025em; top: var(--sig-top); }
+.lp-footer-sig > .lp-footer-sig-fill { position: relative; }
+
+/* body: cool white glass lit from above, liquid in teal. never fully dark at the
+   baseline, so the letterforms hold all the way down */
+.lp-footer-sig-fill {
+  background: linear-gradient(180deg,
+    rgb(236 246 255 / 0.16) 14%,
+    rgb(222 236 248 / 0.1) 31%,
+    rgb(206 224 238 / 0.062) 56%,
+    rgb(196 218 232 / 0.045) 84%,
+    rgb(196 218 232 / 0.02) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lp-footer-sig-fill .lp-footer-sig-liquid {
+  background: linear-gradient(180deg,
+    rgb(190 255 241 / 0.3) 14%,
+    rgb(130 244 218 / 0.165) 31%,
+    rgb(77 227 193 / 0.095) 56%,
+    rgb(77 227 193 / 0.065) 84%,
+    rgb(77 227 193 / 0.03) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* rim: a hairline that catches the light on the top edges only. geist's variable
+   outlines overlap at the stem joints (q, u, a, the L's corner), and a stroke would
+   draw those seams, so the rim fades out before the first joint (~0.4em) */
+.lp-footer-sig-rim {
+  color: transparent;
+  -webkit-text-stroke: 1px rgb(255 255 255 / 0.24);
+  /* a hairline at every size: 1px on the 240px desktop mark, finer on a phone */
+  -webkit-text-stroke-width: clamp(0.5px, 0.0042em, 1px);
+  -webkit-mask: linear-gradient(180deg, #000 13%, rgb(0 0 0 / 0.55) 25%, rgb(0 0 0 / 0.3) 31%, transparent 37%);
+  mask: linear-gradient(180deg, #000 13%, rgb(0 0 0 / 0.55) 25%, rgb(0 0 0 / 0.3) 31%, transparent 37%);
+}
+.lp-footer-sig-rim .lp-footer-sig-liquid { -webkit-text-stroke-color: rgb(151 252 228 / 0.42); }
+
+/* halo: the same word, blurred, so liquid gives off a little light of its own.
+   it sits outside the clipped box so the blur is never cut at the top edge */
+.lp-footer-sig-halo {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 0.86em;
+  overflow: hidden;
+  pointer-events: none;
+  filter: blur(0.075em);
+}
+.lp-footer-sig-halo > span { position: absolute; left: -0.025em; top: var(--sig-top); }
+.lp-footer-sig-halo,
+.lp-footer-sig-halo > span { color: rgb(160 196 240 / 0.045); }
+.lp-footer-sig-halo .lp-footer-sig-liquid { color: rgb(77 227 193 / 0.14); }
+
+/* glint: a soft band of light that crosses the letters now and then.
+   the window and the text move in opposite directions, so only transforms animate */
+.lp-footer-sig > .lp-footer-sig-window {
+  left: 0;
+  top: 0;
+  width: 22cqi;
+  height: 100%;
+  overflow: hidden;
+  -webkit-mask: linear-gradient(90deg, transparent, #000 42%, #000 58%, transparent);
+  mask: linear-gradient(90deg, transparent, #000 42%, #000 58%, transparent);
+  transform: translate3d(-22cqi, 0, 0);
+  animation: lp-footer-win 12s var(--lp-ease-io) 2.4s infinite;
+}
+.lp-footer-sig-glint {
+  position: absolute;
+  left: -0.025em;
+  top: var(--sig-top);
+  width: 100cqi;
+  background: linear-gradient(180deg, rgb(240 255 251 / 0) 10%, rgb(240 255 251 / 0.5) 16%, rgb(170 255 236 / 0.2) 40%, rgb(77 227 193 / 0.06) 70%, transparent 92%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  transform: translate3d(22cqi, 0, 0);
+  animation: lp-footer-txt 12s var(--lp-ease-io) 2.4s infinite;
+}
+
+/* the signature rises out of the floor once the legal row reveals */
+.lp-footer-sig > .lp-footer-sig-fill,
+.lp-footer-sig > .lp-footer-sig-rim,
+.lp-footer-sig-halo > span {
+  transition: transform 1.8s var(--lp-ease-out) 0.15s, opacity 1.4s var(--lp-ease-out) 0.15s;
+}
+.lp-footer-sig > .lp-footer-sig-window { transition: opacity 1s var(--lp-ease-out) 1.4s; }
+.lp-js .lp-footer-legal:not([data-in]) ~ .lp-footer-sig-wrap .lp-footer-sig > .lp-footer-sig-fill,
+.lp-js .lp-footer-legal:not([data-in]) ~ .lp-footer-sig-wrap .lp-footer-sig > .lp-footer-sig-rim,
+.lp-js .lp-footer-legal:not([data-in]) ~ .lp-footer-sig-wrap .lp-footer-sig-halo > span {
+  opacity: 0;
+  transform: translate3d(0, 0.32em, 0);
+}
+/* no glint over letters that are not there yet */
+.lp-js .lp-footer-legal:not([data-in]) ~ .lp-footer-sig-wrap .lp-footer-sig > .lp-footer-sig-window { opacity: 0; }
+
+/* ---------- tablet: the status pill answers the tagline from the right ---------- */
+@media (min-width: 640px) and (max-width: 959px) {
+  .lp-footer-brand { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; align-items: end; }
+  .lp-footer-logo { grid-column: 1 / -1; justify-self: start; }
+  .lp-footer-tag { grid-column: 1; }
+  .lp-footer-status { grid-column: 2; grid-row: 2; margin: 0 0 4px; }
+}
+
+/* ---------- mobile ---------- */
+@media (max-width: 639px) {
+  .lp-footer-tag { font-size: 26px; }
+  .lp-footer-link { min-height: 40px; font-size: 15px; }
+  .lp-footer-list { margin-top: 10px; gap: 0; }
+  .lp-footer-legal { flex-direction: column; align-items: flex-start; gap: 18px; padding-block: 26px 22px; }
+  .lp-footer-legal-end { width: 100%; justify-content: space-between; }
+  .lp-footer-copy-2 { display: block; }
+  .lp-footer-sig-wrap { margin-top: 4px; }
+}
+
+/* ---------- keyframes ---------- */
+@keyframes lp-footer-glint {
+  0% { transform: translate3d(-100%, 0, 0); opacity: 0; }
+  6% { opacity: 1; }
+  40% { opacity: 1; }
+  46%, 100% { transform: translate3d(625%, 0, 0); opacity: 0; }
+}
+@keyframes lp-footer-win {
+  0% { transform: translate3d(-22cqi, 0, 0); }
+  40%, 100% { transform: translate3d(100cqi, 0, 0); }
+}
+@keyframes lp-footer-txt {
+  0% { transform: translate3d(22cqi, 0, 0); }
+  40%, 100% { transform: translate3d(-100cqi, 0, 0); }
+}
+
+/* reduced motion: no light bands at all (the window needs the parent in the
+   selector to outrank `.lp-footer-sig > span { display: block }`) */
+@media (prefers-reduced-motion: reduce) {
+  .lp-footer-sig > .lp-footer-sig-window,
+  .lp-footer-rule-line::after { display: none; }
+}

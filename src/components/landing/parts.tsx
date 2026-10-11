@@ -74,13 +74,13 @@ export function Disc({ a, size = 20, className = "" }: { a: string; size?: numbe
   );
 }
 
-/** centred section heading block: eyebrow, lit h2, lead */
-export function SectionHead({ eyebrow, title, lead, align = "center", className = "" }: { eyebrow: string; title: ReactNode; lead?: ReactNode; align?: "center" | "left"; className?: string }) {
+/** centred section heading block: eyebrow, lit h2, lead. pass `id` to label the section with aria-labelledby. */
+export function SectionHead({ eyebrow, title, lead, id, align = "center", maxWidth = 760, className = "" }: { eyebrow: string; title: ReactNode; lead?: ReactNode; id?: string; align?: "center" | "left"; maxWidth?: number; className?: string }) {
   const c = align === "center";
   return (
-    <div className={`${c ? "text-center mx-auto items-center" : "items-start"} flex flex-col max-w-[760px] ${className}`}>
+    <div className={`${c ? "text-center mx-auto items-center" : "items-start"} flex flex-col ${className}`} style={{ maxWidth }}>
       <span data-reveal className={`lp-eyebrow ${c ? "lp-eyebrow-center" : ""}`}>{eyebrow}</span>
-      <h2 data-reveal style={vars({ "--d": "0.08s" })} className="lp-h2 lp-lit mt-5">{title}</h2>
+      <h2 id={id} data-reveal style={vars({ "--d": "0.08s" })} className="lp-h2 lp-lit mt-5">{title}</h2>
       {lead && (
         <p data-reveal style={vars({ "--d": "0.16s" })} className={`lp-lead mt-5 ${c ? "max-w-[600px]" : "max-w-[560px]"}`}>
           {lead}

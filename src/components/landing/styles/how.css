@@ -1,1 +1,799 @@
-/* how section styles. prefix every class with .lp-how- */
+/* =====================================================================
+   how it works — a lit rail with three luminous nodes, a slow pulse of
+   light travelling down it, and a glass card per step holding a small,
+   live-looking moment of the flow. the trust row closes the section.
+   ===================================================================== */
+
+.lp-how {
+  --how-node: 52px;   /* node column width */
+  --how-orb: 44px;    /* orb diameter */
+  --how-gap: 22px;    /* node column → card */
+  --how-orb-y: 26px;  /* orb top offset inside a step, lines it up with the card head */
+  position: relative;
+  padding-block: clamp(96px, 11vw, 168px);
+}
+
+/* ---------- atmosphere ---------- */
+.lp-how-atmos { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.lp-how-atmos .lp-grain { opacity: 0.04; }
+.lp-how-glow { position: absolute; border-radius: 50%; }
+/* light pooled behind the rail: teal around connect/approve, periwinkle where the thesis lives */
+.lp-how-glow-a {
+  right: -8%;
+  top: 4%;
+  width: min(1080px, 140vw);
+  height: 920px;
+  background: radial-gradient(closest-side, rgb(77 227 193 / 0.2), rgb(77 227 193 / 0.07) 50%, transparent 100%);
+  animation: lp-how-breathe 11s ease-in-out infinite;
+}
+.lp-how-glow-b {
+  right: 2%;
+  top: 44%;
+  width: min(860px, 130vw);
+  height: 760px;
+  background: radial-gradient(closest-side, rgb(107 147 255 / 0.16), rgb(107 147 255 / 0.055) 52%, transparent 100%);
+  animation: lp-how-breathe 13s ease-in-out -5s infinite;
+}
+/* a quieter pool under the headline */
+.lp-how-glow-c {
+  left: -14%;
+  top: -2%;
+  width: min(900px, 120vw);
+  height: 760px;
+  background: radial-gradient(closest-side, rgb(77 227 193 / 0.085), rgb(107 147 255 / 0.035) 55%, transparent 100%);
+}
+/* light on the floor beneath the trust row */
+.lp-how-glow-floor {
+  left: 50%;
+  bottom: -220px;
+  width: min(1200px, 150vw);
+  height: 520px;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, rgb(77 227 193 / 0.09), rgb(77 227 193 / 0.025) 55%, transparent 100%);
+}
+
+/* ---------- layout ---------- */
+.lp-how-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(52px, 7vw, 72px);
+}
+@media (min-width: 1024px) {
+  .lp-how-grid {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: clamp(48px, 5.5vw, 88px);
+    align-items: stretch;
+  }
+  .lp-how-sticky { position: sticky; top: 120px; }
+}
+
+/* ---------- left column ---------- */
+.lp-how-head .lp-h2 { font-size: clamp(36px, 4vw, 58px); line-height: 1.03; }
+.lp-how-line { display: block; }
+.lp-how-head em { padding-bottom: 0.06em; }
+.lp-how-head .lp-lead { max-width: 440px; }
+
+.lp-how-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: clamp(28px, 2.6vw, 36px); }
+.lp-how-docs .lp-how-ext { color: var(--lp-mint); transition: transform 0.4s var(--lp-ease-out); }
+.lp-how-docs:hover .lp-how-ext { transform: translate(2px, -2px); }
+.lp-how-docs:focus-visible { outline: 2px solid var(--lp-mint); outline-offset: 3px; }
+
+/* settles on / funds from */
+.lp-how-stack {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 28px 0 0;
+  padding: 10px 6px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0.01));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  font-size: 13px;
+}
+.lp-how-stack-i { display: inline-flex; align-items: center; gap: 10px; padding-inline: 10px; }
+.lp-how-stack-i + .lp-how-stack-i { border-left: 1px solid rgb(255 255 255 / 0.08); }
+.lp-how-stack-k { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--lp-dim); }
+.lp-how-stack-v { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--lp-text-2); white-space: nowrap; }
+/* narrow column: the two facts stack as rows */
+.lp-how-aside { container-type: inline-size; }
+@container (max-width: 444px) {
+  .lp-how-stack { display: flex; flex-direction: column; align-items: stretch; max-width: 400px; padding: 4px 14px; }
+  .lp-how-stack-i { justify-content: space-between; padding: 9px 0; }
+  .lp-how-stack-i + .lp-how-stack-i { border-left: 0; border-top: 1px solid rgb(255 255 255 / 0.06); }
+}
+.lp-how-stack-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #e3fff8, var(--lp-teal) 65%);
+  box-shadow: 0 0 8px rgb(77 227 193 / 0.8);
+}
+.lp-how-stack-dot-blue { background: radial-gradient(circle at 35% 35%, #e1e9ff, var(--lp-blue) 65%); box-shadow: 0 0 8px rgb(107 147 255 / 0.8); }
+
+/* ---------- the rail ---------- */
+.lp-how-timeline { position: relative; }
+/* where the rail's light comes from: a soft vertical flare above the first node */
+.lp-how-source {
+  position: absolute;
+  z-index: 0;
+  left: calc(var(--how-node) / 2);
+  top: -150px;
+  width: 220px;
+  height: 340px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background:
+    radial-gradient(6% 46% at 50% 50%, rgb(214 255 245 / 0.35), transparent 100%),
+    radial-gradient(40% 50% at 50% 55%, rgb(77 227 193 / 0.14), transparent 100%);
+  animation: lp-how-breathe 7s ease-in-out infinite;
+}
+.lp-how-rail {
+  position: absolute;
+  z-index: 0;
+  left: calc(var(--how-node) / 2 - 12px);
+  top: -110px;
+  bottom: -8px;
+  width: 24px;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(180deg, transparent 0, #000 120px, #000 calc(100% - 140px), transparent 100%);
+  mask: linear-gradient(180deg, transparent 0, #000 120px, #000 calc(100% - 140px), transparent 100%);
+}
+.lp-how-rail > span { position: absolute; top: 0; bottom: 0; }
+.lp-how-rail-line {
+  left: 11.5px;
+  width: 1px;
+  background: linear-gradient(180deg, rgb(151 252 228 / 0.22), rgb(255 255 255 / 0.09) 45%, rgb(107 147 255 / 0.16) 85%, rgb(107 147 255 / 0.05));
+}
+/* the lit core draws down once the timeline is on screen */
+.lp-how-rail-fill {
+  left: 11.5px;
+  width: 1px;
+  background: linear-gradient(180deg, rgb(214 255 245 / 0.9) 0%, rgb(77 227 193 / 0.75) 30%, rgb(110 200 230 / 0.5) 62%, rgb(107 147 255 / 0.35) 85%, transparent 100%);
+  box-shadow: 0 0 8px rgb(77 227 193 / 0.55);
+  transform-origin: 50% 0;
+  transition: transform 2.8s var(--lp-ease-io) 0.35s;
+}
+.lp-js .lp-how-rail:not([data-in]) .lp-how-rail-fill { transform: scaleY(0); }
+/* a soft bead of light that slides down the rail and loops */
+.lp-how-rail-pulse {
+  left: 0;
+  width: 24px;
+  height: 100%;
+  background:
+    radial-gradient(5px 46px at 50% 50%, rgb(240 255 251 / 0.95), rgb(151 252 228 / 0.55) 45%, transparent 100%),
+    radial-gradient(12px 110px at 50% 50%, rgb(77 227 193 / 0.32), transparent 100%);
+  opacity: 0;
+  transform: translate3d(0, -50%, 0);
+  animation: lp-how-pulse 8s cubic-bezier(0.45, 0.05, 0.55, 0.95) 3s infinite;
+}
+
+/* ---------- steps ---------- */
+.lp-how-steps { position: relative; z-index: 1; display: grid; gap: 22px; margin: 0; padding: 0; list-style: none; }
+.lp-how-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--how-node) minmax(0, 1fr);
+  column-gap: var(--how-gap);
+}
+.lp-how-node { position: relative; }
+/* hairline from the orb into its card */
+.lp-how-node::after {
+  content: "";
+  position: absolute;
+  top: calc(var(--how-orb-y) + var(--how-orb) / 2);
+  left: calc(50% + var(--how-orb) / 2 + 7px);
+  width: calc(var(--how-node) / 2 - var(--how-orb) / 2 - 7px + var(--how-gap));
+  height: 1px;
+  background: linear-gradient(90deg, rgb(151 252 228 / 0.55), rgb(151 252 228 / 0.08));
+  transform-origin: 0 50%;
+  transition: transform 0.9s var(--lp-ease-out) 0.5s;
+}
+.lp-js .lp-how-step:not([data-in]) .lp-how-node::after { transform: scaleX(0); }
+/* where the hairline lands: a small lit port on the card's rim */
+.lp-how-port {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--how-orb-y) + var(--how-orb) / 2 - 2.5px);
+  left: calc(var(--how-node) + var(--how-gap) - 2.5px);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #f0fffb, var(--lp-mint) 55%, var(--lp-teal));
+  box-shadow: 0 0 0 2px rgb(8 12 15 / 0.9), 0 0 10px 1px rgb(77 227 193 / 0.75);
+  transition: opacity 0.8s var(--lp-ease-out) 1.2s, transform 0.8s var(--lp-ease-out) 1.2s;
+}
+.lp-how-step:nth-child(3) .lp-how-port { background: radial-gradient(circle at 40% 35%, #f0f5ff, #b3c7ff 55%, var(--lp-blue)); box-shadow: 0 0 0 2px rgb(8 12 15 / 0.9), 0 0 10px 1px rgb(107 147 255 / 0.75); }
+.lp-js .lp-how-step:not([data-in]) .lp-how-port { opacity: 0; transform: scale(0.4); }
+/* the card answers on its rail: the lens brightens while you're on its step */
+.lp-how-step[data-in]:hover .lp-how-orb,
+.lp-how-step[data-in]:focus-within .lp-how-orb { --how-orb-glow: 0 0 46px 10px rgb(77 227 193 / 0.55); }
+.lp-how-step[data-in]:nth-child(3):hover .lp-how-orb { --how-orb-glow: 0 0 46px 10px rgb(110 170 240 / 0.5); }
+
+/* the orb: a lit lens with a mono numeral, an orbiting arc and a halo */
+.lp-how-orb {
+  position: absolute;
+  left: 50%;
+  top: var(--how-orb-y);
+  width: var(--how-orb);
+  height: var(--how-orb);
+  margin-left: calc(var(--how-orb) / -2);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: #f2fffc;
+  text-shadow: 0 0 8px rgb(151 252 228 / 0.9), 0 1px 0 rgb(0 0 0 / 0.4);
+  background:
+    radial-gradient(64% 48% at 50% 6%, rgb(225 255 249 / 0.5), transparent 72%),
+    radial-gradient(90% 60% at 50% 104%, rgb(97 240 208 / 0.42), transparent 70%),
+    linear-gradient(180deg, #1f7062 0%, #0f3f37 48%, #08221e 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(235 255 251 / 0.7),
+    inset 0 0 0 1px rgb(151 252 228 / 0.42),
+    inset 0 -8px 14px -8px rgb(151 252 228 / 0.45),
+    0 0 0 6px rgb(6 10 12 / 0.96),
+    0 0 0 7px rgb(151 252 228 / 0.16),
+    var(--how-orb-glow, 0 0 34px 6px rgb(77 227 193 / 0.36));
+  transition: box-shadow 0.6s var(--lp-ease-out);
+}
+.lp-how-orb > .lp-mono { position: relative; z-index: 1; }
+/* breathing halo */
+.lp-how-orb::before {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(77 227 193 / 0.36), rgb(77 227 193 / 0.1) 60%, transparent 100%);
+  z-index: -1;
+  animation: lp-how-halo 5.5s ease-in-out infinite;
+}
+/* specular glint on the lens */
+.lp-how-orb::after {
+  content: "";
+  position: absolute;
+  left: 22%;
+  top: 9%;
+  width: 56%;
+  height: 34%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(255 255 255 / 0.18), transparent);
+  pointer-events: none;
+}
+/* the active ring: a thin arc orbiting the lens */
+.lp-how-orb-ring {
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0turn, transparent 0.45turn, rgb(151 252 228 / 0.12) 0.7turn, rgb(225 255 249 / 1) 0.985turn, transparent 1turn);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 1.6px), #000 calc(100% - 1.2px), #000 100%, transparent 100%);
+  mask: radial-gradient(closest-side, transparent calc(100% - 1.6px), #000 calc(100% - 1.2px), #000 100%, transparent 100%);
+  filter: drop-shadow(0 0 3px rgb(151 252 228 / 0.9));
+  animation: lp-spin 9s linear infinite;
+}
+.lp-how-step:nth-child(2) .lp-how-orb-ring { animation-duration: 10.5s; animation-delay: -3s; }
+.lp-how-step:nth-child(3) .lp-how-orb-ring { animation-duration: 12s; animation-delay: -6s; }
+.lp-how-step:nth-child(2) .lp-how-orb::before { animation-delay: -1.8s; }
+.lp-how-step:nth-child(3) .lp-how-orb::before { animation-delay: -3.6s; }
+/* ignition: the lens lights a beat after its step arrives. the filter sits on the
+   node, not the orb, so the orb never becomes a stacking context and its halo stays behind the lens */
+.lp-how-node { transition: filter 1.2s var(--lp-ease-out) 0.35s; }
+.lp-js .lp-how-step:not([data-in]) .lp-how-node { filter: brightness(0.45) saturate(0.4); }
+
+/* ---------- card ---------- */
+.lp-how-card {
+  padding: 24px 26px 26px;
+  background:
+    radial-gradient(70% 60% at 0% 0%, rgb(77 227 193 / 0.075), transparent 70%),
+    radial-gradient(120% 80% at 50% 0%, rgb(77 227 193 / 0.04), transparent 60%),
+    linear-gradient(180deg, rgb(20 29 35 / 0.82) 0%, rgb(10 14 18 / 0.9) 100%);
+}
+.lp-how-step:nth-child(3) .lp-how-card {
+  background:
+    radial-gradient(70% 60% at 0% 0%, rgb(77 227 193 / 0.06), transparent 70%),
+    radial-gradient(60% 50% at 100% 100%, rgb(107 147 255 / 0.08), transparent 70%),
+    linear-gradient(180deg, rgb(20 29 35 / 0.82) 0%, rgb(10 14 18 / 0.9) 100%);
+}
+.lp-how-step:nth-child(3) .lp-how-orb {
+  background:
+    radial-gradient(64% 48% at 50% 6%, rgb(225 245 255 / 0.5), transparent 72%),
+    radial-gradient(90% 60% at 50% 104%, rgb(120 160 255 / 0.4), transparent 70%),
+    linear-gradient(180deg, #1f6470 0%, #133a55 48%, #0a1a2e 100%);
+}
+.lp-how-step:nth-child(3) .lp-how-orb::before { background: radial-gradient(closest-side, rgb(110 170 240 / 0.34), rgb(107 147 255 / 0.1) 60%, transparent 100%); }
+.lp-how-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 22px; }
+.lp-how-kicker { font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--lp-mint); opacity: 0.9; }
+.lp-how-meta { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--lp-dim); white-space: nowrap; }
+.lp-how-meta svg { color: var(--lp-teal); opacity: 0.85; }
+.lp-how-h3 { margin-top: 12px; padding-bottom: 0.04em; font-size: clamp(21px, 1.75vw, 25px); line-height: 1.15; letter-spacing: -0.032em; font-weight: 460; }
+.lp-how-body { margin-top: 8px; max-width: 52ch; font-size: 15px; line-height: 1.6; color: var(--lp-muted); text-wrap: pretty; }
+
+/* ---------- vignettes ---------- */
+.lp-how-vig {
+  container-type: inline-size;
+  position: relative;
+  margin-top: 20px;
+  padding: 14px 16px 0;
+  overflow: hidden;
+  background:
+    radial-gradient(80% 70% at 100% 0%, rgb(77 227 193 / 0.05), transparent 70%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.012));
+}
+.lp-how-vig-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.lp-how-vig-head > .lp-mono { font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--lp-dim); }
+.lp-how-vig-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px -16px 0;
+  padding: 11px 16px 12px;
+  border-top: 1px solid rgb(255 255 255 / 0.055);
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.22));
+  font-size: 11.5px;
+  color: var(--lp-dim);
+}
+.lp-how-vig-foot > span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.lp-how-vig-foot svg { color: var(--lp-teal); }
+
+/* 01 · connect */
+.lp-how-connect { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+.lp-how-wallets { display: flex; gap: 8px; flex-shrink: 0; }
+.lp-how-wtile {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-grid;
+  place-items: center;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 6px 16px -8px rgb(0 0 0 / 0.9);
+}
+.lp-how-wtile svg { filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35)); }
+.lp-how-wtile-teal { color: #d6fff5; background: linear-gradient(160deg, #2b8c79 0%, #145448 48%, #0b2a25 100%); }
+.lp-how-wtile-blue { color: #c9d7ff; background: linear-gradient(160deg, #4566c2 0%, #26397a 48%, #121a3a 100%); }
+.lp-how-wtile-slate { color: #d6dde2; background: linear-gradient(160deg, #46525c 0%, #262e35 50%, #13181c 100%); }
+.lp-how-wtile-more { background: linear-gradient(180deg, rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.015)); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08); }
+/* the chosen wallet: a lit ring that breathes, and a tick */
+.lp-how-wtile[data-on] {
+  box-shadow:
+    inset 0 1px 0 rgb(214 255 245 / 0.42),
+    inset 0 0 0 1px rgb(151 252 228 / 0.3),
+    0 0 0 1px rgb(151 252 228 / 0.55),
+    0 8px 22px -8px rgb(77 227 193 / 0.7);
+}
+.lp-how-wtile[data-on]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 15px;
+  box-shadow: 0 0 0 1px rgb(151 252 228 / 0.22), 0 0 20px 1px rgb(77 227 193 / 0.4);
+  animation: lp-breathe 4.4s ease-in-out infinite;
+  pointer-events: none;
+}
+.lp-how-wtick {
+  position: absolute;
+  z-index: 1;
+  right: -5px;
+  top: -5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #03251e;
+  background: linear-gradient(180deg, #c9fff2, #4de3c1);
+  box-shadow: 0 0 0 2px rgb(10 16 19), 0 0 10px rgb(77 227 193 / 0.8);
+}
+.lp-how-wtile-more { color: var(--lp-muted); }
+/* the dotted link with a bead travelling to the address */
+.lp-how-link {
+  position: relative;
+  flex: 1 1 24px;
+  min-width: 24px;
+  height: 2px;
+  background: radial-gradient(circle, rgb(151 252 228 / 0.45) 0.8px, transparent 1.2px) 0 50% / 6px 2px repeat-x;
+  overflow: hidden;
+}
+.lp-how-link-run { position: absolute; inset: 0; animation: lp-how-run 3.4s var(--lp-ease-io) 1.4s infinite; transform: translate3d(-10%, 0, 0); }
+.lp-how-link-run::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -1px;
+  width: 26px;
+  height: 4px;
+  margin-left: -26px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, transparent, rgb(214 255 245 / 0.95));
+  box-shadow: 0 0 8px rgb(77 227 193 / 0.9);
+}
+.lp-how-addr {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 14px 0 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgb(28 42 48 / 0.95), rgb(12 18 22 / 0.95));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 10px 26px -10px rgb(0 0 0 / 0.95), 0 0 24px -10px rgb(34 211 107 / 0.35);
+}
+.lp-how-addr-a { font-size: 12.5px; color: var(--lp-text); letter-spacing: -0.01em; }
+.lp-how-addr-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding-left: 10px;
+  margin-left: 2px;
+  border-left: 1px solid rgb(255 255 255 / 0.08);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #7dfcae;
+}
+.lp-how-addr-state .lp-live { width: 6px; height: 6px; }
+
+/* 02 · approve once */
+.lp-how-sigs { display: grid; gap: 8px; margin-top: 12px; }
+.lp-how-sig {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.04), rgb(255 255 255 / 0.012));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 0 0 1px rgb(255 255 255 / 0.055);
+}
+.lp-how-sig-ico { width: 34px; height: 34px; border-radius: 10px; display: inline-grid; place-items: center; }
+.lp-how-sig-ico-teal { color: var(--lp-mint); background: linear-gradient(180deg, rgb(77 227 193 / 0.26), rgb(77 227 193 / 0.07)); box-shadow: inset 0 1px 0 rgb(214 255 245 / 0.22), inset 0 0 0 1px rgb(77 227 193 / 0.26); }
+.lp-how-sig-ico-blue { color: #b9caff; background: linear-gradient(180deg, rgb(107 147 255 / 0.28), rgb(107 147 255 / 0.07)); box-shadow: inset 0 1px 0 rgb(214 225 255 / 0.22), inset 0 0 0 1px rgb(107 147 255 / 0.3); }
+.lp-how-sig-copy { min-width: 0; }
+.lp-how-sig-copy b { display: block; font-size: 13.5px; font-weight: 500; color: var(--lp-text); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-how-sig-copy small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--lp-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-how-sig-state { display: inline-flex; align-items: center; gap: 8px; }
+.lp-how-cap {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  margin-left: 4px;
+  padding-inline: 6px;
+  border-radius: 6px;
+  vertical-align: 1px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c3d2ff;
+  white-space: nowrap;
+  background: linear-gradient(180deg, rgb(107 147 255 / 0.24), rgb(107 147 255 / 0.08));
+  box-shadow: inset 0 0 0 1px rgb(107 147 255 / 0.3);
+}
+.lp-how-check { position: relative; width: 22px; height: 22px; display: inline-grid; place-items: center; }
+.lp-how-check::before {
+  /* the green lens behind the drawn ring */
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, rgb(34 211 107 / 0.32), rgb(34 211 107 / 0.08) 70%);
+  box-shadow: 0 0 14px -2px rgb(34 211 107 / 0.7);
+  transition: opacity 0.8s var(--lp-ease-out) calc(var(--cd) + 0.8s);
+}
+.lp-how-check svg { position: relative; overflow: visible; }
+.lp-how-check-ring,
+.lp-how-check-tick {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+.lp-how-check-ring {
+  stroke: rgb(125 252 174 / 0.75);
+  stroke-width: 1.4;
+  transform: rotate(-90deg);
+  transform-origin: 12px 12px;
+  transition: stroke-dashoffset 0.9s var(--lp-ease-io) var(--cd);
+}
+.lp-how-check-tick {
+  stroke: #b8ffd3;
+  stroke-width: 2.2;
+  filter: drop-shadow(0 0 3px rgb(34 211 107 / 0.9));
+  transition: stroke-dashoffset 0.5s var(--lp-ease-out) calc(var(--cd) + 0.7s);
+}
+.lp-how-signed { transition: opacity 0.7s var(--lp-ease-out) calc(var(--cd) + 1s), transform 0.7s var(--lp-ease-out) calc(var(--cd) + 1s); }
+.lp-js .lp-how-vig:not([data-in]) .lp-how-check-ring,
+.lp-js .lp-how-vig:not([data-in]) .lp-how-check-tick { stroke-dashoffset: 1; }
+.lp-js .lp-how-vig:not([data-in]) .lp-how-check::before { opacity: 0; }
+.lp-js .lp-how-vig:not([data-in]) .lp-how-signed { opacity: 0; transform: translateX(-6px); }
+
+.lp-how-vig-foot > .lp-how-progress-k { gap: 0; color: var(--lp-text-2); }
+/* the count ticks 0 → 1 → 2 as each signature lands */
+.lp-how-odo { display: inline-block; height: 1.3em; line-height: 1.3em; overflow: hidden; vertical-align: bottom; }
+.lp-how-odo-col { display: flex; flex-direction: column; transform: translateY(-2.6em); }
+.lp-how-odo-col > span { height: 1.3em; }
+.lp-js .lp-how-vig:not([data-in]) .lp-how-odo-col { transform: translateY(0); }
+.lp-how-vig[data-in] .lp-how-odo-col { animation: lp-how-odo 2.4s var(--lp-ease-io) both; }
+.lp-how-progress {
+  position: relative;
+  flex: 1 1 auto;
+  height: 3px;
+  min-width: 40px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.06);
+  overflow: hidden;
+}
+.lp-how-progress > i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2aa98f, #4de3c1 60%, #c9fff2);
+  box-shadow: 0 0 10px rgb(77 227 193 / 0.8);
+  transform-origin: 0 50%;
+}
+.lp-js .lp-how-vig:not([data-in]) .lp-how-progress > i { transform: scaleX(0); }
+.lp-how-vig[data-in] .lp-how-progress > i { animation: lp-how-prog 2.5s var(--lp-ease-io) both; }
+.lp-how-vig-foot .lp-how-progress { display: block; }
+
+/* 03 · trade and post */
+.lp-how-order { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.lp-how-coin {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #241300;
+  background: radial-gradient(circle at 30% 25%, #ffe0ad, #f7931a 58%, #a95a06);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), 0 0 16px -4px rgb(247 147 26 / 0.7);
+}
+.lp-how-order-t { min-width: 0; font-size: 14.5px; color: var(--lp-text); letter-spacing: -0.01em; }
+.lp-how-order-t b { font-weight: 500; }
+.lp-how-side { color: #7dfcae; text-shadow: 0 0 14px rgb(34 211 107 / 0.45); }
+.lp-how-order-sep, .lp-how-order-amt { color: var(--lp-text-2); }
+.lp-how-order-t small { display: block; margin-top: 2px; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--lp-dim); }
+.lp-how-filled { height: 24px; padding-inline: 9px; }
+
+.lp-how-grid4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 14px 0 0;
+  border-radius: 11px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.05);
+  gap: 1px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.05);
+}
+.lp-how-grid4 > div {
+  padding: 9px 11px 10px;
+  background:
+    radial-gradient(90% 70% at 50% 0%, rgb(255 255 255 / 0.03), transparent 70%),
+    linear-gradient(180deg, rgb(19 27 32 / 0.97), rgb(10 14 17 / 0.97));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+}
+.lp-how-grid4 dt { font-size: 10.5px; color: var(--lp-dim); white-space: nowrap; }
+.lp-how-grid4 dd { margin: 3px 0 0; font-size: 13px; font-weight: 500; color: var(--lp-text); white-space: nowrap; }
+.lp-how-grid4 dd small { font-size: 10.5px; font-weight: 500; opacity: 0.7; margin-left: 2px; }
+.lp-how-grid4 dd:not([class]) small { color: var(--lp-dim); opacity: 1; }
+.lp-how-up { color: #7dfcae !important; }
+.lp-how-down { color: #ff9a9b !important; }
+
+.lp-how-thesis {
+  position: relative;
+  margin-top: 12px;
+  padding: 11px 14px 12px 16px;
+  border-radius: 11px;
+  background: linear-gradient(90deg, rgb(107 147 255 / 0.13), rgb(107 147 255 / 0.03) 70%, transparent);
+  box-shadow: inset 0 0 0 1px rgb(107 147 255 / 0.14);
+}
+.lp-how-thesis::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #b3c7ff, var(--lp-blue));
+  box-shadow: 0 0 10px rgb(107 147 255 / 0.9);
+}
+.lp-how-thesis-k { display: block; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: #9db5ff; }
+.lp-how-thesis p {
+  margin-top: 4px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #d3ddff;
+  /* written in, left to right */
+  -webkit-mask: linear-gradient(90deg, #000 45%, transparent 55%) 0 0 / 220% 100% no-repeat;
+  mask: linear-gradient(90deg, #000 45%, transparent 55%) 0 0 / 220% 100% no-repeat;
+  -webkit-mask-position: 0 0;
+  mask-position: 0 0;
+  transition: -webkit-mask-position 1.8s var(--lp-ease-io) 0.7s, mask-position 1.8s var(--lp-ease-io) 0.7s;
+}
+.lp-js .lp-how-vig:not([data-in]) .lp-how-thesis p { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+
+.lp-how-posted { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px -16px 0; padding: 11px 16px 12px; border-top: 1px solid rgb(255 255 255 / 0.055); background: linear-gradient(180deg, rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.22)); }
+.lp-how-posted-pill { height: 24px; padding-inline: 9px 10px; gap: 7px; transition: opacity 0.7s var(--lp-ease-out) 2.2s, transform 0.7s var(--lp-ease-out) 2.2s; }
+.lp-how-posted-pill .lp-live { width: 6px; height: 6px; }
+.lp-js .lp-how-vig:not([data-in]) .lp-how-posted-pill { opacity: 0; transform: translateY(4px); }
+.lp-how-posted-by { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--lp-text-2); white-space: nowrap; }
+.lp-how-posted-ago { color: var(--lp-dim); font-family: inherit; }
+
+/* compact vignettes on narrow cards */
+@container (max-width: 470px) {
+  .lp-how-connect { flex-wrap: wrap; row-gap: 12px; }
+  .lp-how-link { display: none; }
+  .lp-how-addr { width: 100%; }
+  .lp-how-addr-state { margin-left: auto; }
+  .lp-how-vig-foot-r { display: none !important; }
+  .lp-how-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lp-how-signed { display: none; }
+  .lp-how-sig { align-items: start; }
+  .lp-how-sig-state { padding-top: 6px; }
+  .lp-how-sig-copy b, .lp-how-sig-copy small { white-space: normal; overflow: visible; }
+  .lp-how-sig-copy small { line-height: 1.4; }
+  /* break after the "·", never inside the phrase */
+  .lp-how-nw { white-space: nowrap; }
+  .lp-how-cap { display: flex; width: fit-content; margin: 5px 0 1px; }
+  .lp-how-order { align-items: center; }
+  .lp-how-order-sep, .lp-how-order-t small { display: none; }
+  .lp-how-order-amt { display: block; margin-top: 1px; font-size: 13px; }
+}
+@container (max-width: 330px) {
+  .lp-how-wtile { width: 36px; height: 36px; border-radius: 11px; }
+  .lp-how-sig { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; padding: 9px 10px 9px 9px; }
+  .lp-how-sig-ico { width: 30px; height: 30px; }
+  .lp-how-sig-copy b { font-size: 13px; }
+  .lp-how-posted-ago { display: none; }
+}
+
+/* ---------- the fine print ---------- */
+.lp-how-foot { position: relative; margin-top: clamp(80px, 9vw, 128px); }
+.lp-how-fine { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.lp-how-fine > .lp-mono { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--lp-mint); white-space: nowrap; }
+.lp-how-fine-rule { flex: 1 1 0; max-width: 360px; height: 1px; background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.1) 50%, rgb(151 252 228 / 0.45)); }
+.lp-how-fine-rule-r { background: linear-gradient(90deg, rgb(151 252 228 / 0.45), rgb(255 255 255 / 0.1) 50%, transparent); }
+
+.lp-how-trust { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin: 32px 0 0; padding: 0; list-style: none; }
+@media (min-width: 900px) {
+  .lp-how-trust { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+}
+.lp-how-trust-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px 22px 24px;
+  border-radius: 20px;
+  transition: transform 0.5s var(--lp-ease-out);
+}
+.lp-how-trust-item:hover { transform: translateY(-2px); }
+/* a lit filament on the top rim, like the crown of the hero arch */
+.lp-how-crown {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 46%;
+  height: 1px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--how-c, rgb(151 252 228 / 0.85)), transparent);
+  box-shadow: 0 0 14px 1px var(--how-g, rgb(77 227 193 / 0.45));
+  opacity: 0.8;
+}
+.lp-how-crown::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 70%;
+  height: 46px;
+  transform: translateX(-50%);
+  background: radial-gradient(50% 100% at 50% 0%, var(--how-g, rgb(77 227 193 / 0.45)), transparent 100%);
+  opacity: 0.35;
+}
+.lp-how-trust-blue { --how-c: rgb(190 208 255 / 0.85); --how-g: rgb(107 147 255 / 0.45); }
+.lp-how-tile {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: inline-grid;
+  place-items: center;
+}
+.lp-how-tile::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.5;
+  animation: lp-breathe 6s ease-in-out infinite;
+}
+.lp-how-tile svg { position: relative; z-index: 1; }
+.lp-how-tile-teal {
+  color: #c9fff1;
+  background: radial-gradient(80% 60% at 50% 0%, rgb(190 255 240 / 0.28), transparent 70%), linear-gradient(180deg, #1c6457 0%, #0d332d 100%);
+  box-shadow: inset 0 1px 0 rgb(214 255 245 / 0.4), inset 0 0 0 1px rgb(151 252 228 / 0.24), 0 8px 22px -10px rgb(77 227 193 / 0.6);
+}
+.lp-how-tile-teal::after { box-shadow: 0 0 22px 0 rgb(77 227 193 / 0.45); }
+.lp-how-tile-blue {
+  color: #d3deff;
+  background: radial-gradient(80% 60% at 50% 0%, rgb(200 214 255 / 0.28), transparent 70%), linear-gradient(180deg, #2c4388 0%, #141f45 100%);
+  box-shadow: inset 0 1px 0 rgb(214 225 255 / 0.4), inset 0 0 0 1px rgb(150 178 255 / 0.26), 0 8px 22px -10px rgb(107 147 255 / 0.6);
+}
+.lp-how-tile-blue::after { box-shadow: 0 0 22px 0 rgb(107 147 255 / 0.45); animation-delay: -2s; }
+.lp-how-tile-mint {
+  color: #e6fffa;
+  background: radial-gradient(80% 60% at 50% 0%, rgb(230 255 249 / 0.32), transparent 70%), linear-gradient(180deg, #2a7f6f 0%, #12423a 100%);
+  box-shadow: inset 0 1px 0 rgb(230 255 249 / 0.45), inset 0 0 0 1px rgb(151 252 228 / 0.3), 0 8px 22px -10px rgb(151 252 228 / 0.55);
+}
+.lp-how-tile-mint::after { box-shadow: 0 0 22px 0 rgb(151 252 228 / 0.4); animation-delay: -4s; }
+.lp-how-tile svg { filter: drop-shadow(0 0 5px rgb(151 252 228 / 0.45)); }
+.lp-how-tile-blue svg { filter: drop-shadow(0 0 5px rgb(150 178 255 / 0.5)); }
+.lp-how-slash { stroke: #ffffff; stroke-opacity: 0.85; }
+.lp-how-trust-copy { min-width: 0; }
+.lp-how-trust-t { font-size: 16px; line-height: 1.3; font-weight: 500; letter-spacing: -0.015em; color: var(--lp-text); margin-top: 2px; }
+.lp-how-trust-b { margin-top: 6px; font-size: 14px; line-height: 1.55; color: var(--lp-muted); text-wrap: pretty; }
+
+/* ---------- small screens ---------- */
+@media (max-width: 1023px) {
+  .lp-how-head .lp-lead { max-width: 560px; }
+  .lp-how-rail { top: -40px; -webkit-mask: linear-gradient(180deg, transparent 0, #000 56px, #000 calc(100% - 120px), transparent 100%); mask: linear-gradient(180deg, transparent 0, #000 56px, #000 calc(100% - 120px), transparent 100%); }
+  .lp-how-source { top: -70px; height: 220px; width: 160px; }
+}
+@media (max-width: 640px) {
+  .lp-how {
+    --how-node: 38px;
+    --how-orb: 34px;
+    --how-gap: 12px;
+    --how-orb-y: 20px;
+  }
+  .lp-how-orb { font-size: 10.5px; }
+  .lp-how-port { display: none; }
+  .lp-how-head .lp-h2 { font-size: clamp(32px, 10.2vw, 44px); }
+  .lp-how-orb-ring { inset: -5px; }
+  .lp-how-orb::before { inset: -12px; }
+  .lp-how-orb { box-shadow: inset 0 1px 0 rgb(214 255 245 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.4), inset 0 0 0 1px rgb(151 252 228 / 0.3), 0 0 0 4px rgb(6 10 12 / 0.96), 0 0 0 5px rgb(151 252 228 / 0.13), var(--how-orb-glow, 0 0 22px 3px rgb(77 227 193 / 0.3)); }
+  .lp-how-steps { gap: 16px; }
+  .lp-how-card { padding: 18px 16px 18px; border-radius: 20px; }
+  .lp-how-meta { font-size: 11.5px; }
+  .lp-how-h3 { margin-top: 10px; font-size: 20px; }
+  .lp-how-body { font-size: 14.5px; }
+  .lp-how-vig { margin-top: 16px; padding: 12px 12px 0; }
+  .lp-how-vig-foot, .lp-how-posted { margin-inline: -12px; padding-inline: 12px; }
+  .lp-how-ctas .lp-btn { flex: 1 1 auto; }
+  .lp-how-fine { gap: 12px; }
+  .lp-how-fine > .lp-mono { font-size: 10px; letter-spacing: 0.18em; }
+  .lp-how-trust-item { padding: 18px 18px 20px; gap: 14px; }
+}
+
+/* ---------- keyframes ---------- */
+@keyframes lp-how-breathe { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+@keyframes lp-how-halo {
+  0%, 100% { opacity: 0.55; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+@keyframes lp-how-pulse {
+  0% { opacity: 0; transform: translate3d(0, -50%, 0); }
+  6% { opacity: 1; }
+  62% { opacity: 1; }
+  70%, 100% { opacity: 0; transform: translate3d(0, 50%, 0); }
+}
+/* the count flips as each tick finishes drawing (ticks start at 1.25s and 1.75s, 0.5s ease-out) */
+@keyframes lp-how-odo {
+  0%, 58% { transform: translateY(0); }
+  64%, 79% { transform: translateY(-1.3em); }
+  85%, 100% { transform: translateY(-2.6em); }
+}
+@keyframes lp-how-prog {
+  0%, 50% { transform: scaleX(0); }
+  64%, 70% { transform: scaleX(0.5); }
+  86%, 100% { transform: scaleX(1); }
+}
+@keyframes lp-how-run {
+  0% { transform: translate3d(-10%, 0, 0); opacity: 0; }
+  10% { opacity: 1; }
+  55% { transform: translate3d(112%, 0, 0); opacity: 1; }
+  56%, 100% { transform: translate3d(112%, 0, 0); opacity: 0; }
+}

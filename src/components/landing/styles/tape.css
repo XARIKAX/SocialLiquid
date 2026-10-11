@@ -1,1 +1,489 @@
-/* tape section styles. prefix every class with .lp-tape- */
+/* =====================================================================
+   tape: the live market strip under the hero, then the headline numbers.
+   a breather band: calm motion, light pooling under a glowing hairline,
+   numerals lit from above. bloomberg terminal, finished by apple.
+   ===================================================================== */
+
+.lp-tape {
+  position: relative;
+  isolation: isolate;
+  scroll-margin-top: 72px;
+  padding: clamp(2px, 0.6vw, 8px) 0 clamp(76px, 6.6vw, 96px);
+}
+
+/* the seam: the hero's grain and corner light fade to ink before our edge, so no line is ever drawn */
+.lp-tape-veil {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -150px;
+  height: 151px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(5 5 7 / 0) 0%, rgb(5 5 7 / 0.35) 38%, rgb(5 5 7 / 0.8) 72%, #050507 100%);
+}
+
+/* atmosphere: fades in from the hero's dark, never draws an edge */
+.lp-tape-atmos {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(180deg, transparent 0%, #000 18%, #000 70%, transparent 100%);
+  mask: linear-gradient(180deg, transparent 0%, #000 18%, #000 70%, transparent 100%);
+}
+.lp-tape-pool {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(42% 46% at 50% 64%, rgb(77 227 193 / 0.055), transparent 72%),
+    radial-gradient(30% 36% at 22% 70%, rgb(107 147 255 / 0.035), transparent 70%),
+    radial-gradient(30% 36% at 78% 70%, rgb(77 227 193 / 0.03), transparent 70%);
+}
+
+/* ---------- the band ---------- */
+.lp-tape-band {
+  position: relative;
+  height: 62px;
+  display: flex;
+  align-items: center;
+}
+.lp-tape-band::before {
+  /* the glass of the strip, thinned out at both ends */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(36% 140% at 50% 0%, rgb(77 227 193 / 0.1), transparent 70%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.045) 0%, rgb(255 255 255 / 0.012) 50%, rgb(255 255 255 / 0.025) 100%);
+  -webkit-mask: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  mask: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  pointer-events: none;
+}
+.lp-tape-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  pointer-events: none;
+}
+.lp-tape-rule-top {
+  top: 0;
+  background: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 0.08) 16%, rgb(151 252 228 / 0.42) 42%, rgb(214 255 245 / 0.7) 50%, rgb(151 252 228 / 0.42) 58%, rgb(255 255 255 / 0.08) 84%, transparent 100%);
+}
+.lp-tape-rule-top::after {
+  /* where the light lands on the rule: a soft bloom that breathes */
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -10px;
+  width: min(760px, 70vw);
+  height: 20px;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, rgb(77 227 193 / 0.3), transparent);
+  filter: blur(6px);
+  animation: lp-breathe 8s ease-in-out infinite;
+}
+/* the comet: a bright head with a mint trail, crossing the top hairline once every 15s */
+.lp-tape-comet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 13px;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(90deg, transparent 3%, #000 24%, #000 76%, transparent 97%);
+  mask: linear-gradient(90deg, transparent 3%, #000 24%, #000 76%, transparent 97%);
+}
+.lp-tape-comet-arm {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(-100%, 0, 0);
+  animation: lp-tape-comet 15s cubic-bezier(0.45, 0, 0.3, 1) 2.8s infinite;
+  will-change: transform;
+}
+.lp-tape-comet-arm::before {
+  content: "";
+  position: absolute;
+  right: 3px;
+  top: 6px;
+  width: clamp(80px, 13vw, 190px);
+  height: 1px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, rgb(151 252 228 / 0.35) 55%, rgb(214 255 245 / 0.95));
+  box-shadow: 0 0 6px rgb(77 227 193 / 0.55);
+}
+.lp-tape-comet-arm::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 4.5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0%, #dffff7 45%, #97fce4 100%);
+  box-shadow: 0 0 8px 2px rgb(151 252 228 / 0.75);
+}
+.lp-tape-rule-bottom {
+  bottom: 0;
+  background: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 0.05) 18%, rgb(151 252 228 / 0.16) 50%, rgb(255 255 255 / 0.05) 82%, transparent 100%);
+}
+
+.lp-tape-viewport {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  -webkit-mask: linear-gradient(90deg, transparent 0%, #000 11%, #000 89%, transparent 100%);
+  mask: linear-gradient(90deg, transparent 0%, #000 11%, #000 89%, transparent 100%);
+}
+.lp-tape-track {
+  display: flex;
+  width: max-content;
+  animation: lp-tape-run var(--t, 72s) linear infinite;
+  will-change: transform;
+}
+.lp-tape-viewport:hover .lp-tape-track { animation-play-state: paused; }
+.lp-tape-list {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-tape-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  font-size: 13.5px;
+  white-space: nowrap;
+  transition: opacity 0.5s var(--lp-ease);
+}
+.lp-tape-viewport:hover .lp-tape-item { opacity: 0.55; }
+.lp-tape-viewport:hover .lp-tape-item:hover { opacity: 1; }
+
+.lp-tape-coin {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: rgb(8 10 14 / 0.78);
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.25);
+  background:
+    radial-gradient(circle at 32% 24%, rgb(255 255 255 / 0.62), transparent 40%),
+    linear-gradient(150deg, var(--c0) 0%, var(--c1) 46%, var(--c2) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.2),
+    inset 0 -2px 3px rgb(0 0 0 / 0.22),
+    0 0 12px -3px var(--c1),
+    0 2px 6px -2px rgb(0 0 0 / 0.7);
+}
+.lp-tape-sym {
+  font-weight: 550;
+  letter-spacing: -0.005em;
+  color: var(--lp-text);
+}
+/* max leverage: a hairline pill; 20x and up is lit, so the deep books read at a glance */
+.lp-tape-lev {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding-inline: 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--lp-dim);
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.015));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.075), inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+.lp-tape-lev-hi {
+  color: var(--lp-mint);
+  background: linear-gradient(180deg, rgb(77 227 193 / 0.2), rgb(77 227 193 / 0.05));
+  box-shadow: inset 0 0 0 1px rgb(77 227 193 / 0.28), inset 0 1px 0 rgb(214 255 245 / 0.14), 0 0 12px -3px rgb(77 227 193 / 0.5);
+}
+.lp-tape-px { color: var(--lp-text-2); margin-left: 3px; }
+.lp-tape-chg {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.lp-tape-up { color: #6ff3a4; text-shadow: 0 0 14px rgb(34 211 107 / 0.45); }
+.lp-tape-down { color: #ff8586; text-shadow: 0 0 14px rgb(255 77 79 / 0.4); }
+.lp-tape-flat { color: var(--lp-dim); }
+
+.lp-tape-sep {
+  width: 3px;
+  height: 3px;
+  margin-inline: 26px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(151 252 228 / 0.55), rgb(151 252 228 / 0.1));
+  box-shadow: 0 0 6px rgb(77 227 193 / 0.35);
+  flex-shrink: 0;
+}
+
+/* fallback phrases */
+.lp-tape-phrase {
+  gap: 0;
+  font-size: 11.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--lp-muted);
+}
+.lp-tape-sep-glyph { margin-inline: 22px; }
+
+/* ---------- caption ---------- */
+.lp-tape-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+  margin-top: clamp(56px, 5.4vw, 78px);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--lp-muted);
+}
+.lp-tape-caption::before,
+.lp-tape-caption::after {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(77 227 193 / 0.7));
+  box-shadow: 0 0 8px rgb(77 227 193 / 0.6);
+}
+.lp-tape-caption::after { background: linear-gradient(90deg, rgb(77 227 193 / 0.7), transparent); }
+.lp-tape-caption .lp-live { width: 6px; height: 6px; margin-right: 2px; }
+.lp-tape-caption-dot { width: 3px; height: 3px; border-radius: 50%; background: rgb(255 255 255 / 0.22); }
+.lp-tape-caption-time { color: var(--lp-dim); }
+.lp-tape-idle {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffe7b8, var(--lp-amber) 65%);
+  box-shadow: 0 0 10px rgb(245 178 54 / 0.6);
+  animation: lp-breathe 3.6s ease-in-out infinite;
+}
+
+/* ---------- stats ---------- */
+.lp-tape-stats {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 1120px;
+  margin: clamp(30px, 3.2vw, 44px) auto 0;
+}
+@media (min-width: 900px) {
+  .lp-tape-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.lp-tape-stat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 10px 16px 6px;
+}
+/* glowing hairline divider, fading at both ends */
+.lp-tape-stat::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent 0%, rgb(255 255 255 / 0.07) 22%, rgb(151 252 228 / 0.32) 54%, rgb(255 255 255 / 0.07) 84%, transparent 100%);
+  box-shadow: 0 0 10px rgb(77 227 193 / 0.12);
+}
+.lp-tape-stat:first-child::before { display: none; }
+/* the light pooling under each figure, breathing out of step */
+.lp-tape-stat::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  z-index: -1;
+  width: min(220px, 90%);
+  height: 90px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side, rgb(77 227 193 / 0.09), transparent);
+  filter: blur(8px);
+  pointer-events: none;
+  animation: lp-breathe 9s ease-in-out calc(var(--i, 0) * -2.2s) infinite;
+}
+
+.lp-tape-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--lp-dim);
+}
+.lp-tape-label svg { color: var(--lp-teal); filter: drop-shadow(0 0 5px rgb(77 227 193 / 0.6)); flex-shrink: 0; }
+/* a node on each divider, level with the label: an echo of the hero's orbit */
+.lp-tape-stat:not(:first-child) .lp-tape-label::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 54%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #dffff7;
+  box-shadow: 0 0 8px 1px rgb(151 252 228 / 0.75);
+  animation: lp-breathe 5.5s ease-in-out calc(var(--i, 0) * -1.4s) infinite;
+}
+
+.lp-tape-fig {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  margin: 18px 0 0;
+  font-size: clamp(40px, 4.1vw, 56px);
+  font-weight: 420;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  white-space: nowrap;
+  background-image:
+    linear-gradient(100deg, transparent 0% 41%, rgb(151 252 228 / 0.9) 50%, transparent 59% 100%),
+    linear-gradient(180deg, #ffffff 8%, #eef6f6 46%, #98abb4 100%);
+  background-size: 300% 100%, 100% 100%;
+  background-position: 0% 0, 0 0;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  padding-bottom: 0.06em;
+}
+.lp-tape-fig-in { display: inline-flex; align-items: baseline; }
+/* once revealed, a single pass of light across the figure */
+.lp-tape-stat[data-in] .lp-tape-fig { animation: lp-tape-sheen 2.6s var(--lp-ease-io) calc(var(--d, 0s) + 0.9s) both; }
+.lp-tape-cur,
+.lp-tape-unit {
+  font-size: 0.56em;
+  letter-spacing: -0.02em;
+}
+.lp-tape-cur {
+  align-self: flex-start;
+  margin: 0.14em 0.06em 0 0;
+  background: linear-gradient(180deg, #d9e3e7, #7f8f98);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lp-tape-unit {
+  margin-left: 0.07em;
+  background: linear-gradient(180deg, #c9fff1 0%, #6ff2d3 45%, #36b89c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 12px rgb(77 227 193 / 0.35));
+}
+/* no figure: a quiet lit dash, never a zero */
+.lp-tape-dash {
+  font-weight: 300;
+  /* lit in the middle and fading out at the ends, like the hairlines */
+  background: linear-gradient(90deg, rgb(127 139 151 / 0.35) 8%, #e6f2f1 50%, rgb(127 139 151 / 0.35) 92%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  opacity: 0.8;
+}
+
+.lp-tape-note {
+  margin: 12px 0 0;
+  text-wrap: balance;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--lp-muted);
+}
+
+/* ---------- mobile ---------- */
+@media (max-width: 899px) {
+  .lp-tape-stat { padding: 26px 12px 22px; }
+  .lp-tape-stat:nth-child(3)::before { display: none; }
+  /* a horizontal hairline between the two rows */
+  .lp-tape-stat .lp-tape-label::before { display: none !important; }
+  /* one node where the hairlines cross */
+  .lp-tape-stats::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 1;
+    width: 5px;
+    height: 5px;
+    margin: -2px 0 0 -2.5px;
+    border-radius: 50%;
+    background: #dffff7;
+    box-shadow: 0 0 10px 2px rgb(151 252 228 / 0.7);
+    animation: lp-breathe 5.5s ease-in-out infinite;
+  }
+  .lp-tape-stats::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.07) 20%, rgb(151 252 228 / 0.3) 50%, rgb(255 255 255 / 0.07) 80%, transparent);
+  }
+}
+@media (max-width: 640px) {
+  .lp-tape-band { height: 54px; }
+  .lp-tape-item { font-size: 13px; gap: 8px; }
+  .lp-tape-sep { margin-inline: 20px; }
+  .lp-tape-lev { display: none; }
+  .lp-tape-coin { width: 19px; height: 19px; }
+  .lp-tape-viewport {
+    -webkit-mask: linear-gradient(90deg, transparent 0%, #000 14%, #000 86%, transparent 100%);
+    mask: linear-gradient(90deg, transparent 0%, #000 14%, #000 86%, transparent 100%);
+  }
+  .lp-tape-caption { letter-spacing: 0.16em; gap: 8px 10px; }
+  .lp-tape-caption-dot { display: none; }
+  .lp-tape-caption-time { flex-basis: 100%; text-align: center; font-size: 10px; }
+  .lp-tape-caption::before,
+  .lp-tape-caption::after { display: none; }
+  .lp-tape-fig { font-size: clamp(34px, 10vw, 42px); margin-top: 14px; }
+  .lp-tape-note { font-size: 13px; margin-top: 10px; }
+  .lp-tape-label { font-size: 10px; letter-spacing: 0.16em; gap: 7px; }
+}
+
+/* reduced motion: the strip holds still, but can still be read by swiping */
+@media (prefers-reduced-motion: reduce) {
+  .lp-tape-track { animation: none !important; }
+  .lp-tape-comet { display: none; }
+  .lp-tape-list:first-child { padding-left: 12vw; }
+  .lp-tape-viewport { overflow-x: auto; scrollbar-width: none; }
+  .lp-tape-viewport::-webkit-scrollbar { display: none; }
+}
+
+@keyframes lp-tape-sheen {
+  from { background-position: 100% 0, 0 0; }
+  to { background-position: 0% 0, 0 0; }
+}
+@keyframes lp-tape-comet {
+  0% { transform: translate3d(-100%, 0, 0); }
+  62%, 100% { transform: translate3d(16%, 0, 0); }
+}
+@keyframes lp-tape-run {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
