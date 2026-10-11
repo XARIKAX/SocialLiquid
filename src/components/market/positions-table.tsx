@@ -130,7 +130,7 @@ export function PositionsTable({
                             <Avatar address={p.address} url={p.user?.avatarUrl} handle={p.user?.handle ?? p.user?.displayName} size={30} />
                             <span className="leading-tight min-w-0">
                               <TraderLink address={p.address} handle={p.user?.handle} displayName={p.user?.displayName} className="font-semibold block truncate max-w-[9rem]" />
-                              <span className="text-[11px] text-dim flex items-center gap-1"><Icon.clock /> {p.avgHoldMs ? `${fmtDuration(p.avgHoldMs)} avg. hold` : `open ${fmtDuration(Date.now() - new Date(p.openedAt).getTime())}`}</span>
+                              <span className="text-[11px] text-dim flex items-center gap-1" suppressHydrationWarning><Icon.clock /> {p.avgHoldMs ? `${fmtDuration(p.avgHoldMs)} avg. hold` : `open ${fmtDuration(Date.now() - new Date(p.openedAt).getTime())}`}</span>
                             </span>
                           </span>
                         </td>
@@ -147,7 +147,7 @@ export function PositionsTable({
                         </td>
                         <td className="px-3 py-2.5 leading-tight">
                           <span className="num block">{fmtPx(p.entryPx)}</span>
-                          <span className="text-[11px] text-dim">{timeAgo(p.openedAt)} ago</span>
+                          <span className="text-[11px] text-dim" suppressHydrationWarning>{timeAgo(p.openedAt)} ago</span>
                         </td>
                         <td className="px-3 py-2.5 num text-muted">{p.thesis ? <span className="inline-flex items-center gap-1"><Icon.heart /> {p.thesis.likes}</span> : ""}</td>
                         <td className="px-3 py-2.5 max-w-[22rem] text-fg-2 leading-snug">{p.thesis?.text ?? <span className="text-dim">–</span>}</td>

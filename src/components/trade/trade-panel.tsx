@@ -7,7 +7,7 @@ import { api } from "@/lib/client";
 import { fmtPx, fmtUsd } from "@/lib/format";
 import type { MarketSummary } from "@/lib/hl-types";
 import { Icon, Toggle } from "../ui";
-import { DepositBox, OnboardingGate } from "./onboarding";
+import { DepositBox, useOnboarding } from "./onboarding";
 
 const QUICK = [10, 100, 500, 1000];
 
@@ -24,17 +24,17 @@ export function TradePanel({ coin, market, mid }: { coin: string; market?: Marke
         </div>
         <span className="btn btn-ghost h-10 w-10 px-0 text-muted" title="settings"><Icon.gear /></span>
       </div>
-      <OnboardingGate>
-        <OrderForm coin={coin} market={market} mid={mid} side={side} />
-      </OnboardingGate>
+      <OrderForm coin={coin} market={market} mid={mid} side={side} />
     </section>
   );
 }
 
 function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketSummary; mid?: number; side: "LONG" | "SHORT" }) {
-  const { address } = useAuth();
+  const { address, signedIn } = useAuth();
+  const ob = useOnboarding();
+  const [showStep, setShowStep] = useState(false);
   const qc = useQueryClient();
-  const bal = useBalance(address);
+  const bal = useBalance(signedIn ? address : null);
   const [usd, setUsd] = useState("");
   const [lev, setLev] = useState(5);
   const [type, setType] = useState<"market" | "limit">("market");
@@ -108,7 +108,13 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
     }
   };
 
-  const disabled = busy || usdNum < 10 || (type === "limit" && !Number(limitPx));
+  const ready = ob.stage === "ready";
+  const disabled = ready && (busy || usdNum < 10 || (type === "limit" && !Number(limitPx)));
+  const onCta = () => {
+    if (ready) return submit();
+    if (ob.act) return ob.act();
+    setShowStep((v) => !v);
+  };
 
   return (
     <div className="mt-3 space-y-3 text-[13px]">
@@ -195,14 +201,17 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
         <Row k="Fees" v={<span><span className="text-brand">◆</span> 0.045% + 0.05% builder{usdNum ? ` · ${fmtUsd(fee)}` : ""}</span>} />
       </dl>
 
-      <button className={`btn w-full h-11 text-[15px] ${side === "LONG" ? "btn-up" : "btn-down"}`} onClick={submit} disabled={disabled}>
-        {busy ? "Sending…" : `${side === "LONG" ? "Long" : "Short"} ${coin}${usdNum ? ` · ${fmtUsd(usdNum)}` : ""}`}
+      <button className={`btn w-full h-11 text-[15px] ${ready ? (side === "LONG" ? "btn-up" : "btn-down") : "btn-primary"}`} onClick={onCta} disabled={disabled || ob.busy}>
+        {!ready && <Icon.wallet />}
+        {ready ? (busy ? "Sending…" : `${side === "LONG" ? "Long" : "Short"} ${coin}${usdNum ? ` · ${fmtUsd(usdNum)}` : ""}`) : ob.cta}
       </button>
-      {usdNum > 0 && usdNum < 10 && <p className="text-dim text-[11px] text-center">Minimum order is $10</p>}
-      {tooBig && <p className="text-warn text-[11px] text-center">Margin exceeds your available {fmtUsd(avail)}. Lower size or raise leverage.</p>}
+      {!ready && <p className="text-[11px] text-dim text-center num">Fee 0.045% taker + 0.05% builder · routes to Hyperliquid</p>}
+      {!ready && showStep && ob.Panel && <ob.Panel />}
+      {ready && usdNum > 0 && usdNum < 10 && <p className="text-dim text-[11px] text-center">Minimum order is $10</p>}
+      {ready && tooBig && <p className="text-warn text-[11px] text-center">Margin exceeds your available {fmtUsd(avail)}. Lower size or raise leverage.</p>}
       {msg && <p className={`text-xs text-center ${msg.ok ? "text-up" : "text-down"}`}>{msg.text}</p>}
 
-      {address && <DepositBox address={address} />}
+      {ready && address && <DepositBox address={address} />}
 
       {myPos && (
         <div className="card-2 px-3 py-2.5 space-y-1 text-xs">

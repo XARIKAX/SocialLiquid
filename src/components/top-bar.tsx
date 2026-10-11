@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
@@ -21,9 +21,14 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
       <button className="md:hidden btn btn-ghost px-2 h-9" onClick={onToggleFeed} aria-label="toggle feed">
         <Icon.menu />
       </button>
-      <Link href="/" className="shrink-0">
+      <Link href="/trade" className="shrink-0">
         <Logo />
       </Link>
+      <nav className="hidden lg:flex items-center gap-0.5 ml-2">
+        <NavTab href="/trade" label="Trade" match={["/trade", "/m/"]} />
+        <NavTab href="/tokens" label="Tokens" match={["/tokens"]} />
+        <NavTab href="/leaderboard" label="Leaderboard" match={["/leaderboard"]} />
+      </nav>
       {me?.network && me.network !== "mainnet" && <span className="pill pill-warn uppercase tracking-wide">{me.network}</span>}
 
       <div className="flex-1 flex justify-center">
@@ -69,6 +74,16 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
         )}
       </div>
     </header>
+  );
+}
+
+function NavTab({ href, label, match }: { href: string; label: string; match: string[] }) {
+  const path = usePathname();
+  const active = match.some((m) => path === m || (m.endsWith("/") && path.startsWith(m)));
+  return (
+    <Link href={href} className={`tab h-9 px-3 ${active ? "tab-active" : ""}`}>
+      {label}
+    </Link>
   );
 }
 

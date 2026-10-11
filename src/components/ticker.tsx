@@ -24,6 +24,7 @@ export function Ticker() {
       })}
       <span className="ml-auto flex items-center gap-4 text-muted">
         <span className="flex items-center gap-1.5 text-up"><span className="w-1.5 h-1.5 rounded-full bg-up live-dot" /> Live</span>
+        <span className="num">{markets.data?.length ?? "…"} markets</span>
         <a href="https://hyperliquid.xyz" target="_blank" rel="noreferrer" className="hover:text-fg">Built on Hyperliquid</a>
         <a href="https://x.com" target="_blank" rel="noreferrer" className="hover:text-fg"><Icon.x /></a>
       </span>

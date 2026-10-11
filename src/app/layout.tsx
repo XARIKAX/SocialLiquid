@@ -1,8 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import { Providers } from "@/components/providers";
-import { Shell } from "@/components/shell";
 
 // geist sans, self hosted. not preloaded: text paints in the system fallback and swaps, which keeps first paint off the font's critical path
 const geist = localFont({
@@ -26,11 +24,7 @@ export const viewport: Viewport = { themeColor: "#050507", width: "device-width"
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`dark ${geist.variable}`}>
-      <body className="font-sans">
-        <Providers>
-          <Shell>{children}</Shell>
-        </Providers>
-      </body>
+      <body className="font-sans">{children}</body>
     </html>
   );
 }

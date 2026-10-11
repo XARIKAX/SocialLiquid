@@ -12,31 +12,33 @@ import { useConnectModal } from "../connect-modal";
 
 type Prepare = { agentAddress: string; agentName: string; needsAgentApproval: boolean; needsBuilderApproval: boolean; builder: string; builderFeeTenthsBp: number; maxFeeRate: string };
 
-/** renders children when the user is fully set up; otherwise the next onboarding step, inside the trade card */
-export function OnboardingGate({ children }: { children: React.ReactNode }) {
-  const { isConnected, signedIn, needsSignIn, signIn, busy, error, me } = useAuth();
+export type Stage = "connect" | "signin" | "invite" | "handle" | "enable" | "ready";
+
+/** where the user is in onboarding, the label the trade cta should carry, and the panel to expand when clicked */
+export function useOnboarding(): { stage: Stage; cta: string; act: (() => void) | null; busy: boolean; Panel: (() => React.ReactElement) | null } {
+  const { isConnected, signedIn, needsSignIn, signIn, busy, me } = useAuth();
   const qc = useQueryClient();
   const refresh = () => qc.invalidateQueries({ queryKey: ["me"] });
   const connect = useConnectModal();
-  if (!isConnected)
-    return (
-      <Step n={1} title="Connect a wallet" hint="Hyperliquid signs with an EVM key. Any wallet works. Connecting only reads your address.">
-        <button className="btn btn-primary w-full h-11 text-[15px]" onClick={connect.open}><Icon.wallet /> Connect wallet</button>
-        <Steps current={1} />
-      </Step>
-    );
-  if (needsSignIn || !signedIn)
-    return (
-      <Step n={2} title="Sign in" hint="Sign a message to prove you own this wallet. No gas, no permissions, authorises nothing on chain.">
-        <button className="btn btn-primary w-full h-11 text-[15px]" onClick={signIn} disabled={busy}>{busy ? "Check your wallet…" : "Sign in"}</button>
-        {error && <p className="text-down text-xs mt-2">{error}</p>}
-        <Steps current={2} />
-      </Step>
-    );
-  if (me?.invite.required && !me.invite.ok) return <InviteStep onDone={refresh} />;
-  if (!me?.user?.handle) return <HandleStep onDone={refresh} />;
-  if (!me.user.agent?.approved || !me.user.agent.builderApproved) return <EnableTradingStep onDone={refresh} />;
-  return <>{children}</>;
+  if (!isConnected) return { stage: "connect", cta: "Connect wallet to trade", act: connect.open, busy: false, Panel: null };
+  if (needsSignIn || !signedIn) return { stage: "signin", cta: busy ? "Check your wallet…" : "Sign in to trade", act: signIn, busy, Panel: null };
+  if (me?.invite.required && !me.invite.ok) return { stage: "invite", cta: "Enter invite code", act: null, busy: false, Panel: () => <InviteStep onDone={refresh} /> };
+  if (!me?.user?.handle) return { stage: "handle", cta: "Claim a handle to trade", act: null, busy: false, Panel: () => <HandleStep onDone={refresh} /> };
+  if (!me.user.agent?.approved || !me.user.agent.builderApproved) return { stage: "enable", cta: "Enable trading", act: null, busy: false, Panel: () => <EnableTradingStep onDone={refresh} /> };
+  return { stage: "ready", cta: "", act: null, busy: false, Panel: null };
+}
+
+/** legacy gate: renders children only when ready. kept for places that want the step cards up front. */
+export function OnboardingGate({ children }: { children: React.ReactNode }) {
+  const o = useOnboarding();
+  if (o.stage === "ready") return <>{children}</>;
+  if (o.Panel) return <o.Panel />;
+  return (
+    <Step n={o.stage === "connect" ? 1 : 2} title={o.stage === "connect" ? "Connect a wallet" : "Sign in"} hint={o.stage === "connect" ? "Hyperliquid signs with an EVM key. Any wallet works." : "Sign a message to prove you own this wallet. No gas, no permissions."}>
+      <button className="btn btn-primary w-full h-11 text-[15px]" onClick={o.act ?? undefined} disabled={o.busy}>{o.cta}</button>
+      <Steps current={o.stage === "connect" ? 1 : 2} />
+    </Step>
+  );
 }
 
 function Steps({ current }: { current: number }) {

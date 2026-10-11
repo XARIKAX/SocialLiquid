@@ -3,6 +3,13 @@ import { body, handler, json, HttpError } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/session";
 
+export const GET = handler(async () => {
+  const s = await getSession();
+  if (!s) return json({ addresses: [] });
+  const rows = await prisma.follow.findMany({ where: { followerId: s.userId }, select: { following: { select: { address: true } } } });
+  return json({ addresses: rows.map((r) => r.following.address) });
+});
+
 export const POST = handler(async (req: Request) => {
   const s = await getSession();
   if (!s) throw new HttpError(401, "sign in first");

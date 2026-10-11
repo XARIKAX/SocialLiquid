@@ -29,6 +29,17 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
     include: { theses: { orderBy: { createdAt: "desc" }, take: 1, include: { _count: { select: { likes: true } } } } },
   });
   const fills = await prisma.fill.findMany({ where: { coin }, orderBy: { time: "desc" }, take: 60 });
+  const dayFills = await prisma.fill.findMany({ where: { coin, time: { gte: new Date(Date.now() - 86_400_000) } }, select: { dir: true, px: true, sz: true } });
+  const flow = dayFills.reduce(
+    (acc, f) => {
+      const usd = Number(f.px) * Number(f.sz);
+      if (/open long|short > long/i.test(f.dir)) acc.longUsd += usd;
+      else if (/open short|long > short/i.test(f.dir)) acc.shortUsd += usd;
+      acc.count++;
+      return acc;
+    },
+    { longUsd: 0, shortUsd: 0, count: 0 },
+  );
   const users = await usersByAddress([...positions.map((p) => p.address), ...fills.map((f) => f.address)]);
   const longUsd = positions.filter((p) => p.side === "LONG").reduce((a, p) => a + Number(p.sizeUsd), 0);
   const shortUsd = positions.filter((p) => p.side === "SHORT").reduce((a, p) => a + Number(p.sizeUsd), 0);
@@ -50,6 +61,7 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
     plain({
       market,
       longShort: { longUsd, shortUsd, ratio: longUsd + shortUsd > 0 ? longUsd / (longUsd + shortUsd) : 0.5 },
+      flow24h: flow,
       trades: fills.map((f) => ({
         id: f.id,
         address: f.address,

@@ -11,6 +11,7 @@ import { useMids } from "@/hooks/use-market";
 import type { ChartMarker } from "./chart";
 import { PositionsTable, type MarketPosition, type MarketTrade } from "./positions-table";
 import { AboutCard } from "./about-card";
+import { FlowCard, TradersToFollow } from "./side-cards";
 import { TradePanel } from "../trade/trade-panel";
 import { Chip, CoinIcon, Icon, Pnl } from "../ui";
 import { useFeed } from "../feed/feed-column";
@@ -18,7 +19,7 @@ import { Deferred } from "@/hooks/use-in-view";
 
 const Chart = dynamic(() => import("./chart").then((m) => m.Chart), { ssr: false, loading: () => <div className="h-full w-full skeleton rounded-none" /> });
 
-type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[] };
+type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[]; flow24h?: { longUsd: number; shortUsd: number; count: number } };
 
 export function MarketView({ coin, initial }: { coin: string; initial?: MarketData }) {
   const [thesisOnly, setThesisOnly] = useState(false);
@@ -115,6 +116,12 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
 
       <aside className="flex flex-col gap-3">
         <TradePanel coin={coin} market={m} mid={mid} />
+        <Deferred minHeight={140}>
+          <FlowCard coin={coin} flow={q.data?.flow24h} />
+        </Deferred>
+        <Deferred minHeight={260}>
+          <TradersToFollow />
+        </Deferred>
         <Deferred minHeight={300}>
           <AboutCard coin={coin} market={m} mid={mid} longShort={q.data?.longShort} counts={counts} />
         </Deferred>
