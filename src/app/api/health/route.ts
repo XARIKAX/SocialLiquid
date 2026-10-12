@@ -1,3 +1,4 @@
+import { builderEligibility } from "@/lib/trade";
 import { json } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import * as HL from "@/lib/hl";
@@ -30,13 +31,13 @@ export async function GET() {
       builder.problem = "BUILDER_ADDRESS is the zero address: set it (and NEXT_PUBLIC_BUILDER_ADDRESS) to a wallet you control";
     } else {
       try {
-        const st = await HL.clearinghouseState(BUILDER_ADDRESS);
-        const value = Number(st.marginSummary.accountValue);
-        builder.accountValue = value;
-        builder.eligible = value >= 100;
-        if (value < 100) {
+        const b = await builderEligibility({ fresh: true });
+        builder.accountValue = b.accountValue;
+        builder.spotUsdc = b.spotUsdc ?? null;
+        builder.eligible = b.ok;
+        if (!b.ok) {
           ok = false;
-          builder.problem = `builder account holds $${value.toFixed(2)}; hyperliquid requires at least 100 USDC in the perps account before users can approve the builder fee`;
+          builder.problem = b.reason;
         }
       } catch (e) {
         builder.eligible = null;

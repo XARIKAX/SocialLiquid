@@ -13,7 +13,7 @@ export const POST = handler(async () => {
   const status = await approvalStatus(s.address, agent.agentAddress);
   // a builder the chain will not accept makes the second signature a dead end: fail here, before the wallet opens
   if (!status.builderApproved) {
-    const b = await builderEligibility();
+    const b = await builderEligibility({ fresh: true });
     if (!b.ok) throw new HttpError(503, b.reason ?? "the builder fee cannot be approved on this deployment");
   }
   const now = new Date();

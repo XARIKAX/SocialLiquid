@@ -45,7 +45,7 @@ export const GET = handler(async () => {
     }
     out.agent = { address: agent.agentAddress, signerMatchesStoredAddress: keyOk ? signer === agent.agentAddress.toLowerCase() : false, dbApprovedAt: agent.approvedAt, dbBuilderApprovedAt: agent.builderApprovedAt, onChain: st, onChainAgents };
   }
-  const builder = await builderEligibility();
+  const builder = await builderEligibility({ fresh: true });
   out.builderEligible = builder.ok ? `ok${builder.accountValue === null ? "" : ` ($${builder.accountValue.toFixed(2)} in the builder perps account)`}` : builder.reason;
   const perps = out.perps as { accountValue?: number } | string;
   const spotUsdc = Array.isArray(out.spot) ? (out.spot as { coin: string; total: number }[]).find((b) => b.coin === "USDC")?.total ?? 0 : null;

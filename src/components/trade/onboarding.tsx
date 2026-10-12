@@ -215,7 +215,20 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
     if (enableState.busy) return;
     setEnable({ busy: true, err: null, log: [] });
     try {
-      // first: the agent record and the deployment's own config. a builder hyperliquid will not accept turns the
+      // the builder's own wallet: hyperliquid counts only its perps account for the 100 USDC minimum, and USDC
+      // deposits often land in spot. move it over before the builder check below, so one click gets through.
+      const builderAddr = (process.env.NEXT_PUBLIC_BUILDER_ADDRESS ?? "").toLowerCase();
+      if (!mockMode && address && builderAddr && address.toLowerCase() === builderAddr) {
+        const b = await api<{ accountValue: number; spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
+        const spotUsdc = b.spot?.find((x) => x.coin === "USDC");
+        const inSpot = spotUsdc ? Math.max(0, spotUsdc.total - spotUsdc.hold) : 0;
+        if (b.accountValue < 100 && inSpot >= 0.5) {
+          push(`This is the builder wallet: moving its ${inSpot.toFixed(2)} USDC from spot to perps so Hyperliquid counts it (sign in your wallet)…`);
+          await withTimeout(usdClassTransferWithWallet(needWallet(wallet), chainId, (Math.floor(inSpot * 100) / 100).toFixed(2).replace(/\.?0+$/, ""), true), "the wallet did not answer");
+          await waitForPerps(address, push);
+        }
+      }
+      // then: the agent record and the deployment's own config. a builder hyperliquid will not accept turns the
       // second signature into a dead end, so this has to refuse before the wallet is ever opened.
       push("Creating your agent wallet…");
       const prep = await api<Prepare>("/api/agent/prepare", { method: "POST" });

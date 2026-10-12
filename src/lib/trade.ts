@@ -41,7 +41,7 @@ export async function approvalStatus(userAddress: string, agentAddress: string) 
   };
 }
 
-export type BuilderEligibility = { ok: boolean; accountValue: number | null; reason?: string };
+export type BuilderEligibility = { ok: boolean; accountValue: number | null; spotUsdc?: number | null; reason?: string };
 
 let builderCache: { at: number; value: BuilderEligibility } | null = null;
 
@@ -51,7 +51,7 @@ let builderCache: { at: number; value: BuilderEligibility } | null = null;
  * signature is accepted by the wallet and then never shows up on chain, so onboarding loops forever on
  * "approval not visible yet". checked before we ask the wallet for anything. cached: it moves rarely.
  */
-export async function builderEligibility(): Promise<BuilderEligibility> {
+export async function builderEligibility(opts: { fresh?: boolean } = {}): Promise<BuilderEligibility> {
   if (HL_MOCK) return { ok: true, accountValue: null };
   if (/^0x0{40}$/i.test(BUILDER_ADDRESS))
     return {
@@ -59,18 +59,30 @@ export async function builderEligibility(): Promise<BuilderEligibility> {
       accountValue: null,
       reason: "Trading is not configured on this deployment: BUILDER_ADDRESS is still the zero address, so Hyperliquid has no builder to register the fee approval against. Set BUILDER_ADDRESS and NEXT_PUBLIC_BUILDER_ADDRESS to a wallet you control, then redeploy.",
     };
-  if (builderCache && Date.now() - builderCache.at < 60_000) return builderCache.value;
+  // a user pressing "enable" gets a live read (the builder may have just moved funds); background callers may use the cache
+  if (!opts.fresh && builderCache && Date.now() - builderCache.at < 60_000) return builderCache.value;
   let value: BuilderEligibility;
   try {
-    const accountValue = Number((await HL.clearinghouseState(BUILDER_ADDRESS)).marginSummary.accountValue);
+    const [st, spot] = await Promise.all([HL.clearinghouseState(BUILDER_ADDRESS), HL.spotBalances(BUILDER_ADDRESS).catch(() => null)]);
+    const accountValue = Number(st.marginSummary.accountValue);
+    const spotUsdc = spot ? (spot.find((b) => b.coin === "USDC")?.total ?? 0) : null;
+    const who = `the builder wallet ${BUILDER_ADDRESS}`;
     value =
       accountValue >= 100
-        ? { ok: true, accountValue }
-        : {
-            ok: false,
-            accountValue,
-            reason: `Trading is not configured on this deployment: the builder wallet ${BUILDER_ADDRESS} holds $${accountValue.toFixed(2)} in its perps account, and Hyperliquid requires at least 100 USDC there before anyone can approve its builder fee. Deposit into that wallet, then try again.`,
-          };
+        ? { ok: true, accountValue, spotUsdc }
+        : spotUsdc !== null && accountValue + spotUsdc >= 100
+          ? {
+              ok: false,
+              accountValue,
+              spotUsdc,
+              reason: `${who} holds $${accountValue.toFixed(2)} in its perps account and $${spotUsdc.toFixed(2)} USDC in its spot balance. Hyperliquid only counts the perps account for the 100 USDC builder minimum, and deposits often land in spot. Connect that wallet and press "Move to perps" (one signed message, instant), or press Enable trading while connected as that wallet and it moves automatically. Then try again.`,
+            }
+          : {
+              ok: false,
+              accountValue,
+              spotUsdc,
+              reason: `Trading is not configured on this deployment: ${who} holds $${accountValue.toFixed(2)} in its perps account${spotUsdc ? ` (and $${spotUsdc.toFixed(2)} USDC in spot)` : ""}, and Hyperliquid requires at least 100 USDC in perps there before anyone can approve its builder fee. Deposit into that wallet (perps), then try again.`,
+            };
   } catch {
     // hyperliquid did not answer: never block onboarding on our own diagnostic, and never cache that
     return { ok: true, accountValue: null };
