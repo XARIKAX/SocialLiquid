@@ -165,7 +165,7 @@ async function spotMarkets(): Promise<MarketSummary[]> {
 /** builder-deployed perps (HIP-3): one meta per dex; asset id = 100000 + dex index * 10000 + index in that dex */
 async function hip3Markets(): Promise<MarketSummary[]> {
   if (HL_MOCK) return mock.hip3Markets();
-  if (hip3Cache && Date.now() - hip3Cache.at < 30_000) return hip3Cache.value;
+  if (hip3Cache && Date.now() - hip3Cache.at < 60_000) return hip3Cache.value;
   const dexs = await info().perpDexs();
   const settled = await Promise.allSettled(
     dexs.map(async (d, dexIndex) => {

@@ -242,9 +242,14 @@ export async function cancelOrders(userId: string, address: string, cancels: { c
     await mock.mockCancel(address, cancels.map((c) => c.oid));
     return { canceled: cancels.length };
   }
-  const m = await HL.meta();
+  const all = await HL.markets();
+  const assetOf = (coin: string) => {
+    const m = all.find((x) => x.coin === coin);
+    if (!m) throw new HttpError(400, `unknown market ${coin}`);
+    return m.assetId;
+  };
   const ex = exchangeFor(agent.encryptedPrivKey);
-  const res = await ex.cancel({ cancels: cancels.map((c) => ({ a: m.universe.findIndex((u) => u.name === c.coin), o: c.oid })) });
+  const res = await ex.cancel({ cancels: cancels.map((c) => ({ a: assetOf(c.coin), o: c.oid })) });
   const statuses = (res as unknown as { response: { data: { statuses: (string | { error: string })[] } } }).response.data.statuses;
   const errors = statuses.filter((s) => typeof s === "object").map((s) => (s as { error: string }).error);
   if (errors.length === statuses.length) throw new HttpError(400, errors[0]);
@@ -254,9 +259,9 @@ export async function cancelOrders(userId: string, address: string, cancels: { c
 export async function cancelTwap(userId: string, address: string, coin: string, twapId: number) {
   const agent = await agentFor(userId);
   if (HL_MOCK) return mock.mockTwapCancel(address, twapId);
-  const m = await HL.meta();
+  const { asset } = await marketInfo(coin);
   const ex = exchangeFor(agent.encryptedPrivKey);
-  await ex.twapCancel({ a: m.universe.findIndex((u) => u.name === coin), t: twapId });
+  await ex.twapCancel({ a: asset, t: twapId });
 }
 
 export async function setLeverage(userId: string, address: string, coin: string, leverage: number, isCross: boolean) {

@@ -13,10 +13,11 @@ import { openFunds } from "./funds";
 import { openConvert } from "./convert";
 import { useChainId, useWalletClient } from "wagmi";
 import { setDexAbstractionWithWallet } from "@/lib/hl-client";
+import { startChase } from "@/lib/chase";
 import { fmtQty, spotRows } from "@/lib/spot";
 import { useMids } from "@/hooks/use-market";
 
-type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap";
+type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap" | "chase";
 const PRO: [OrderType, string][] = [
   ["stopMarket", "Stop Market"],
   ["stopLimit", "Stop Limit"],
@@ -24,8 +25,9 @@ const PRO: [OrderType, string][] = [
   ["takeProfitLimit", "Take Profit Limit"],
   ["scale", "Scale"],
   ["twap", "TWAP"],
+  ["chase", "Chase"],
 ];
-const LABEL: Record<OrderType, string> = { market: "Market", limit: "Limit", stopMarket: "Stop Market", stopLimit: "Stop Limit", takeProfitMarket: "TP Market", takeProfitLimit: "TP Limit", scale: "Scale", twap: "TWAP" };
+const LABEL: Record<OrderType, string> = { market: "Market", limit: "Limit", stopMarket: "Stop Market", stopLimit: "Stop Limit", takeProfitMarket: "TP Market", takeProfitLimit: "TP Limit", scale: "Scale", twap: "TWAP", chase: "Chase" };
 const TAKER = 0.00045;
 const MAKER = 0.00015;
 const BUILDER = 0.0005;
@@ -75,6 +77,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const [sl, setSl] = useState("");
   const [scale, setScale] = useState({ start: "", end: "", count: "5", skew: "1" });
   const [twap, setTwap] = useState({ minutes: "30", randomize: true });
+  const [chaseMin, setChaseMin] = useState("10");
   const [thesis, setThesis] = useState("");
   const [showStep, setShowStep] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -187,6 +190,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
     if (isTrig && !Number(trigger)) return "Enter a trigger price";
     if (type === "scale" && (!Number(scale.start) || !Number(scale.end) || Number(scale.count) < 2)) return "Enter the scale range";
     if (type === "twap" && Number(twap.minutes) < 5) return "TWAP runs for at least 5 minutes";
+    if (type === "chase" && !(Number(chaseMin) >= 1)) return "Chase needs a time limit of at least 1 minute";
     if (isSpot && side === "LONG" && sizeUsd > avail * 1.0001) return `Costs ${fmtUsd(sizeUsd)}, you have ${fmtUsd(avail)} USDC in spot`;
     if (isSpot && side === "SHORT" && sizeCoin > avail + 1e-9) return `You have ${avail} ${market?.base ?? coin} in spot`;
     if (!isSpot && !reduceOnly && margin > avail && avail > 0) return `Margin ${fmtUsd(margin)} exceeds available ${fmtUsd(avail)}`;
@@ -197,6 +201,13 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
     setBusy(true);
     setMsg(null);
     try {
+      if (type === "chase") {
+        const c = startChase({ coin, label: market?.name ?? coin, side, sz: Number(sizeCoin.toFixed(szDec)), szDecimals: szDec, leverage: isSpot ? 1 : lev, reduceOnly, maxMinutes: Number(chaseMin) });
+        setMsg({ ok: true, text: `Chasing ${c.sz} ${market?.base ?? coin} at the best ${side === "LONG" ? "bid" : "ask"} for up to ${chaseMin} min. Watch it in the Chase tab.` });
+        setSize("");
+        setPct(0);
+        return;
+      }
       const r = await api<OrderResponse>("/api/trade/order", {
         method: "POST",
         json: {
@@ -300,7 +311,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
             </div>
           )}
         </div>
-        <span className="ml-auto text-[11px] text-dim pr-1">{type === "twap" ? "slices every 30s" : type === "scale" ? "ladder of limits" : ""}</span>
+        <span className="ml-auto text-[11px] text-dim pr-1">{type === "twap" ? "slices every 30s" : type === "scale" ? "ladder of limits" : type === "chase" ? "follows the best price, maker only" : ""}</span>
       </div>
 
       {copyOf && (
@@ -375,6 +386,12 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
           <Field label="Size skew"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={scale.skew} onChange={(e) => setScale({ ...scale, skew: e.target.value })} /></Field>
         </div>
       )}
+      {type === "chase" && (
+        <div className="grid grid-cols-2 gap-1.5 items-center">
+          <Field label="Time limit (min)"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="numeric" value={chaseMin} onChange={(e) => setChaseMin(e.target.value.replace(/[^0-9]/g, ""))} aria-label="chase minutes" /></Field>
+          <span className="text-[11px] text-muted leading-snug">Post-only at the best {side === "LONG" ? "bid" : "ask"}, re-priced every few seconds until filled.</span>
+        </div>
+      )}
       {type === "twap" && (
         <div className="grid grid-cols-2 gap-1.5 items-center">
           <Field label="Running time (min)"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="numeric" value={twap.minutes} onChange={(e) => setTwap({ ...twap, minutes: e.target.value })} /></Field>
@@ -387,7 +404,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
         <input className="flex-1 bg-transparent outline-none num text-right text-[15px]" inputMode="decimal" value={size} onChange={(e) => onSize(e.target.value)} placeholder="0" aria-label="size" />
         <select className="bg-transparent text-fg-2 outline-none ml-2 text-xs cursor-pointer" value={unit} onChange={(e) => switchUnit(e.target.value as "coin" | "usd")} aria-label="size unit">
           <option value="usd">USD</option>
-          <option value="coin">{coin}</option>
+          <option value="coin">{market?.base ?? coin}</option>
         </select>
       </Field>
       <div className="flex items-center gap-3 px-0.5">

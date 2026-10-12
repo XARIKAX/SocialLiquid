@@ -7,6 +7,7 @@ import { livePnl, useMids } from "@/hooks/use-market";
 import { fmtQty, spotRows } from "@/lib/spot";
 import { openFunds } from "./funds";
 import { openConvert } from "./convert";
+import { clearFinishedChases, stopChase, useChases } from "@/lib/chase";
 import { useAccountFills, useFundingPayments, useOpenOrders, useOrderHistory, useTwaps, type OpenOrder } from "@/hooks/use-account";
 import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, timeAgo } from "@/lib/format";
@@ -15,7 +16,7 @@ import { CoinIcon, Empty, Icon, Toggle } from "../ui";
 import { PositionsTable, type MarketPosition, type MarketTrade } from "../market/positions-table";
 import { useConnectModal } from "../connect-modal";
 
-type Tab = "traders" | "thesis" | "balances" | "positions" | "orders" | "twap" | "trades" | "funding" | "history";
+type Tab = "traders" | "thesis" | "balances" | "positions" | "orders" | "twap" | "chase" | "trades" | "funding" | "history";
 const TABS: [Tab, string][] = [
   ["traders", "Traders"],
   ["thesis", "Thesis"],
@@ -23,6 +24,7 @@ const TABS: [Tab, string][] = [
   ["positions", "Positions"],
   ["orders", "Open Orders"],
   ["twap", "TWAP"],
+  ["chase", "Chase"],
   ["trades", "Trade History"],
   ["funding", "Funding History"],
   ["history", "Order History"],
@@ -77,6 +79,8 @@ export function BottomPanel(props: {
         <OpenOrders coin={props.coin} onlyCoin={onlyCoin} />
       ) : tab === "twap" ? (
         <Twaps coin={props.coin} onlyCoin={onlyCoin} />
+      ) : tab === "chase" ? (
+        <Chases coin={props.coin} onlyCoin={onlyCoin} />
       ) : tab === "trades" ? (
         <TradeHistory coin={props.coin} onlyCoin={onlyCoin} />
       ) : tab === "funding" ? (
@@ -305,6 +309,32 @@ function Twaps({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
         </tr>
       ))}
     </Table>
+  );
+}
+
+/* ---------- chase orders ---------- */
+function Chases({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
+  const all = useChases();
+  const list = all.filter((c) => !onlyCoin || c.coin === coin);
+  return (
+    <>
+      <Table head={<><Th>Coin</Th><Th>Side</Th><Th right>Size</Th><Th right>Remaining</Th><Th right>Resting At</Th><Th right>Re-prices</Th><Th right>Running / Limit</Th><Th>Status</Th><Th right>Stop</Th></>} empty={list.length === 0}>
+        {list.map((c) => (
+          <tr key={c.id} className="border-b border-line/60 row-hover" data-testid={`chase-${c.id}`}>
+            <Td><span className="flex items-center gap-1.5 font-sans font-semibold">{c.label}</span></Td>
+            <Td className={c.side === "LONG" ? "text-up" : "text-down"}>{c.side === "LONG" ? "Buy" : "Sell"}</Td>
+            <Td right>{c.sz}</Td>
+            <Td right>{c.status === "running" ? c.remaining : c.status === "filled" ? 0 : c.remaining}</Td>
+            <Td right>{c.px !== null ? fmtPx(c.px) : "–"}</Td>
+            <Td right>{c.reprices}</Td>
+            <Td right>{fmtDuration(Math.min(Date.now() - c.startedAt, c.maxMs))} / {Math.round(c.maxMs / 60_000)}m</Td>
+            <Td className="font-sans capitalize">{c.status}{c.error ? ` · ${c.error}` : ""}</Td>
+            <Td right>{c.status === "running" ? <button className="text-fg-2 hover:text-down" onClick={() => stopChase(c.id)}>Stop</button> : "–"}</Td>
+          </tr>
+        ))}
+      </Table>
+      {list.some((c) => c.status !== "running") && <button className="text-xs text-dim hover:text-fg px-4 py-2" onClick={clearFinishedChases}>Clear finished</button>}
+    </>
   );
 }
 
