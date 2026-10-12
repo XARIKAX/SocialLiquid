@@ -16,7 +16,7 @@ const geist = localFont({
 
 export const metadata: Metadata = {
   title: { default: "socialLiquid", template: "%s · socialLiquid" },
-  description: "the first social trading platform for perps. post a thesis, open the position on hyperliquid, let everyone watch you hold or dump.",
+  description: "the social layer for hyperliquid. follow the best traders, see every position as it opens, post a thesis and trade alongside them.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
 };
 

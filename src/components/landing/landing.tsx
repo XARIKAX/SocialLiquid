@@ -52,14 +52,14 @@ function Hero({ stats }: { stats: Props["stats"] }) {
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-5 pt-24 pb-28">
         <span className="glass inline-flex items-center gap-2 rounded-full px-3 h-8 text-xs text-fg-2">
           <span className="w-1.5 h-1.5 rounded-full bg-brand live-dot" />
-          Built on Hyperliquid · perps only · no custody
+          Built on Hyperliquid · no custody · every trade on-chain
         </span>
         <h1 className="wordmark mt-7">
           social<span className="wordmark-liquid">Liquid</span>
         </h1>
-        <p className="mt-6 text-[clamp(22px,3.1vw,38px)] font-medium tracking-[-0.03em] text-fg">where traders show their receipts.</p>
+        <p className="mt-6 text-[clamp(22px,3.1vw,38px)] font-medium tracking-[-0.03em] text-fg">the social layer for Hyperliquid.</p>
         <p className="mt-3 max-w-[640px] text-[clamp(15px,1.4vw,19px)] text-muted text-balance leading-snug">
-          The first social trading platform for perpetuals. Post a thesis, open the position on Hyperliquid, and let everyone watch you hold or dump.
+          Follow the best traders on Hyperliquid, see every position as it opens, and trade alongside them. Post a thesis, put the position behind it, and let everyone watch you hold or dump.
         </p>
         <div className="mt-9 flex items-center gap-3 flex-wrap justify-center">
           <Link href="/trade" className="btn btn-primary h-12 px-7 text-[15px] rounded-xl">Start trading</Link>
@@ -72,7 +72,7 @@ function Hero({ stats }: { stats: Props["stats"] }) {
           <Stat v="0.05%" k="builder fee / side" />
         </dl>
       </div>
-      <div className="relative z-10 pb-16 text-center text-[11px] tracking-[0.22em] uppercase text-brand font-semibold">Live on Hyperliquid · perps only</div>
+      <div className="relative z-10 pb-16 text-center text-[11px] tracking-[0.22em] uppercase text-brand font-semibold">The social layer for Hyperliquid</div>
     </section>
   );
 }
@@ -321,7 +321,7 @@ function Orbit({ traders, count }: { traders: { address: string; displayName: st
         </div>
       </div>
       <div className="relative z-10 text-center max-w-[720px] mx-auto">
-        <h2 className="text-[clamp(34px,5vw,60px)] font-medium tracking-[-0.04em] leading-[1.02]">a perps terminal<br />for the rest of us</h2>
+        <h2 className="text-[clamp(34px,5vw,60px)] font-medium tracking-[-0.04em] leading-[1.02]">follow the best.<br />trade alongside them.</h2>
         <p className="mt-5 text-[clamp(15px,1.5vw,20px)] text-muted">join {count.toLocaleString("en-US")} {count === 1 ? "trader" : "traders"} making their name on socialLiquid</p>
         <div className="mt-8 flex items-center gap-3 justify-center flex-wrap">
           <Link href="/trade" className="btn btn-primary h-12 px-7 text-[15px] rounded-xl">Start trading</Link>
@@ -344,7 +344,7 @@ function Footer() {
       <div className="max-w-[1180px] mx-auto grid md:grid-cols-[1fr_auto] gap-10">
         <div>
           <div className="inline-flex items-center gap-1.5 font-semibold tracking-[-0.03em] text-[26px]"><span className="text-brand"><Icon.drop /></span><span>social<span className="text-brand">Liquid</span></span></div>
-          <p className="text-muted mt-1">where traders show their receipts.</p>
+          <p className="text-muted mt-1">the social layer for Hyperliquid.</p>
           <p className="text-dim text-xs mt-6">© 2026 socialLiquid. Not an exchange. All trades execute on Hyperliquid.</p>
         </div>
         <div className="grid grid-cols-3 gap-10">
