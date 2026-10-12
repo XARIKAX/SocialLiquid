@@ -24,22 +24,23 @@
 }
 
 [data-theme="light"] {
-  --color-bg: #f3f4f7;
-  --color-panel: #ffffff;
-  --color-panel-2: #f3f4f7;
-  --color-panel-3: #e9ebf0;
-  --color-line: #e4e6eb;
-  --color-line-2: #d2d5dd;
-  --color-fg: #111216;
-  --color-fg-2: #2b2d35;
-  --color-muted: #5f6370;
-  --color-dim: #858a98;
-  --color-brand: #0ea5a0;
-  --color-brand-2: #14b8a6;
-  --color-up: #16a34a;
-  --color-down: #e5484d;
-  --color-thesis: #3b6cf7;
-  --color-warn: #b7791f;
+  /* warm paper tones: no pure white, low-contrast lines, ink instead of black */
+  --color-bg: #ebebe7;
+  --color-panel: #f7f7f4;
+  --color-panel-2: #efefeb;
+  --color-panel-3: #e5e5e0;
+  --color-line: #e0e0da;
+  --color-line-2: #cfcfc8;
+  --color-fg: #1c1d21;
+  --color-fg-2: #3a3c43;
+  --color-muted: #666a74;
+  --color-dim: #8a8e98;
+  --color-brand: #0f9f98;
+  --color-brand-2: #12b3a8;
+  --color-up: #1f9d55;
+  --color-down: #d9444a;
+  --color-thesis: #3f6ae0;
+  --color-warn: #a8721c;
   color-scheme: light;
 }
 /* surfaces that are art-directed dark regardless of the user's theme (landing) */
@@ -62,13 +63,13 @@
   --color-warn: #f5b236;
   color-scheme: dark;
 }
-[data-theme="light"] .pill-up { background: rgb(22 163 74 / 0.12); }
-[data-theme="light"] .pill-down { background: rgb(229 72 77 / 0.12); }
+[data-theme="light"] .pill-up { background: rgb(31 157 85 / 0.12); }
+[data-theme="light"] .pill-down { background: rgb(217 68 74 / 0.12); }
 [data-theme="light"] .pill-liq { background: rgb(229 72 77 / 0.2); color: #b3261e; }
 [data-theme="light"] .pill-warn { background: rgb(183 121 31 / 0.14); }
 [data-theme="light"] .btn-primary,
 [data-theme="light"] .btn-up { color: #fff; }
-[data-theme="light"] .card { box-shadow: 0 1px 2px rgb(16 18 24 / 0.04); }
+[data-theme="light"] .card { box-shadow: 0 1px 2px rgb(28 29 33 / 0.05), 0 0 0 1px rgb(28 29 33 / 0.02); }
 
 html,
 body {

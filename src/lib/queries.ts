@@ -1,6 +1,7 @@
 /** db queries shared by route handlers and server components */
 import { Prisma, type FeedEventType } from "@prisma/client";
 import { prisma } from "./db";
+import { refreshHlLeaderboard } from "./indexer";
 import { plain } from "./api";
 
 /** handle is only set for claimed accounts and is what /t/[handle] resolves. displayName is the hyperliquid leaderboard name. */
@@ -256,9 +257,28 @@ export type HlBoardRow = {
   pnl7d: number;
 };
 
+const HL_BOARD_REFRESH_MS = Number(process.env.HL_LEADERBOARD_REFRESH_MS ?? 60 * 60_000);
+const HL_BOARD_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 10);
+let hlBoardRefreshing: Promise<number> | null = null;
+/** one refresh at a time per process; the worker normally does this, the web process covers for it */
+function refreshHlBoardOnce(): Promise<number> {
+  if (!hlBoardRefreshing) {
+    hlBoardRefreshing = refreshHlLeaderboard(HL_BOARD_TOP_N).finally(() => {
+      hlBoardRefreshing = null;
+    });
+  }
+  return hlBoardRefreshing;
+}
+
 export async function hlLeaderboard(): Promise<{ rows: HlBoardRow[]; updatedAt: string | null }> {
-  const entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
-  if (!entries.length) return { rows: [], updatedAt: null };
+  let entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
+  if (!entries.length) {
+    // first visitor on a fresh database: fetch hyperliquid's board right now
+    if (await refreshHlBoardOnce()) entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
+    if (!entries.length) return { rows: [], updatedAt: null };
+  } else if (Date.now() - entries[0].updatedAt.getTime() > HL_BOARD_REFRESH_MS) {
+    void refreshHlBoardOnce().catch(() => {});
+  }
   const users = await usersByAddress(entries.map((e) => e.address));
   const rows = entries.map((e) => ({
     rank: e.rank,

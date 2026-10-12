@@ -72,7 +72,7 @@ function Hero({ stats }: { stats: Props["stats"] }) {
           <Stat v="0.05%" k="builder fee / side" />
         </dl>
       </div>
-      <div className="relative z-10 pb-16 text-center text-[11px] tracking-[0.22em] uppercase text-brand font-semibold">Now live on Hyperliquid testnet</div>
+      <div className="relative z-10 pb-16 text-center text-[11px] tracking-[0.22em] uppercase text-brand font-semibold">Live on Hyperliquid · perps only</div>
     </section>
   );
 }

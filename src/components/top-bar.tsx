@@ -31,7 +31,7 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
         <NavTab href="/tokens" label="Tokens" match={["/tokens"]} />
         <NavTab href="/leaderboard" label="Leaderboard" match={["/leaderboard"]} />
       </nav>
-      {me?.network && me.network !== "mainnet" && <span className="pill pill-warn uppercase tracking-wide">{me.network}</span>}
+      {me?.network === "mock" && <span className="pill pill-warn uppercase tracking-wide">mock</span>}
 
       <div className="flex-1 flex justify-center">
         <Search />
