@@ -238,6 +238,24 @@ export async function leaderboard(): Promise<HlLeaderboardRow[]> {
   }
 }
 
+const vaultCache = new Map<string, boolean>();
+/** true when the address is a vault (vaults are listed in the leaderboard feed but hidden on hyperliquid's leaderboard page) */
+export async function isVault(address: string): Promise<boolean> {
+  const a = address.toLowerCase();
+  const hit = vaultCache.get(a);
+  if (hit !== undefined) return hit;
+  let v = false;
+  if (!HL_MOCK) {
+    try {
+      v = (await info().vaultDetails({ vaultAddress: a as `0x${string}` })) !== null;
+    } catch {
+      v = false;
+    }
+  }
+  vaultCache.set(a, v);
+  return v;
+}
+
 export type HlPortfolioWindow = { accountValueHistory: [number, string][]; pnlHistory: [number, string][]; vlm: string };
 /** per-user pnl / account value / volume by window. this is the data hyperliquid's own leaderboard is built from. weight 2. */
 export async function portfolio(address: string): Promise<Record<string, HlPortfolioWindow>> {

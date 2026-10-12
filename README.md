@@ -84,6 +84,8 @@ on startup and every hour the worker mirrors hyperliquid's own leaderboard (`sta
 
 `src/lib/featured.ts` holds hand-verified traders (copied from hyperliquid's leaderboard) that are always tracked with source MANUAL, so they are polled before discovered addresses from the first cycle. `pnpm hl:top` prints that top 10 (full addresses, account value, pnl, roi, volume) from your own machine, plus a ready `SEED_ADDRESSES` line.
 
+trader profiles read hyperliquid directly as well: the pnl card and the all-time / 30d / 7d / 24h figures come from the `portfolio` endpoint (hyperliquid's own cumulative pnl curve and volume), open positions from `clearinghouseState`, and fills straight from `userFills` until the indexer has walked the account. viewing a tracked or featured profile also triggers a background sync, so profiles fill in without the worker.
+
 positions and fills are mirrored from chain and never written by the client. `lib/indexer.ts` is shared by the worker and the trade route.
 
 ## layout

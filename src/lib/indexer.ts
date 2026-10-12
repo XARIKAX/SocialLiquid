@@ -208,6 +208,16 @@ export function hlLeaderboardEligible(r: HlLeaderboardRow): boolean {
   return Number(r.accountValue) >= 100_000 || Number(m?.vlm ?? 0) >= 10_000_000;
 }
 
+/** hyperliquid's leaderboard page hides vaults even though the feed lists them; check the top candidates and keep the first n real accounts */
+export async function dropVaults(ranked: HlLeaderboardRow[], n: number): Promise<HlLeaderboardRow[]> {
+  const out: HlLeaderboardRow[] = [];
+  for (const r of ranked.slice(0, n * 4)) {
+    if (out.length >= n) break;
+    if (!(await HL.isVault(r.ethAddress))) out.push(r);
+  }
+  return out;
+}
+
 /** same ordering as app.hyperliquid.xyz/leaderboard (30D, PnL desc) */
 export function hlLeaderboardRanked(rows: HlLeaderboardRow[]): HlLeaderboardRow[] {
   return rows.filter(hlLeaderboardEligible).sort((a, b) => HL.leaderboardPnl(b, "month") - HL.leaderboardPnl(a, "month"));
@@ -273,7 +283,7 @@ export async function refreshHlLeaderboard(topN = 10): Promise<number> {
   let rows: BoardRow[] = [];
   if (process.env.HL_LEADERBOARD_SOURCE !== "portfolio") {
     try {
-      rows = rowsFromLeaderboard(hlLeaderboardRanked(await HL.leaderboard()).slice(0, topN));
+      rows = rowsFromLeaderboard(await dropVaults(hlLeaderboardRanked(await HL.leaderboard()), topN));
       if (!rows.length) throw new Error("leaderboard feed returned no eligible rows");
     } catch (e) {
       hlBoardStatus.lastError = `leaderboard feed: ${(e as Error).message}`;

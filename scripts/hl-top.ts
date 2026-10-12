@@ -6,12 +6,12 @@
  */
 import "dotenv/config";
 import * as HL from "../src/lib/hl";
-import { hlLeaderboardRanked } from "../src/lib/indexer";
+import { dropVaults, hlLeaderboardRanked } from "../src/lib/indexer";
 
 const n = Number(process.argv[2] ?? 10);
 const usd = (v: string | number) => "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const rows = hlLeaderboardRanked(await HL.leaderboard()).slice(0, n);
+const rows = await dropVaults(hlLeaderboardRanked(await HL.leaderboard()), n);
 console.log(["rank", "address", "name", "accountValue", "pnl30d", "roi30d", "vlm30d"].join("\t"));
 for (const [i, r] of rows.entries()) {
   const m = r.windowPerformances.find(([k]) => k === "month")?.[1] ?? { pnl: "0", roi: "0", vlm: "0" };

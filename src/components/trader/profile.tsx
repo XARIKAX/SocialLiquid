@@ -22,12 +22,17 @@ export type Profile = {
   accountValue: number | null;
   pnlSeries: { t: number; pnl: number }[];
   fills: { id: string; coin: string; dir: string; px: number; sz: number; usd: number; closedPnl: number; liquidation: boolean; time: string }[];
+  fillsSource: "indexed" | "live";
+  fillStats: { fills: number; closes: number; wins: number } | null;
+  /** hyperliquid's own portfolio windows: cumulative pnl curve, pnl, volume, account value at window start */
+  hl: Record<"day" | "week" | "month" | "allTime", { pnl: number; vlm: number; startValue: number; curve: { t: number; v: number }[] } | null> | null;
   open: { id: string | null; coin: string; side: string; size: number; sizeUsd: number; leverage: number; entryPx: number; unrealisedPnl: number; roe: number; liquidationPx: number | null; openedAt: string | null; thesis: { id: string; text: string } | null }[];
   recentClosed: { id: string; coin: string; side: string; sizeUsd: number; leverage: number; entryPx: number; closePx: number | null; realisedPnl: number | null; openedAt: string; closedAt: string; liquidated: boolean }[];
   theses: { id: string; coin: string; text: string; outcome: string; createdAt: string; likes: number; likedByMe: boolean; position: { id: string; side: string; sizeUsd: number; leverage: number; entryPx: number; size: number; closedAt: string | null; realisedPnl: number | null; unrealisedPnl: number; openedAt: string } | null }[];
 };
 
-type Range = "24H" | "7D" | "30D";
+type Range = "24H" | "7D" | "30D" | "ALL";
+const RANGE_KEY = { "24H": "day", "7D": "week", "30D": "month", ALL: "allTime" } as const;
 
 export function TraderProfile({ handle, initial }: { handle: string; initial: Profile }) {
   const q = useQuery({ queryKey: ["trader", handle], queryFn: () => api<Profile>(`/api/trader/${encodeURIComponent(handle)}`), initialData: initial, refetchInterval: 5000 });
@@ -53,14 +58,19 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
   };
 
   const topTrades = useMemo(() => [...p.recentClosed].filter((c) => c.realisedPnl !== null).sort((a, b) => (b.realisedPnl ?? 0) - (a.realisedPnl ?? 0)).slice(0, 5), [p.recentClosed]);
-  const rangeMs = range === "24H" ? 86_400_000 : range === "7D" ? 7 * 86_400_000 : 30 * 86_400_000;
+  const rangeMs = range === "24H" ? 86_400_000 : range === "7D" ? 7 * 86_400_000 : range === "30D" ? 30 * 86_400_000 : Infinity;
+  const hlWin = p.hl?.[RANGE_KEY[range]] ?? null;
   const series = useMemo(() => {
+    // hyperliquid's own cumulative pnl curve for the window; our realised series only as a fallback
+    if (hlWin) return hlWin.curve;
     const since = Date.now() - rangeMs;
     let acc = 0;
-    const pts = p.pnlSeries.filter((x) => x.t >= since).map((x) => ({ t: x.t, v: (acc += x.pnl) }));
-    return pts;
-  }, [p.pnlSeries, rangeMs]);
-  const rangePnl = series.at(-1)?.v ?? 0;
+    return p.pnlSeries.filter((x) => x.t >= since).map((x) => ({ t: x.t, v: (acc += x.pnl) }));
+  }, [hlWin, p.pnlSeries, rangeMs]);
+  const rangePnl = hlWin ? hlWin.pnl : (series.at(-1)?.v ?? 0);
+  const allTimePnl = p.hl?.allTime?.pnl ?? p.stats.pnlAll;
+  const tradeCount = p.stats.closedTrades || p.fillStats?.closes || 0;
+  const winRate = p.stats.closedTrades ? p.stats.winRate : p.fillStats?.closes ? p.fillStats.wins / p.fillStats.closes : null;
   const pinned = useMemo(() => [...p.theses].sort((a, b) => b.likes - a.likes)[0], [p.theses]);
   const openUpnl = p.open.reduce((a, o) => a + (livePnl(o, mids.data?.[o.coin] ? Number(mids.data[o.coin]) : undefined) ?? o.unrealisedPnl), 0);
 
@@ -101,10 +111,11 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
               </div>
             </div>
             <div className="flex items-center gap-4 mt-4 text-xs text-muted flex-wrap">
-              <span className="inline-flex items-center gap-1.5 text-fg-2 font-medium"><span className="text-warn">⚡</span> All time <Pnl value={p.stats.pnlAll} compact className="font-semibold" /></span>
-              <span className="inline-flex items-center gap-1"><Icon.clock /> {p.stats.avgHoldMs ? `${fmtDuration(p.stats.avgHoldMs)} avg. hold` : "no closed trades yet"}</span>
-              <span className="inline-flex items-center gap-1"><Icon.layers /> {p.stats.closedTrades} trades</span>
-              <span>{p.stats.winRate === null ? "" : `${fmtPct(p.stats.winRate, 0, false)} win rate`}</span>
+              <span className="inline-flex items-center gap-1.5 text-fg-2 font-medium"><span className="text-warn">⚡</span> All time <Pnl value={allTimePnl} compact className="font-semibold" /></span>
+              {p.hl?.allTime && <span className="num">{fmtUsd(p.hl.allTime.vlm, { compact: true })} volume</span>}
+              {p.stats.avgHoldMs ? <span className="inline-flex items-center gap-1"><Icon.clock /> {fmtDuration(p.stats.avgHoldMs)} avg. hold</span> : null}
+              <span className="inline-flex items-center gap-1"><Icon.layers /> {tradeCount} trades{!p.stats.closedTrades && p.fillStats ? ` · last ${p.fillStats.fills} fills` : ""}</span>
+              <span>{winRate === null || winRate === undefined ? "" : `${fmtPct(winRate, 0, false)} win rate`}</span>
               {p.user?.createdAt && <span>Joined {new Date(p.user.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>}
               {p.accountValue !== null && <span className="num">Account {fmtUsd(p.accountValue, { compact: true })}</span>}
             </div>
@@ -138,10 +149,10 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                 <div className="num text-[26px] font-semibold tracking-tight leading-none">
                   <span className={rangePnl > 0 ? "text-up" : rangePnl < 0 ? "text-down" : "text-fg"}>{fmtUsd(rangePnl, { sign: true })}</span>
                 </div>
-                <div className="text-xs text-muted mt-1">Realised PnL · {range.toLowerCase()}</div>
+                <div className="text-xs text-muted mt-1">{hlWin ? "PnL · Hyperliquid" : "Realised PnL"} · {range === "ALL" ? "all time" : range.toLowerCase()}</div>
               </div>
               <span className="seg">
-                {(["24H", "7D", "30D"] as Range[]).map((r) => (
+                {(["24H", "7D", "30D", "ALL"] as Range[]).map((r) => (
                   <button key={r} className={`seg-item num ${range === r ? "seg-active" : ""}`} onClick={() => setRange(r)}>{r}</button>
                 ))}
               </span>
@@ -188,9 +199,9 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
             <section className="card overflow-hidden">
               <div className="flex items-center gap-1 px-2 h-11 border-b border-line">
                 <span className="tab tab-active h-8">All trades</span>
-                <span className="text-[11px] text-dim ml-auto pr-2 num">{p.fills.length} fills</span>
+                <span className="text-[11px] text-dim ml-auto pr-2 num">{p.fills.length} fills{p.fillsSource === "live" ? " · live from Hyperliquid" : ""}</span>
               </div>
-              {p.fills.length === 0 && <Empty title="No fills indexed yet" />}
+              {p.fills.length === 0 && <Empty title="No fills yet" hint="This account has no fills on Hyperliquid." />}
               <div className="max-h-[320px] overflow-y-auto">
                 <table className="w-full text-[13px]">
                   <tbody>
@@ -253,7 +264,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
           )}
           {posTab === "closed" && (
             <div>
-              {p.recentClosed.length === 0 && <Empty title="No closed trades indexed yet" />}
+              {p.recentClosed.length === 0 && <Empty title="No closed trades indexed yet" hint="Closed positions appear once the indexer has walked this account's fills. Recent fills are in the trades list above." />}
               {p.recentClosed.map((c) => {
                 const roe = c.sizeUsd ? ((c.realisedPnl ?? 0) * c.leverage) / c.sizeUsd : 0;
                 return (
