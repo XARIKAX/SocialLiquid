@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import * as HL from "@/lib/hl";
 import { BUILDER_ADDRESS, BUILDER_FEE_TENTHS_BP, HL_MOCK } from "@/lib/env";
 import { getSession } from "@/lib/session";
-import { approvalStatus } from "@/lib/trade";
+import { approvalStatus, builderEligibility } from "@/lib/trade";
 import { decrypt } from "@/lib/crypto";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -45,11 +45,14 @@ export const GET = handler(async () => {
     }
     out.agent = { address: agent.agentAddress, signerMatchesStoredAddress: keyOk ? signer === agent.agentAddress.toLowerCase() : false, dbApprovedAt: agent.approvedAt, dbBuilderApprovedAt: agent.builderApprovedAt, onChain: st, onChainAgents };
   }
+  const builder = await builderEligibility();
+  out.builderEligible = builder.ok ? `ok${builder.accountValue === null ? "" : ` ($${builder.accountValue.toFixed(2)} in the builder perps account)`}` : builder.reason;
   const perps = out.perps as { accountValue?: number } | string;
   const spotUsdc = Array.isArray(out.spot) ? (out.spot as { coin: string; total: number }[]).find((b) => b.coin === "USDC")?.total ?? 0 : null;
   const spotCoins = Array.isArray(out.spot) ? (out.spot as { coin: string; total: number }[]).filter((b) => b.coin !== "USDC" && b.total > 0).map((b) => b.coin) : [];
-  out.verdict =
-    typeof perps === "string"
+  out.verdict = !builder.ok
+    ? builder.reason
+    : typeof perps === "string"
       ? "hyperliquid did not answer for this address"
       : (perps.accountValue ?? 0) < 0.5 && (spotUsdc ?? 0) >= 0.5
         ? "USDC is in spot, not perps: move it to perps first (the enable-trading step now does this)"
