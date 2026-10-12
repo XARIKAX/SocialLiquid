@@ -9,7 +9,7 @@ import { useChainId, useReadContract, useWalletClient } from "wagmi";
 import { erc20Abi, formatUnits, parseUnits } from "viem";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { useBalance } from "@/hooks/use-me";
+import { useBalance, type Balance } from "@/hooks/use-me";
 import { api, HL_APP_URL_CLIENT } from "@/lib/client";
 import { fmtUsd } from "@/lib/format";
 import { withdrawWithWallet } from "@/lib/hl-client";
@@ -28,7 +28,7 @@ import {
   routeById,
   swapUsdtToUsdc,
 } from "@/lib/funds";
-import { UNIT_APP_URL, UNIT_ASSETS, fetchUnitAddress, unitDepositable, type UnitAddress } from "@/lib/unit";
+import { UNIT_APP_URL, UNIT_ASSETS, fetchUnitAddress, spotEntry, unitDepositable, type UnitAddress, type UnitAsset } from "@/lib/unit";
 import QRCode from "qrcode";
 import type { wagmiConfig } from "@/lib/wagmi";
 import { Icon } from "../ui";
@@ -227,7 +227,7 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
         )}
 
         {mode === "deposit" && !isUsdc ? (
-          unitInfo && !unitDepositable(unitInfo) ? <UnitLinkPanel asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} /> : <UnitPanel asset={asset} q={unit} copied={copied} onCopy={copy} />
+          unitInfo && !unitDepositable(unitInfo) ? <UnitLinkPanel asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} /> : <UnitPanel asset={unitInfo!} q={unit} spot={bal.data?.spot} copied={copied} onCopy={copy} />
         ) : (
           <>
             <div className="card-2 p-3 text-xs space-y-1.5">
@@ -337,8 +337,15 @@ function UnitLinkPanel({ asset, chainLabel }: { asset: string; chainLabel: strin
 }
 
 /** native-asset deposit: the user's Unit address on the source chain, with a QR for mobile wallets */
-function UnitPanel({ asset, q, copied, onCopy }: { asset: string; q: UnitQ; copied: boolean; onCopy: (t: string) => void }) {
+function UnitPanel({ asset: info, q, spot, copied, onCopy }: { asset: UnitAsset; q: UnitQ; spot: Balance["spot"] | undefined; copied: boolean; onCopy: (t: string) => void }) {
+  const asset = info.symbol;
   const [qr, setQr] = useState<string | null>(null);
+  // spot balance of this coin now vs when the panel opened: the difference is what arrived while watching
+  const entry = spotEntry(info, spot);
+  const have = entry?.total ?? (spot ? 0 : null);
+  const baseline = useRef<number | null>(null);
+  if (baseline.current === null && have !== null) baseline.current = have;
+  const arrived = have !== null && baseline.current !== null && have > baseline.current + 1e-9 ? have - baseline.current : 0;
   const addr = q.data?.address;
   useEffect(() => {
     if (!addr) return setQr(null);
@@ -380,6 +387,20 @@ function UnitPanel({ asset, q, copied, onCopy }: { asset: string; q: UnitQ; copi
           </>
         )}
       </div>
+      {q.data && (
+        <div className={`mt-3 card-2 p-3 text-xs ${arrived > 0 ? "border-up/60" : ""}`} data-testid="unit-arrival">
+          <div className="flex items-center justify-between">
+            <span className="text-muted">Your {asset} on Hyperliquid spot</span>
+            <span className="num font-semibold">{have === null ? "…" : `${have.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset}`}</span>
+          </div>
+          {arrived > 0 ? (
+            <div className="mt-1.5 inline-flex items-center gap-1.5 text-up"><Icon.check /> {arrived.toLocaleString(undefined, { maximumFractionDigits: 6 })} {asset} arrived. It sits in your Hyperliquid spot balance.</div>
+          ) : (
+            <div className="mt-1.5 text-dim animate-pulse">Watching for a deposit… it shows here {q.data.confirmations ? `about ${q.data.confirmations.replace(/^~/, "")} after you send` : "once Unit credits it"}.</div>
+          )}
+          <div className="mt-1.5 text-dim leading-snug">To trade perps with it, sell {asset} for USDC on <a className="text-brand hover:underline" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Hyperliquid spot</a> ({asset}/USDC), then it is margin here.</div>
+        </div>
+      )}
       {q.data && (
         <div className="mt-3 rounded-md border border-down/60 bg-down/10 p-3 text-[12px] leading-snug text-down" role="alert" data-testid="unit-important">
           <b>IMPORTANT:</b> There is a minimum deposit of <b>{q.data.min}</b>. This address can only receive <b>{asset}</b> on the <b>{q.data.chainLabel}</b> network. Any other asset sent to it will be lost. Deposits below {q.data.min} will result in a loss of funds.

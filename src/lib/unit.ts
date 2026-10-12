@@ -18,14 +18,16 @@ export type UnitAsset = {
   min?: string;
   /** Unit's fee as Hyperliquid quotes it, when known */
   fee?: string;
+  /** the coin the deposit shows up as in the hyperliquid spot balance */
+  spotCoin?: string;
   confirmations?: string;
 };
 
 /** Hyperliquid's asset dropdown, in its order, minus USDC which has its own routes */
 export const UNIT_ASSETS: UnitAsset[] = [
-  { symbol: "BTC", chain: "bitcoin", chainLabel: "Bitcoin", min: "0.0003 BTC", fee: "network fee, set by Unit", confirmations: "2 blocks (~20 min)" },
-  { symbol: "ETH", chain: "ethereum", chainLabel: "Ethereum", min: "0.007 ETH", fee: "network fee, set by Unit", confirmations: "14 blocks (~3 min)" },
-  { symbol: "SOL", chain: "solana", chainLabel: "Solana", min: "0.12 SOL", fee: "≈ $1.30, set by Unit", confirmations: "~1 minute" },
+  { symbol: "BTC", chain: "bitcoin", chainLabel: "Bitcoin", spotCoin: "UBTC", min: "0.0003 BTC", fee: "network fee, set by Unit", confirmations: "2 blocks (~20 min)" },
+  { symbol: "ETH", chain: "ethereum", chainLabel: "Ethereum", spotCoin: "UETH", min: "0.007 ETH", fee: "network fee, set by Unit", confirmations: "14 blocks (~3 min)" },
+  { symbol: "SOL", chain: "solana", chainLabel: "Solana", spotCoin: "USOL", min: "0.12 SOL", fee: "≈ $1.30, set by Unit", confirmations: "~1 minute" },
   { symbol: "2Z", chain: "solana", chainLabel: "Solana", confirmations: "32 slots (~15 s)" },
   { symbol: "ANSEM", chain: "solana", chainLabel: "Solana", confirmations: "32 slots (~15 s)" },
   { symbol: "AVAX", chain: "avalanche", chainLabel: "Avalanche" },
@@ -104,4 +106,11 @@ export async function fetchUnitAddress(symbol: string, hlAddress: string, apiFet
     errors.push((e as Error).message);
   }
   throw new Error(`Could not get your ${asset.symbol} address from Unit: ${errors.join(" · ")}`);
+}
+
+/** the spot-balance entry for a Unit asset: hyperliquid names Unit's tokens with a U prefix (USOL, UBTC, UETH) */
+export function spotEntry(asset: UnitAsset, spot: { coin: string; total: number; hold: number }[] | null | undefined) {
+  if (!spot) return null;
+  const names = new Set([asset.spotCoin, asset.symbol, `U${asset.symbol}`].filter(Boolean) as string[]);
+  return spot.find((b) => names.has(b.coin)) ?? null;
 }

@@ -6,8 +6,9 @@ export const dynamic = "force-dynamic";
 export const GET = handler(async (req: Request) => {
   const address = new URL(req.url).searchParams.get("address") ?? "";
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new HttpError(400, "bad address");
-  const s = await HL.clearinghouseState(address);
+  const [s, spot] = await Promise.all([HL.clearinghouseState(address), HL.spotBalances(address).catch(() => null)]);
   return json({
+    spot,
     accountValue: Number(s.marginSummary.accountValue),
     withdrawable: Number(s.withdrawable),
     marginUsed: Number(s.marginSummary.totalMarginUsed),

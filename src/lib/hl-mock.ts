@@ -182,6 +182,8 @@ type MockState = {
   leverage?: Record<string, number>;
   /** net mock deposits per user, added to the synthetic base balance */
   deposits?: Record<string, number>;
+  /** mock spot balances per user, keyed by hyperliquid spot coin (USOL, UBTC, …) */
+  spot?: Record<string, Record<string, number>>;
 };
 
 const STATE_FILE = path.join(process.cwd(), ".hl-mock-state.json");
@@ -501,6 +503,21 @@ export async function portfolio(address: string) {
 }
 
 // ---------- mock exchange (write side, used by the trade route when HL_MOCK) ----------
+
+/** mock spot balances (what a Unit deposit credits) */
+export async function spotBalances(address: string): Promise<{ coin: string; total: number; hold: number }[]> {
+  const a = address.toLowerCase();
+  return withState((s) => Object.entries((s.spot ?? {})[a] ?? {}).map(([coin, total]) => ({ coin, total, hold: 0 })));
+}
+
+/** mock native-asset arrival: credit `amount` of a spot coin */
+export async function mockSpotDeposit(user: string, coin: string, amount: number) {
+  withState((s) => {
+    const all = (s.spot ??= {});
+    const mine = (all[user.toLowerCase()] ??= {});
+    mine[coin] = (mine[coin] ?? 0) + amount;
+  });
+}
 
 /** mock deposit (positive) or withdrawal (negative) */
 export async function mockFunds(user: string, delta: number) {

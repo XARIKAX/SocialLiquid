@@ -127,6 +127,13 @@ export async function clearinghouseState(address: string): Promise<HlClearinghou
   return (await info().clearinghouseState({ user: address as `0x${string}` })) as unknown as HlClearinghouseState;
 }
 
+/** spot balances (where native deposits through Unit land): coin, total, amount on hold in orders */
+export async function spotBalances(address: string): Promise<{ coin: string; total: number; hold: number }[]> {
+  if (HL_MOCK) return mock.spotBalances(address);
+  const st = await info().spotClearinghouseState({ user: address as `0x${string}` });
+  return st.balances.filter((b) => Number(b.total) > 0).map((b) => ({ coin: b.coin, total: Number(b.total), hold: Number(b.hold) }));
+}
+
 /** most recent fills (api returns up to 2000). pass `since` to fetch by time window instead. */
 export async function userFills(address: string, since?: number): Promise<HlFill[]> {
   if (HL_MOCK) return mock.userFills(address, since);

@@ -27,6 +27,8 @@ export function useMe() {
 }
 
 export type Balance = {
+  /** spot balances (native deposits through Unit land here); null if the spot read failed */
+  spot: { coin: string; total: number; hold: number }[] | null;
   accountValue: number;
   withdrawable: number;
   marginUsed: number;
