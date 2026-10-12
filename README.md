@@ -29,7 +29,9 @@ the app talks to hyperliquid mainnet. `NEXT_PUBLIC_HL_NETWORK=testnet` points it
 
 ## deploying
 
-`pnpm start` runs `prisma db push` before `next start`, so a fresh database gets its schema on first boot. `GET /api/health` reports whether the database, the schema, and the hyperliquid api are reachable, and which required env vars are missing. on railway: one web service with `pnpm start`, one worker service with `pnpm worker`, one postgres, `DATABASE_URL=${{Postgres.DATABASE_URL}}` on both.
+`pnpm start` runs `prisma db push` before `next start`, so a fresh database gets its schema on first boot. `GET /api/health` reports whether the database, the schema and the hyperliquid api are reachable, which required env vars are missing, and whether the builder address is configured and holds the 100 USDC hyperliquid requires before users can approve its fee.
+
+railway, three services from this repo: **web** (uses `railway.json`: `pnpm start`, health check on `/api/health`), **worker** (set *Settings → Config-as-code → path* to `railway.worker.json`, or type `pnpm worker` as the start command), and **postgres**. both app services get the same variables; `DATABASE_URL=${{Postgres.DATABASE_URL}}` on both. `NEXT_PUBLIC_*` values are baked in at build time, so changing one needs a redeploy of the web service.
 
 ## env
 

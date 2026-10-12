@@ -142,6 +142,7 @@ async function housekeeping() {
 
 async function main() {
   log(`starting. network=${HL_MOCK ? "mock" : IS_TESTNET ? "testnet" : "mainnet"} budget=${WEIGHT_BUDGET_PER_MIN}w/min floor=${POLL_INTERVAL_MS}ms`);
+  if (/^0x0{40}$/i.test(process.env.BUILDER_ADDRESS ?? "")) log("WARNING: BUILDER_ADDRESS is the zero address; builder fees will not accrue until it is set to a wallet you control");
   const featured = await trackFeatured();
   log(`featured traders tracked (+${featured} new)`);
   await refreshHlBoard("startup");
