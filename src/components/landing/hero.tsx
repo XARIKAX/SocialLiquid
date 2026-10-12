@@ -3,7 +3,7 @@ import type { FeedItem } from "@/lib/queries";
 import { fmtUsd } from "@/lib/format";
 import { Globe } from "./globe";
 import { CountUp } from "./motion";
-import { Arrow, Check, Disc, TrendArrow, vars } from "./parts";
+import { Arrow, Check, Disc, TrendArrow, usdCompact, vars } from "./parts";
 import type { LandingData } from "./types";
 
 export function Hero({ d }: { d: LandingData }) {
@@ -283,7 +283,7 @@ function MarketCard({ d }: { d: LandingData }) {
       </div>
       <div className="lp-card-meta lp-num">
         <span>Funding <b className={btc && btc.funding < 0 ? "text-[var(--lp-down)]" : "text-[var(--lp-mint)]"}>{btc ? `${(btc.funding * 100).toFixed(4)}%` : "—"}</b></span>
-        <span>Open interest <b>{btc ? fmtUsd(btc.openInterestUsd, { compact: true }) : "—"}</b></span>
+        <span>Open interest <b>{btc ? usdCompact(btc.openInterestUsd) : "—"}</b></span>
         <span>Max <b>{btc?.maxLeverage ?? 40}x</b></span>
       </div>
       <div className="lp-chart" aria-hidden>

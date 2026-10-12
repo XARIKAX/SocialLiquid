@@ -3,7 +3,7 @@ import { createConfig, http, type CreateConnectorFn } from "wagmi";
 import { arbitrum, arbitrumSepolia, mainnet } from "wagmi/chains";
 import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
 
-export const IS_TESTNET_CLIENT = process.env.NEXT_PUBLIC_HL_TESTNET === "true";
+export const IS_TESTNET_CLIENT = process.env.NEXT_PUBLIC_HL_NETWORK === "testnet";
 const WC_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_ID;
 
 /**

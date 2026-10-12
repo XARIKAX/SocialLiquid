@@ -40,9 +40,17 @@ const UNIVERSE: { name: string; base: number; szDecimals: number; maxLeverage: n
   { name: "ARB", base: 0.45, szDecimals: 1, maxLeverage: 10, vol: 0.05 },
 ];
 
-export const MOCK_TRADERS: `0x${string}`[] = Array.from({ length: 12 }, (_, i) =>
-  (`0x${(i + 1).toString(16).padStart(2, "0")}${"ab".repeat(19)}`.slice(0, 42)) as `0x${string}`,
-);
+/** deterministic but realistic-looking synthetic trader addresses */
+export const MOCK_TRADERS: `0x${string}`[] = Array.from({ length: 12 }, (_, i) => {
+  let h = 0x9e3779b9 ^ (i + 1);
+  let out = "";
+  for (let k = 0; k < 40; k++) {
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+    out += ((h >>> 28) & 15).toString(16);
+  }
+  return `0x${out}` as `0x${string}`;
+});
 
 // ---------- deterministic prices ----------
 
@@ -172,6 +180,8 @@ type MockState = {
   history?: Record<string, MockHist[]>;
   twaps?: Record<string, MockTwap[]>;
   leverage?: Record<string, number>;
+  /** net mock deposits per user, added to the synthetic base balance */
+  deposits?: Record<string, number>;
 };
 
 const STATE_FILE = path.join(process.cwd(), ".hl-mock-state.json");
@@ -427,7 +437,7 @@ export async function clearinghouseState(address: string): Promise<HlClearinghou
     });
     const totalNtl = positions.reduce((acc, p) => acc + Number(p.positionValue), 0);
     const margin = positions.reduce((acc, p) => acc + Number(p.marginUsed), 0);
-    const base = 1000 + (hash32(a) % 50_000);
+    const base = 1000 + (hash32(a) % 50_000) + ((s.deposits ?? {})[a] ?? 0);
     const accountValue = base + positions.reduce((acc, p) => acc + Number(p.unrealizedPnl), 0);
     return {
       marginSummary: {
@@ -479,7 +489,27 @@ export async function leaderboard(): Promise<HlLeaderboardRow[]> {
   }));
 }
 
+export async function portfolio(address: string) {
+  const i = Math.max(0, MOCK_TRADERS.findIndex((a) => a.toLowerCase() === address.toLowerCase()));
+  const now = Date.now();
+  const win = (days: number, pnl: number, vlm: number) => ({
+    accountValueHistory: [[now - days * 864e5, String(150_000 * (i + 1) - pnl)], [now, String(150_000 * (i + 1))]] as [number, string][],
+    pnlHistory: [[now - days * 864e5, "0"], [now, String(pnl)]] as [number, string][],
+    vlm: String(vlm),
+  });
+  return { day: win(1, 1000 - i * 50, 100_000), week: win(7, 5000 - i * 200, 500_000), month: win(30, 20000 - i * 500, 2_000_000), allTime: win(365, 100000 - i * 1000, 9_000_000) };
+}
+
 // ---------- mock exchange (write side, used by the trade route when HL_MOCK) ----------
+
+/** mock deposit (positive) or withdrawal (negative) */
+export async function mockFunds(user: string, delta: number) {
+  withState((s) => {
+    const d = (s.deposits ??= {});
+    const a = user.toLowerCase();
+    d[a] = (d[a] ?? 0) + delta;
+  });
+}
 
 export async function mockApproveBuilderFee(user: string, builder: string, tenthsBp: number) {
   withState((s) => {

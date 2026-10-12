@@ -1,6 +1,6 @@
 # socialLiquid
 
-social trading for perps. traders post a thesis, open the position on hyperliquid through our frontend, and everyone watches the live position, the pnl, and whether they held or dumped.
+the social layer for hyperliquid. follow the best traders, see every position as it opens, and trade alongside them. traders post a thesis, open the position on hyperliquid through our frontend, and everyone watches the live position, the pnl, and whether they held or dumped.
 
 we do not run an exchange. every order routes to hyperliquid with our builder code and we earn a builder fee on each fill. the product is the frontend, the social layer, and the indexer.
 
@@ -25,11 +25,13 @@ pnpm dev                        # app on :3000
 pnpm worker                     # indexer, in a second terminal
 ```
 
-`NEXT_PUBLIC_HL_TESTNET=true` points everything at hyperliquid testnet. `HL_MOCK=true` swaps in a synthetic in-process exchange (deterministic prices, a dozen synthetic traders, a mock write side) so the whole stack runs with no network at all. never set `HL_MOCK` in production.
+the app talks to hyperliquid mainnet. `NEXT_PUBLIC_HL_NETWORK=testnet` points it at testnet for local development (the old `NEXT_PUBLIC_HL_TESTNET` flag is ignored). `HL_MOCK=true` swaps in a synthetic in-process exchange (deterministic prices, a dozen synthetic traders, a mock write side) so the whole stack runs with no network at all. never set `HL_MOCK` in production.
 
 ## deploying
 
-`pnpm start` runs `prisma db push` before `next start`, so a fresh database gets its schema on first boot. `GET /api/health` reports whether the database, the schema, and the hyperliquid api are reachable, and which required env vars are missing. on railway: one web service with `pnpm start`, one worker service with `pnpm worker`, one postgres, `DATABASE_URL=${{Postgres.DATABASE_URL}}` on both.
+`pnpm start` runs `prisma db push` before `next start`, so a fresh database gets its schema on first boot. `GET /api/health` reports whether the database, the schema and the hyperliquid api are reachable, which required env vars are missing, and whether the builder address is configured and holds the 100 USDC hyperliquid requires before users can approve its fee.
+
+railway, three services from this repo: **web** (uses `railway.json`: `pnpm start`, health check on `/api/health`), **worker** (set *Settings → Config-as-code → path* to `railway.worker.json`, or type `pnpm worker` as the start command), and **postgres**. both app services get the same variables; `DATABASE_URL=${{Postgres.DATABASE_URL}}` on both. `NEXT_PUBLIC_*` values are baked in at build time, so changing one needs a redeploy of the web service.
 
 ## env
 
@@ -41,11 +43,13 @@ pnpm worker                     # indexer, in a second terminal
 | `AGENT_KEY_SECRET` | 32 byte hex. aes-256-gcm for agent private keys at rest |
 | `SESSION_SECRET` | signs the session cookie |
 | `INVITE_CODE` | mainnet gate. empty = open. testnet is always open |
-| `NEXT_PUBLIC_HL_TESTNET` | `true` for testnet |
+| `NEXT_PUBLIC_HL_NETWORK` | `mainnet` (default) or `testnet` |
+| `HL_LEADERBOARD_SOURCE` | empty = hyperliquid leaderboard feed, `portfolio` = rebuild from the portfolio api for the featured traders |
 | `NEXT_PUBLIC_WALLETCONNECT_ID` | optional. without it the walletconnect option is hidden |
 | `HL_WEIGHT_BUDGET_PER_MIN` | info api weight budget for the worker (published limit 1200 / min / ip) |
 | `POLL_INTERVAL_MS` | floor on the per address poll interval |
 | `SEED_ADDRESSES` / `SEED_COUNT` | leaderboard seed fallback and size |
+| `PINNED_ADDRESSES` | extra always-tracked traders, on top of the hand-verified list in `src/lib/featured.ts` |
 | `HL_LEADERBOARD_TOP_N` / `HL_LEADERBOARD_REFRESH_MS` | how many hyperliquid leaderboard rows to mirror (10) and how often (1h) |
 | `HL_MOCK` | offline synthetic exchange |
 
@@ -70,6 +74,28 @@ pnpm worker                     # indexer, in a second terminal
 
 the server caches order book and trade reads for half a second so every viewer shares one upstream call.
 
+## landing
+
+the hero is the whole first screen: the school-of-fish image (`public/landing/hero.webp`, with a 960px cut for phones) under a top-to-bottom shade, copy top-left, the lead fish kept clear bottom-right. the still gets a slow drift, light rays and rising motes; all of it is transform-only so it costs nothing on the main thread. the backdrop is a video loop, `public/socialliquid-hero-loop.webm` (served first) with `socialliquid-hero-loop.mp4` as fallback: autoplay, muted, loop, playsinline, `object-fit: cover`, `object-position: right bottom` so the lead fish stays in frame on phones, and the still as poster so nothing flashes before the first frame. the loop was made from a 6s generated clip by crossfading its tail into its head (1.2s) and trimming to the blended region, so the seam is invisible. `prefers-reduced-motion` hides the video and shows the still. remove both files and the page falls back to the drifting still automatically. sections below fade and rise into view on scroll (`Reveal`), and the product shot uses real screenshots in `public/landing/terminal.webp` and `phone.webp`.
+
+## profiles and following
+
+connecting a wallet reads the address; signing the nonce claims it. a claimed account with no handle is forced through profile setup before anything else (name, @handle with live availability, bio, X and telegram usernames, avatar and banner). images are resized in the browser (avatar 320², banner 1500×500, jpeg) and stored as data urls on the user row, so there is no object storage to run. `/api/me/profile` saves it, the same dialog edits it later from the profile page. any hyperliquid address can be followed, claimed or not; profiles show mutuals, following and followers like fomo.
+
+wallets: every extension that announces itself over eip-6963 gets its own row (metamask, phantom's evm account, rabby, and anything else installed), with install links for the big three when they are missing, plus walletconnect (needs `NEXT_PUBLIC_WALLETCONNECT_ID`, free at cloud.reown.com, covers phantom mobile, rainbow, trust, ledger and 400+ others) and coinbase wallet. hyperliquid accounts are evm addresses, so phantom connects with its ethereum account.
+
+## alerts and replies
+
+signed-in users get a bell in the top bar: the latest events from the traders they follow, an unread badge counted from `alertsSeenAt`, and mark-read on open (`/api/alerts`). while a page is open, new events from followed traders slide in as toasts bottom-right. every thesis has a reply thread (`ThesisReply`, 280 chars, claimed accounts only) under its card in the feed and on its share page; feed and profile payloads carry the reply count.
+
+## copy trading
+
+every open position on the feed and on a profile has a copy button. it opens `/m/[coin]?copy=<positionId>&from=<address>&side=&lev=` and the ticket prefills side and leverage (pushed to the exchange once trading is enabled), shows a "copying <trader>" chip and leaves the size to you. the order goes through the normal route with `copyOf`; after the fill the resulting position records `copiedFromAddress` / `copiedFromPositionId` (only when the source is someone else's position in the same coin). the feed shows "copied <trader>" on the copy and "n traders copied this" on the original.
+
+## deposits and withdrawals
+
+both happen inside the app and never touch socialLiquid. a deposit is a plain USDC transfer from the connected wallet to hyperliquid's bridge contract on arbitrum (min 5 USDC, credited in about a minute; the modal switches the wallet to arbitrum, shows the wallet's USDC balance and waits for the hyperliquid balance to move). a withdrawal is hyperliquid's `withdraw3` action signed by the main wallet, never by the agent key ($1 fee, USDC on arbitrum in about five minutes). other chains go through hyperliquid's own cross-chain routes; the balance shows up here either way. `HL_MOCK` credits and debits a synthetic ledger through `/api/mock/funds`.
+
 ## receipts
 
 a thesis is bound to a position id at post time. when the worker sees that position close it sets the outcome from on-chain fills: `LIQUIDATED` if a liquidation fill closed it, `DUMPED` if it closed within 60 minutes of the thesis, otherwise `PROFIT` or `LOSS` from realised pnl. the outcome is on the feed card, the profile, and the share page.
@@ -78,7 +104,11 @@ a thesis is bound to a position id at post time. when the worker sees that posit
 
 `worker/index.ts` polls every `TrackedAddress`. `clearinghouseState` is weight 2 and `userFills` is weight 20, so with 200 addresses a full pass at 1000 weight / min takes about 24 seconds, not 5. the worker is budget bound with a token bucket and only fetches fills when a position changed (or every 10 minutes). our own users are also subscribed to websocket `userFills`, capped at hyperliquid's 10 unique users per ip, so their trades show within a second.
 
-on startup and every hour the worker mirrors hyperliquid's own leaderboard (`stats-data.hyperliquid.xyz/Mainnet/leaderboard`, the feed behind app.hyperliquid.xyz/leaderboard) into `HlLeaderboardEntry`: the same 30-day window, the same exclusion rule (under 100k account value and under 10M volume), sorted by 30d pnl, top `HL_LEADERBOARD_TOP_N` (10). account value, pnl, roi and volume are stored exactly as hyperliquid reports them and shown on `/leaderboard` under the default "hyperliquid 30d" tab, so launch-day rankings match hyperliquid to the cent. the same ordering seeds the tracked address list, so those traders' positions are indexed first.
+on startup and every hour the worker mirrors hyperliquid's own leaderboard (`stats-data.hyperliquid.xyz/Mainnet/leaderboard`, the feed behind app.hyperliquid.xyz/leaderboard) into `HlLeaderboardEntry`: the same 30-day window, the same exclusion rule (under 100k account value and under 10M volume), sorted by 30d pnl, top `HL_LEADERBOARD_TOP_N` (10). account value, pnl, roi and volume are stored exactly as hyperliquid reports them and shown on `/leaderboard` under the default "hyperliquid 30d" tab, so launch-day rankings match hyperliquid to the cent. the same ordering seeds the tracked address list, so those traders' positions are indexed first. if the worker is not running, the web process fetches the board itself on the first request and re-fetches in the background once it is older than the refresh interval. the feed is always mainnet. if it is unreachable, the board is rebuilt for the featured traders from the `portfolio` info endpoint (exact pnl and volume, roi against the window's starting account value) and labelled as such.
+
+`src/lib/featured.ts` holds hand-verified traders (copied from hyperliquid's leaderboard) that are always tracked with source MANUAL, so they are polled before discovered addresses from the first cycle. `pnpm hl:top` prints that top 10 (full addresses, account value, pnl, roi, volume) from your own machine, plus a ready `SEED_ADDRESSES` line.
+
+trader profiles read hyperliquid directly as well: the pnl card and the all-time / 30d / 7d / 24h figures come from the `portfolio` endpoint (hyperliquid's own cumulative pnl curve and volume), open positions from `clearinghouseState`, and fills straight from `userFills` until the indexer has walked the account. viewing a tracked or featured profile also triggers a background sync, so profiles fill in without the worker.
 
 positions and fills are mirrored from chain and never written by the client. `lib/indexer.ts` is shared by the worker and the trade route.
 

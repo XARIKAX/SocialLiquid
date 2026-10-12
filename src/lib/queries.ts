@@ -1,6 +1,7 @@
 /** db queries shared by route handlers and server components */
 import { Prisma, type FeedEventType } from "@prisma/client";
 import { prisma } from "./db";
+import { getHlBoardStatus, refreshHlLeaderboard } from "./indexer";
 import { plain } from "./api";
 
 /** handle is only set for claimed accounts and is what /t/[handle] resolves. displayName is the hyperliquid leaderboard name. */
@@ -11,12 +12,12 @@ export async function usersByAddress(addresses: string[]): Promise<Map<string, U
   if (!uniq.length) return new Map();
   const users = await prisma.user.findMany({
     where: { address: { in: uniq } },
-    select: { id: true, address: true, handle: true, xHandle: true, avatarUrl: true, claimedAt: true },
+    select: { id: true, address: true, handle: true, displayName: true, xHandle: true, avatarUrl: true, claimedAt: true },
   });
   const tracked = await prisma.trackedAddress.findMany({ where: { address: { in: uniq }, displayName: { not: null } }, select: { address: true, displayName: true } });
   const map = new Map<string, UserLite>();
   const names = new Map(tracked.map((t) => [t.address, t.displayName]));
-  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.claimedAt ? u.handle : null, displayName: names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt });
+  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.claimedAt ? u.handle : null, displayName: (u.claimedAt ? u.displayName : null) ?? names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt });
   for (const t of tracked) if (!map.has(t.address)) map.set(t.address, { id: "", address: t.address, handle: null, displayName: t.displayName, xHandle: null, avatarUrl: null, claimed: false });
   return map;
 }
@@ -41,8 +42,12 @@ export type FeedItem = {
     realisedPnl: number | null;
     unrealisedPnl: number;
     liquidated: boolean;
+    /** who this position copies, when it was opened through "copy" */
+    copiedFrom: { address: string; handle: string | null; displayName: string | null } | null;
+    /** how many positions copied this one */
+    copiers: number;
   } | null;
-  thesis: { id: string; text: string; outcome: string; likes: number; likedByMe: boolean; createdAt: string } | null;
+  thesis: { id: string; text: string; outcome: string; likes: number; likedByMe: boolean; replies: number; createdAt: string } | null;
 };
 
 export type FeedFilters = {
@@ -73,10 +78,14 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
     take: Math.min(200, Math.max(1, (f.limit ?? 50) * (f.minUsd ? 3 : 1))),
     include: {
       position: true,
-      thesis: { include: { _count: { select: { likes: true } }, likes: f.viewerId ? { where: { userId: f.viewerId }, select: { userId: true } } : false } },
+      thesis: { include: { _count: { select: { likes: true, replies: true } }, likes: f.viewerId ? { where: { userId: f.viewerId }, select: { userId: true } } : false } },
     },
   });
-  const users = await usersByAddress(rows.map((r) => r.address));
+  const copiedFromAddrs = rows.map((r) => r.position?.copiedFromAddress).filter((a): a is string => !!a);
+  const users = await usersByAddress([...rows.map((r) => r.address), ...copiedFromAddrs]);
+  const posIds = rows.map((r) => r.position?.id).filter((x): x is string => !!x);
+  const copierRows = posIds.length ? await prisma.position.groupBy({ by: ["copiedFromPositionId"], where: { copiedFromPositionId: { in: posIds } }, _count: { _all: true } }) : [];
+  const copiers = new Map(copierRows.map((c) => [c.copiedFromPositionId as string, c._count._all]));
   const items: FeedItem[] = rows.map((r) => ({
     id: r.id,
     type: r.type,
@@ -98,6 +107,10 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
           realisedPnl: r.position.realisedPnl === null ? null : Number(r.position.realisedPnl),
           unrealisedPnl: Number(r.position.unrealisedPnl),
           liquidated: r.position.liquidated,
+          copiedFrom: r.position.copiedFromAddress
+            ? { address: r.position.copiedFromAddress, handle: users.get(r.position.copiedFromAddress)?.handle ?? null, displayName: users.get(r.position.copiedFromAddress)?.displayName ?? null }
+            : null,
+          copiers: copiers.get(r.position.id) ?? 0,
         }
       : null,
     thesis: r.thesis
@@ -107,6 +120,7 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
           outcome: r.thesis.outcome,
           likes: r.thesis._count.likes,
           likedByMe: Array.isArray(r.thesis.likes) && r.thesis.likes.length > 0,
+          replies: r.thesis._count.replies,
           createdAt: r.thesis.createdAt.toISOString(),
         }
       : null,
@@ -256,9 +270,34 @@ export type HlBoardRow = {
   pnl7d: number;
 };
 
-export async function hlLeaderboard(): Promise<{ rows: HlBoardRow[]; updatedAt: string | null }> {
-  const entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
-  if (!entries.length) return { rows: [], updatedAt: null };
+const HL_BOARD_REFRESH_MS = Number(process.env.HL_LEADERBOARD_REFRESH_MS ?? 60 * 60_000);
+const HL_BOARD_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 10);
+let hlBoardRefreshing: Promise<number> | null = null;
+/** one refresh at a time per process; the worker normally does this, the web process covers for it */
+function refreshHlBoardOnce(): Promise<number> {
+  if (!hlBoardRefreshing) {
+    hlBoardRefreshing = refreshHlLeaderboard(HL_BOARD_TOP_N).finally(() => {
+      hlBoardRefreshing = null;
+    });
+  }
+  return hlBoardRefreshing;
+}
+
+export type HlBoard = { rows: HlBoardRow[]; updatedAt: string | null; source: "leaderboard" | "portfolio" | null; error: string | null };
+
+export async function hlLeaderboard(): Promise<HlBoard> {
+  let entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
+  if (!entries.length) {
+    // first visitor on a fresh database: fetch hyperliquid's board right now
+    try {
+      if (await refreshHlBoardOnce()) entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
+    } catch (e) {
+      return { rows: [], updatedAt: null, source: null, error: (e as Error).message };
+    }
+    if (!entries.length) return { rows: [], updatedAt: null, source: null, error: getHlBoardStatus().lastError ?? "no rows returned" };
+  } else if (Date.now() - entries[0].updatedAt.getTime() > HL_BOARD_REFRESH_MS) {
+    void refreshHlBoardOnce().catch(() => {});
+  }
   const users = await usersByAddress(entries.map((e) => e.address));
   const rows = entries.map((e) => ({
     rank: e.rank,
@@ -269,5 +308,5 @@ export async function hlLeaderboard(): Promise<{ rows: HlBoardRow[]; updatedAt: 
     vlm30d: Number(e.vlm30d),
     pnl7d: Number(e.pnl7d),
   }));
-  return { rows, updatedAt: entries[0].updatedAt.toISOString() };
+  return { rows, updatedAt: entries[0].updatedAt.toISOString(), source: entries[0].source === "portfolio" ? "portfolio" : "leaderboard", error: null };
 }

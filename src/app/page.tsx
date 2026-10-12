@@ -7,12 +7,10 @@ import { feed } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-const DESCRIPTION = "Social trading for perpetuals. Post a thesis, open the position on Hyperliquid, and let everyone watch you hold or dump.";
-
 export const metadata: Metadata = {
-  title: "socialLiquid — where traders show their receipts",
-  description: DESCRIPTION,
-  openGraph: { title: "socialLiquid", description: "Where traders show their receipts. Social trading for perps on Hyperliquid." },
+  title: "socialLiquid — the social layer for Hyperliquid",
+  description: "The social layer for Hyperliquid. Follow the best traders, see every position as it opens, post a thesis and trade alongside them.",
+  openGraph: { title: "socialLiquid", description: "the social layer for Hyperliquid. follow the best traders, see every position live, trade alongside them." },
 };
 
 /** never let a slow upstream hold the landing page: resolve to the fallback after `ms` */

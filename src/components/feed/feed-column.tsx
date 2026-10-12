@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/client";
-import type { FeedItem, LeaderboardRow } from "@/lib/queries";
+import type { FeedItem, HlBoard, LeaderboardRow } from "@/lib/queries";
 import { fmtPct, fmtPx, fmtUsd, userLabel, userPath } from "@/lib/format";
 import { useMarkets, useMids } from "@/hooks/use-market";
 import { useAuth } from "@/hooks/use-auth";
@@ -190,16 +190,47 @@ export function Tokens({ onNavigate, full }: { onNavigate?: () => void; full?: b
 }
 
 function MiniLeaderboard({ onNavigate }: { onNavigate?: () => void }) {
-  const q = useQuery({ queryKey: ["leaderboard", "pnl7d"], queryFn: () => api<{ rows: LeaderboardRow[] }>("/api/leaderboard?by=pnl7d").then((r) => r.rows), refetchInterval: 30_000 });
-  if (q.isLoading) return <Skeleton rows={10} h={44} />;
-  if (!q.data?.length) return <Empty title="Nobody ranks yet" hint="Traders need 5 closed trades on record to appear. Give the indexer a little time." />;
+  const [src, setSrc] = useState<"hl" | "own">("hl");
+  // same key and shape as the /leaderboard page so both can be mounted at once and share the cache
+  const hlq = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<HlBoard>("/api/leaderboard/hl"), refetchInterval: 60_000 });
+  const hl = { isLoading: hlq.isLoading, isError: hlq.isError, error: hlq.error, data: hlq.data?.rows };
+  const own = useQuery({ queryKey: ["leaderboard", "pnl7d"], queryFn: () => api<{ rows: LeaderboardRow[] }>("/api/leaderboard?by=pnl7d").then((r) => r.rows), refetchInterval: 30_000 });
+  const header = (
+    <div className="px-4 h-9 flex items-center gap-2 text-[11px] text-dim border-b border-line">
+      <span className="seg h-7">
+        <button className={`seg-item h-6 px-2 ${src === "hl" ? "seg-active" : ""}`} onClick={() => setSrc("hl")}>Hyperliquid 30D</button>
+        <button className={`seg-item h-6 px-2 ${src === "own" ? "seg-active" : ""}`} onClick={() => setSrc("own")}>7d PnL</button>
+      </span>
+      <Link href="/leaderboard" onClick={onNavigate} className="ml-auto hover:text-fg">Full board →</Link>
+    </div>
+  );
+  if (src === "hl") {
+    if (hl.isLoading) return <Skeleton rows={10} h={44} />;
+    return (
+      <div>
+        {header}
+        {hl.isError && <Empty title="Leaderboard unavailable" hint={(hl.error as Error).message} />}
+        {!hl.isError && !hl.data?.length && <Empty title="Leaderboard unavailable" hint={hlq.data?.error ? `Hyperliquid did not answer: ${hlq.data.error}` : "Hyperliquid's leaderboard is mirrored on the first request. Refresh in a moment."} />}
+        {hl.data?.map((r) => (
+          <Link key={r.rank} href={userPath(r.user)} onClick={onNavigate} className="flex items-center gap-2.5 px-4 h-12 row-hover">
+            <span className={`num text-xs w-5 ${r.rank <= 3 ? "text-brand font-semibold" : "text-dim"}`}>{r.rank}</span>
+            <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={26} />
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate text-[13px] font-medium">{userLabel(r.user)}</span>
+              <span className="block text-[11px] text-dim num">{fmtUsd(r.accountValue, { compact: true })} · ROI {(r.roi30d * 100).toFixed(1)}%</span>
+            </span>
+            <Pnl value={r.pnl30d} compact className="ml-auto text-[13px] font-semibold" />
+          </Link>
+        ))}
+      </div>
+    );
+  }
+  if (own.isLoading) return <Skeleton rows={10} h={44} />;
   return (
     <div>
-      <div className="px-4 h-9 flex items-center justify-between text-[11px] text-dim border-b border-line">
-        <span>7d realised PnL</span>
-        <Link href="/leaderboard" onClick={onNavigate} className="hover:text-fg">Full board →</Link>
-      </div>
-      {q.data.slice(0, 30).map((r) => (
+      {header}
+      {!own.data?.length && <Empty title="Nobody ranks yet" hint="Our own board needs 5 closed trades per trader on record. It fills as the indexer catches up." />}
+      {own.data?.slice(0, 30).map((r) => (
         <Link key={r.user.address} href={userPath(r.user)} onClick={onNavigate} className="flex items-center gap-2.5 px-4 h-12 row-hover">
           <span className={`num text-xs w-5 ${r.rank <= 3 ? "text-brand font-semibold" : "text-dim"}`}>{r.rank}</span>
           <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={26} />

@@ -39,6 +39,6 @@ export const THEME_INIT = `(function(){try{var t=localStorage.getItem("${KEY}");
 
 export function chartPalette(theme: Theme) {
   return theme === "light"
-    ? { bg: "#ffffff", text: "#6b7080", grid: "#eef0f3", border: "#e3e5ea", up: "#16a34a", down: "#e5484d", brand: "#0ea5a0", vol: "#d3d6dd", upSoft: "rgba(22,163,74,0.18)", downSoft: "rgba(229,72,77,0.18)" }
+    ? { bg: "#f7f7f4", text: "#7a7e88", grid: "#ebebe6", border: "#e0e0da", up: "#1f9d55", down: "#d9444a", brand: "#0f9f98", vol: "#d6d6cf", upSoft: "rgba(31,157,85,0.18)", downSoft: "rgba(217,68,74,0.18)" }
     : { bg: "#0b0b0e", text: "#8b8b98", grid: "#131317", border: "#1b1b21", up: "#22d36b", down: "#ff4d4f", brand: "#4de3c1", vol: "#26262e", upSoft: "rgba(34,211,107,0.22)", downSoft: "rgba(255,77,79,0.22)" };
 }

@@ -4,11 +4,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { TICKET_PRICE_EVENT } from "@/hooks/use-account";
-import { api, HL_APP_URL_CLIENT } from "@/lib/client";
+import { api } from "@/lib/client";
 import { fmtPx, fmtUsd } from "@/lib/format";
 import type { MarketSummary } from "@/lib/hl-types";
 import { Icon, Toggle } from "../ui";
 import { useOnboarding } from "./onboarding";
+import { openFunds } from "./funds";
 
 type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap";
 const PRO: [OrderType, string][] = [
@@ -26,7 +27,7 @@ const BUILDER = 0.0005;
 const MAX_SLIP = 0.03;
 
 type Book = { bids: { px: number; sz: number }[]; asks: { px: number; sz: number }[] };
-type OrderResponse = { order: { status: "filled" | "resting" | "twap"; avgPx?: number; totalSz?: number; oid?: number; count?: number; twapId?: number }; thesis: { id: string } | null };
+type OrderResponse = { order: { status: "filled" | "resting" | "twap"; avgPx?: number; totalSz?: number; oid?: number; count?: number; twapId?: number }; thesis: { id: string } | null; copied?: boolean };
 
 export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
   const { address, signedIn } = useAuth();
@@ -59,6 +60,33 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const [showStep, setShowStep] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  /** copy trade: set from /m/[coin]?copy=<positionId>&from=<address>&side=&lev=&name= */
+  const [copyOf, setCopyOf] = useState<{ positionId: string; address: string; name: string; side: "LONG" | "SHORT"; lev: number } | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const id = q.get("copy");
+    const from = q.get("from");
+    if (!id || !from) return;
+    const sd = q.get("side") === "SHORT" ? "SHORT" : "LONG";
+    const lv = Math.max(1, Math.min(maxLev, Number(q.get("lev")) || 10));
+    setCopyOf({ positionId: id, address: from, name: q.get("name") ?? from.slice(0, 6), side: sd, lev: lv });
+    setSide(sd);
+    setLev(lv);
+    setType("market");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coin]);
+  // once trading is enabled, push the copied leverage to the exchange
+  useEffect(() => {
+    if (!copyOf || !ready) return;
+    api("/api/trade/leverage", { method: "POST", json: { coin, leverage: copyOf.lev, isCross: true } }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [copyOf?.positionId, ready]);
+  const clearCopy = () => {
+    setCopyOf(null);
+    const u = new URL(window.location.href);
+    ["copy", "from", "side", "lev", "name"].forEach((k) => u.searchParams.delete(k));
+    window.history.replaceState(null, "", u.pathname + (u.search || ""));
+  };
   const proRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setLev((l) => Math.min(l, maxLev)), [maxLev]);
@@ -165,10 +193,12 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
           scale: type === "scale" ? { startPx: Number(scale.start), endPx: Number(scale.end), count: Number(scale.count), skew: Number(scale.skew) || 1 } : undefined,
           twap: type === "twap" ? { minutes: Number(twap.minutes), randomize: twap.randomize } : undefined,
           thesis: thesis.trim() || undefined,
+          copyOf: copyOf ? { positionId: copyOf.positionId, address: copyOf.address } : undefined,
         },
       });
       const o = r.order;
-      if (o.status === "filled") setMsg({ ok: true, text: `Filled ${o.totalSz} ${coin} at ${fmtPx(o.avgPx)}${r.thesis ? " · thesis posted" : ""}` });
+      if (o.status === "filled") setMsg({ ok: true, text: `Filled ${o.totalSz} ${coin} at ${fmtPx(o.avgPx)}${copyOf ? ` · copied ${copyOf.name}` : ""}${r.thesis ? " · thesis posted" : ""}` });
+      if (copyOf && o.status === "filled") clearCopy();
       else if (o.status === "twap") setMsg({ ok: true, text: `TWAP #${o.twapId} running for ${twap.minutes} min` });
       else setMsg({ ok: true, text: o.count ? `${o.count} orders resting` : `Order #${o.oid} resting${r.thesis ? " · thesis posted" : ""}` });
       setThesis("");
@@ -243,6 +273,17 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
         </div>
         <span className="ml-auto text-[11px] text-dim pr-1">{type === "twap" ? "slices every 30s" : type === "scale" ? "ladder of limits" : ""}</span>
       </div>
+
+      {copyOf && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] bg-brand/10 border border-brand/30 text-[12px]">
+          <span className="text-brand"><Icon.copy /></span>
+          <span className="min-w-0 leading-tight">
+            Copying <b className="text-fg">{copyOf.name}</b>
+            <span className="block text-[11px] text-muted">{coin} <span className={copyOf.side === "LONG" ? "text-up" : "text-down"}>{copyOf.side === "LONG" ? "Long" : "Short"}</span> <span className="num">{copyOf.lev}x</span> · pick your size</span>
+          </span>
+          <button className="ml-auto btn btn-ghost h-6 w-6 px-0 text-dim shrink-0" onClick={clearCopy} aria-label="stop copying">✕</button>
+        </div>
+      )}
 
       {/* side */}
       <div className="grid grid-cols-2 gap-1 p-1 rounded-[12px] bg-panel-2 border border-line">
@@ -358,8 +399,8 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
         <Row k="Fees" v={<span><span className="text-brand">◆</span> {(TAKER * 100).toFixed(3)}% / {(MAKER * 100).toFixed(3)}% + {(BUILDER * 100).toFixed(2)}% builder{sizeUsd ? ` · ${fmtUsd(sizeUsd * feeRate)}` : ""}</span>} />
       </dl>
       <div className="grid grid-cols-2 gap-1.5">
-        <a className="btn h-9" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Deposit</a>
-        <a className="btn h-9" href={`${HL_APP_URL_CLIENT}/portfolio`} target="_blank" rel="noreferrer">Withdraw</a>
+        <button className="btn h-9" onClick={() => openFunds("deposit")}>Deposit</button>
+        <button className="btn h-9" onClick={() => openFunds("withdraw")}>Withdraw</button>
       </div>
     </section>
   );

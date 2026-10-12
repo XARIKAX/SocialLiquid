@@ -4,10 +4,11 @@ import { useChainId, useWalletClient } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
-import { api, HL_APP_URL_CLIENT } from "@/lib/client";
+import { api } from "@/lib/client";
 import { approveAgentWithWallet, approveBuilderFeeWithWallet } from "@/lib/hl-client";
 import { fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
+import { openFunds } from "./funds";
 import { useConnectModal } from "../connect-modal";
 
 type Prepare = { agentAddress: string; agentName: string; needsAgentApproval: boolean; needsBuilderApproval: boolean; builder: string; builderFeeTenthsBp: number; maxFeeRate: string };
@@ -222,10 +223,9 @@ export function DepositBox({ address }: { address: string }) {
       </div>
       {(open || low) && (
         <div className="card-2 p-3 mt-2 space-y-1.5 text-muted leading-snug">
-          <p><b className="text-fg-2">1.</b> Hold USDC on <b className="text-fg-2">Arbitrum</b> in this wallet.</p>
-          <p><b className="text-fg-2">2.</b> Bridge it to Hyperliquid with the native bridge (min 5 USDC). It lands in your perps balance in about a minute.</p>
-          <a className="btn btn-primary h-9 w-full mt-1" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Open Hyperliquid deposit <Icon.external /></a>
-          <p className="text-dim">Solana deposits via Relay or deBridge are coming in phase 2.</p>
+          <p>Deposit USDC from <b className="text-fg-2">Arbitrum</b> straight into your Hyperliquid balance (min 5 USDC, about a minute). Funds go wallet → Hyperliquid; socialLiquid never holds them.</p>
+          <button className="btn btn-primary h-9 w-full mt-1" onClick={() => openFunds("deposit")}>Deposit USDC</button>
+          <button className="btn h-8 w-full" onClick={() => openFunds("withdraw")}>Withdraw</button>
         </div>
       )}
     </div>

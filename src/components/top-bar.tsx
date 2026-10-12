@@ -4,11 +4,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
-import { api, HL_APP_URL_CLIENT } from "@/lib/client";
+import { api } from "@/lib/client";
 import { fmtPct, fmtPx, fmtUsd, shortAddr } from "@/lib/format";
 import { Avatar, CoinIcon, Icon, Logo } from "./ui";
 import { useConnectModal } from "./connect-modal";
 import { useTheme } from "@/lib/theme";
+import { AlertsBell } from "./alerts";
+import { openFunds } from "./trade/funds";
 
 type SearchResult = { coins: { coin: string; markPx: number; change24h: number }[]; traders: { address: string; handle: string | null; avatarUrl: string | null }[] };
 
@@ -31,13 +33,14 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
         <NavTab href="/tokens" label="Tokens" match={["/tokens"]} />
         <NavTab href="/leaderboard" label="Leaderboard" match={["/leaderboard"]} />
       </nav>
-      {me?.network && me.network !== "mainnet" && <span className="pill pill-warn uppercase tracking-wide">{me.network}</span>}
+      {me?.network === "mock" && <span className="pill pill-warn uppercase tracking-wide">mock</span>}
 
       <div className="flex-1 flex justify-center">
         <Search />
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        {signedIn && <AlertsBell />}
         <button className="btn btn-ghost h-9 w-9 px-0" onClick={() => setTheme(theme === "light" ? "dark" : "light")} title={theme === "light" ? "Dark mode" : "Light mode"} aria-label="toggle theme">
           {theme === "light" ? <Icon.moon /> : <Icon.sun />}
         </button>
@@ -47,9 +50,9 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
               <span className="num text-[13px]">
                 {bal.data ? fmtUsd(bal.data.withdrawable) : "…"} <span className="text-muted font-normal">cash</span>
               </span>
-              <a href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer" className="text-[11px] text-brand font-medium hover:underline">
+              <button onClick={() => openFunds("deposit")} className="text-[11px] text-brand font-medium hover:underline">
                 Deposit more
-              </a>
+              </button>
             </div>
             <Link href={`/t/${me?.user?.handle ?? address}`} className="flex items-center gap-2.5 card pl-3 pr-1.5 h-10 rounded-[10px] hover:bg-panel-2 transition-colors">
               <span className="flex flex-col justify-center leading-tight">

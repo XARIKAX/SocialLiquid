@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { FeedItem } from "@/lib/queries";
 import { fmtUsd, shortAddr, timeAgo } from "@/lib/format";
 import { CountUp } from "./motion";
-import { Disc, Mark, SectionHead, vars } from "./parts";
+import { Disc, Mark, SectionHead, usdCompact, vars } from "./parts";
 import type { LandingData } from "./types";
 
 /* =====================================================================
@@ -524,7 +524,7 @@ function MarketHead({ mark, change, funding, maxLev, oi }: { mark: number; chang
         {oi !== null && (
           <span className="lp-term-chip lp-term-chip-wide">
             <small className="lp-mono">Open interest</small>
-            <b className="lp-num">{fmtUsd(oi, { compact: true })}</b>
+            <b className="lp-num">{usdCompact(oi)}</b>
           </span>
         )}
       </div>

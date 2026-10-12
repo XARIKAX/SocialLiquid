@@ -34,15 +34,25 @@ model User {
   /// hyperliquid main wallet, lowercase
   address   String   @unique
   handle    String?  @unique
+  /// user-chosen display name (shown before @handle, like fomo)
+  displayName String?
   xHandle   String?
+  tgHandle  String?
+  bio       String?
+  /// data urls after client-side resize (avatar ≤ ~120kb, banner ≤ ~500kb)
   avatarUrl String?
+  bannerUrl String?
   /// set when the wallet signed in. a row without it is a shadow user (someone followed the address).
   claimedAt DateTime?
   createdAt DateTime @default(now())
 
+  /// when the alerts bell was last opened; events after this count as unread
+  alertsSeenAt DateTime?
+
   agentKey  AgentKey?
   theses    Thesis[]
   likes     Like[]
+  replies   ThesisReply[]
   followers Follow[] @relation("following")
   following Follow[] @relation("follower")
 }
@@ -90,10 +100,14 @@ model Position {
   unrealisedPnl Decimal @default(0) @db.Decimal(30, 6)
   liquidated  Boolean   @default(false)
   updatedAt   DateTime  @updatedAt
+  /// set when the position was opened through "copy": the trader and position it mirrors
+  copiedFromAddress    String?
+  copiedFromPositionId String?
 
   theses     Thesis[]
   feedEvents FeedEvent[]
 
+  @@index([copiedFromPositionId])
   @@index([address, coin, closedAt])
   @@index([coin, closedAt])
   @@index([closedAt])
@@ -135,11 +149,25 @@ model Thesis {
   outcome    ThesisOutcome @default(OPEN)
 
   likes      Like[]
+  replies    ThesisReply[]
   feedEvents FeedEvent[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([coin, createdAt(sort: Desc)])
   @@index([positionId])
+}
+
+/// a reply under a thesis. plain text, 280 chars, from a claimed account.
+model ThesisReply {
+  id        String   @id @default(cuid())
+  thesisId  String
+  thesis    Thesis   @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String   @db.VarChar(280)
+  createdAt DateTime @default(now())
+
+  @@index([thesisId, createdAt])
 }
 
 model Like {
@@ -196,6 +224,8 @@ model HlLeaderboardEntry {
   roi30d       Decimal  @db.Decimal(20, 10)
   vlm30d       Decimal  @db.Decimal(30, 6)
   pnl7d        Decimal  @db.Decimal(30, 6)
+  /// "leaderboard" = hyperliquid's stats feed verbatim, "portfolio" = rebuilt from the portfolio api for the featured traders
+  source       String   @default("leaderboard")
   updatedAt    DateTime @default(now())
 
   @@index([address])

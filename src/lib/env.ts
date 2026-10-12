@@ -1,5 +1,6 @@
 /** server-side env access. keep NEXT_PUBLIC_* reads in sync with the client bundle. */
-export const IS_TESTNET = process.env.NEXT_PUBLIC_HL_TESTNET === "true";
+/** mainnet unless NEXT_PUBLIC_HL_NETWORK=testnet (local development only). the old NEXT_PUBLIC_HL_TESTNET flag is ignored. */
+export const IS_TESTNET = process.env.NEXT_PUBLIC_HL_NETWORK === "testnet";
 export const HL_MOCK = process.env.HL_MOCK === "true";
 
 export const BUILDER_ADDRESS = (process.env.BUILDER_ADDRESS ??
@@ -28,6 +29,5 @@ export const HL_API_URL = IS_TESTNET
 export const HL_APP_URL = IS_TESTNET
   ? "https://app.hyperliquid-testnet.xyz"
   : "https://app.hyperliquid.xyz";
-export const HL_LEADERBOARD_URL = IS_TESTNET
-  ? "https://stats-data.hyperliquid-testnet.xyz/Testnet/leaderboard"
-  : "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard";
+/** the feed behind app.hyperliquid.xyz/leaderboard. always mainnet: the board we mirror is the real one even on a testnet build. */
+export const HL_LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard";

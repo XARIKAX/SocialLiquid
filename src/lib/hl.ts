@@ -1,6 +1,6 @@
 /**
  * hyperliquid read layer. all public info endpoints, no auth.
- * - testnet toggle via NEXT_PUBLIC_HL_TESTNET=true
+ * - mainnet by default; NEXT_PUBLIC_HL_NETWORK=testnet for local development
  * - HL_MOCK=true swaps in a synthetic in-process exchange for offline dev
  */
 import * as hl from "@nktkas/hyperliquid";
@@ -224,10 +224,44 @@ export async function twapHistory(address: string): Promise<HlTwap[]> {
 
 export async function leaderboard(): Promise<HlLeaderboardRow[]> {
   if (HL_MOCK) return mock.leaderboard();
-  const res = await fetch(HL_LEADERBOARD_URL, { headers: { accept: "application/json" }, cache: "no-store" });
-  if (!res.ok) throw new Error(`leaderboard ${res.status}`);
-  const json = (await res.json()) as { leaderboardRows: HlLeaderboardRow[] };
-  return json.leaderboardRows;
+  // the file is tens of megabytes; give it time but never hang a request forever
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 90_000);
+  try {
+    const res = await fetch(HL_LEADERBOARD_URL, { headers: { accept: "application/json" }, cache: "no-store", signal: ctl.signal });
+    if (!res.ok) throw new Error(`leaderboard feed ${res.status}`);
+    const json = (await res.json()) as { leaderboardRows: HlLeaderboardRow[] };
+    if (!Array.isArray(json.leaderboardRows)) throw new Error("leaderboard feed: unexpected shape");
+    return json.leaderboardRows;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const vaultCache = new Map<string, boolean>();
+/** true when the address is a vault (vaults are listed in the leaderboard feed but hidden on hyperliquid's leaderboard page) */
+export async function isVault(address: string): Promise<boolean> {
+  const a = address.toLowerCase();
+  const hit = vaultCache.get(a);
+  if (hit !== undefined) return hit;
+  let v = false;
+  if (!HL_MOCK) {
+    try {
+      v = (await info().vaultDetails({ vaultAddress: a as `0x${string}` })) !== null;
+    } catch {
+      v = false;
+    }
+  }
+  vaultCache.set(a, v);
+  return v;
+}
+
+export type HlPortfolioWindow = { accountValueHistory: [number, string][]; pnlHistory: [number, string][]; vlm: string };
+/** per-user pnl / account value / volume by window. this is the data hyperliquid's own leaderboard is built from. weight 2. */
+export async function portfolio(address: string): Promise<Record<string, HlPortfolioWindow>> {
+  if (HL_MOCK) return mock.portfolio(address);
+  const res = await info().portfolio({ user: address as `0x${string}` });
+  return Object.fromEntries(res.map(([k, v]) => [k, v as HlPortfolioWindow]));
 }
 
 export function leaderboardPnl(row: HlLeaderboardRow, window: "day" | "week" | "month" | "allTime"): number {

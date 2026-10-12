@@ -7,8 +7,12 @@ export type Me = {
     id: string;
     address: string;
     handle: string | null;
+    displayName: string | null;
     xHandle: string | null;
+    tgHandle: string | null;
+    bio: string | null;
     avatarUrl: string | null;
+    bannerUrl: string | null;
     agent: { agentAddress: string; approved: boolean; builderApproved: boolean } | null;
   } | null;
   invite: { required: boolean; ok: boolean };
