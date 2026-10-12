@@ -41,11 +41,12 @@ function explain(e: unknown): string {
   const msg = (e as Error)?.message ?? String(e);
   if (/user rejected|user denied|rejected the request/i.test(msg)) return "You dismissed the request in your wallet. Press Approve both to try again.";
   if (/does not exist|must deposit/i.test(msg)) return "Hyperliquid will not take approvals from an account with no perps balance yet. Move USDC to perps (or deposit), then try again.";
+  if (/unified account/i.test(msg)) return "Your Hyperliquid account is unified: spot and perps share one balance, so there is nothing to move. Reload the page and press again.";
   return msg.split("\n")[0];
 }
 
 
-type Prepare = { agentAddress: string; agentName: string; needsAgentApproval: boolean; needsBuilderApproval: boolean; builder: string; builderFeeTenthsBp: number; maxFeeRate: string };
+type Prepare = { agentAddress: string; agentName: string; needsAgentApproval: boolean; needsBuilderApproval: boolean; builder: string; builderEnabled: boolean; builderFeeTenthsBp: number; maxFeeRate: string };
 
 export type Stage = "connect" | "signin" | "invite" | "handle" | "enable" | "ready";
 
@@ -222,11 +223,14 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
       // hyperliquid only registers approvals for accounts that hold USDC in perps. deposits that landed in spot move first.
       if (!mockMode && address) {
         push("Checking your Hyperliquid balances…");
-        const b = await api<{ accountValue: number; spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
+        const b = await api<{ accountValue: number; unified: boolean; spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
         const spotUsdc = b.spot?.find((x) => x.coin === "USDC");
         const inSpot = spotUsdc ? Math.max(0, spotUsdc.total - spotUsdc.hold) : 0;
         const spotCoins = (b.spot ?? []).filter((x) => x.coin !== "USDC" && x.total > 0);
-        if (b.accountValue < 0.5 && inSpot >= 0.5) {
+        if (b.unified) {
+          // one margin pool: spot USDC already backs perps, and hyperliquid refuses usdClassTransfer outright
+          push("Unified account: your spot USDC already backs perps, nothing to move");
+        } else if (b.accountValue < 0.5 && inSpot >= 0.5) {
           push(`Moving ${inSpot.toFixed(2)} USDC from spot to perps (sign in your wallet)…`);
           await withTimeout(usdClassTransferWithWallet(needWallet(wallet), chainId, (Math.floor(inSpot * 100) / 100).toFixed(2).replace(/\.?0+$/, ""), true), "the wallet did not answer");
           await waitForPerps(address, push);
@@ -250,7 +254,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
         if (!mockMode) await withTimeout(approveBuilderFeeWithWallet(needWallet(wallet), chainId, prep.builder, prep.maxFeeRate), "the wallet did not answer the builder-fee approval");
         builderSigned = true;
         push("Builder fee approved");
-      } else push("Builder fee already approved");
+      } else push(prep.builderEnabled ? "Builder fee already approved" : "No builder fee on this deployment, nothing to approve");
       push("Confirming on chain…");
       const c = await api<{ agentApproved: boolean; builderApproved: boolean }>("/api/agent/confirm", { method: "POST", json: { agentSigned, builderSigned } });
       if (!c.agentApproved || !c.builderApproved) throw new Error(`Approval not visible on chain yet (agent ${c.agentApproved ? "ok" : "missing"}, builder fee ${c.builderApproved ? "ok" : "missing"}). Wait a few seconds and press again.`);
@@ -264,10 +268,10 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <Step n={4} title="Enable trading" hint="Two signatures from your main wallet, once. No gas, nothing leaves Hyperliquid; your wallet may label them 'Ethereum' or your current network, that is only the signing network. We never hold your main key.">
+    <Step n={4} title="Enable trading" hint="A signature from your main wallet, once. No gas, nothing leaves Hyperliquid; your wallet may label it 'Ethereum' or your current network, that is only the signing network. We never hold your main key.">
       <ul className="text-xs text-fg-2 space-y-2 mb-3">
         <li className="flex gap-2"><span className="text-brand">1.</span><span><b>Approve an API wallet</b> so you don't sign every click. <span className="text-dim">approveAgent</span></span></li>
-        <li className="flex gap-2"><span className="text-brand">2.</span><span><b>Approve the builder fee</b>, max 0.1%, so our code goes on your fills. <span className="text-dim">approveBuilderFee</span></span></li>
+        <li className="flex gap-2"><span className="text-brand">2.</span><span><b>Approve the builder fee</b>, max 0.1%, so our code goes on your fills. <span className="text-dim">approveBuilderFee</span> — skipped while this deployment charges no fee.</span></li>
       </ul>
       {walletName && (
         <p className="text-[11px] text-dim mb-2 leading-snug" data-testid="enable-wallet">

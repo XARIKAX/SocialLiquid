@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import * as HL from "@/lib/hl";
 import { BUILDER_ADDRESS, BUILDER_FEE_TENTHS_BP, HL_MOCK } from "@/lib/env";
 import { getSession } from "@/lib/session";
-import { approvalStatus, builderEligibility } from "@/lib/trade";
+import { approvalStatus, builderActive, builderEligibility } from "@/lib/trade";
 import { decrypt } from "@/lib/crypto";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -20,6 +20,9 @@ export const GET = handler(async () => {
   } catch (e) {
     out.perps = `error: ${(e as Error).message}`;
   }
+  const abstraction = await HL.userAbstraction(s.address);
+  out.abstraction = abstraction ?? "unknown";
+  out.unified = HL.isUnified(abstraction);
   try {
     out.spot = await HL.spotBalances(s.address);
   } catch (e) {
@@ -46,16 +49,19 @@ export const GET = handler(async () => {
     out.agent = { address: agent.agentAddress, signerMatchesStoredAddress: keyOk ? signer === agent.agentAddress.toLowerCase() : false, dbApprovedAt: agent.approvedAt, dbBuilderApprovedAt: agent.builderApprovedAt, onChain: st, onChainAgents };
   }
   const builder = await builderEligibility();
-  out.builderEligible = builder.ok ? `ok${builder.accountValue === null ? "" : ` ($${builder.accountValue.toFixed(2)} in the builder perps account)`}` : builder.reason;
+  const builderOn = await builderActive();
+  out.builderEligible = builderOn
+    ? `ok${builder.accountValue === null ? "" : ` ($${builder.accountValue.toFixed(2)} in the builder perps account)`}`
+    : `off, so no fee is charged and nothing needs approving${builder.ok ? "" : ` — ${builder.reason}`}`;
   const perps = out.perps as { accountValue?: number } | string;
   const spotUsdc = Array.isArray(out.spot) ? (out.spot as { coin: string; total: number }[]).find((b) => b.coin === "USDC")?.total ?? 0 : null;
   const spotCoins = Array.isArray(out.spot) ? (out.spot as { coin: string; total: number }[]).filter((b) => b.coin !== "USDC" && b.total > 0).map((b) => b.coin) : [];
-  out.verdict = !builder.ok
-    ? builder.reason
-    : typeof perps === "string"
+  out.verdict = typeof perps === "string"
       ? "hyperliquid did not answer for this address"
-      : (perps.accountValue ?? 0) < 0.5 && (spotUsdc ?? 0) >= 0.5
-        ? "USDC is in spot, not perps: move it to perps first (the enable-trading step now does this)"
+      : HL.isUnified(abstraction)
+        ? "unified account: spot and perps share one margin pool, so nothing needs moving and usdClassTransfer is refused by design"
+        : (perps.accountValue ?? 0) < 0.5 && (spotUsdc ?? 0) >= 0.5
+          ? "USDC is in spot, not perps: move it to perps first (the enable-trading step now does this)"
         : (perps.accountValue ?? 0) < 0.5 && spotCoins.length > 0
           ? `spot-only account (${spotCoins.join(", ")}): enable trading, then Sell for USDC (agent-signed) and the USDC moves to perps`
           : (perps.accountValue ?? 0) < 0.5
