@@ -25,6 +25,8 @@ export async function downloadSnapshot(o: {
   title: string;
   subtitle: string;
   fileName: string;
+  /** legend lines over the panes (the overlays at the price pane's top, each oscillator at its own): y from the chart's top */
+  labels?: { y: number; parts: { text: string; color: string }[] }[];
 }) {
   const { chart: c, pal: p } = o;
   const shot = c.takeScreenshot(true);
@@ -84,6 +86,27 @@ export async function downloadSnapshot(o: {
       ctx.textBaseline = "middle";
       ctx.fillText(fmtFixed(o.live.close, o.prec), (pw + aw / 2) * k, head + y * k);
     }
+  }
+  // the legends the canvas does not carry: which line is which, in its colour
+  if (o.labels?.length) {
+    ctx.save();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.font = `500 ${10.5 * k}px ${mono}`;
+    if (!o.light) {
+      ctx.shadowColor = "rgba(0,0,0,0.6)";
+      ctx.shadowBlur = 3 * k;
+    }
+    for (const l of o.labels) {
+      let x = 10 * k;
+      const y = head + (l.y + 9) * k;
+      for (const part of l.parts) {
+        ctx.fillStyle = part.color;
+        ctx.fillText(part.text, x, y);
+        x += ctx.measureText(part.text).width + 6 * k;
+      }
+    }
+    ctx.restore();
   }
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";

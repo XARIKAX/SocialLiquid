@@ -790,33 +790,67 @@
     font-weight: 500;
     color: var(--c);
   }
-  /* tradingview lets you drop an indicator from its legend row */
+  /* tradingview lets you hide (the eye) or drop an indicator from its legend row */
   .tm-chart-lg-ind {
     pointer-events: auto;
+    transition: opacity 0.2s;
   }
-  .tm-chart-lg-rm {
+  .tm-chart-lg-ind .tm-chart-lg-par {
+    color: var(--color-dim);
+  }
+  /* hidden with the eye: the name stays, quieter, with the way back */
+  .tm-chart-lg-ind[data-off] {
+    opacity: 0.6;
+  }
+  .tm-chart-lg-ind[data-off] i {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--c);
+  }
+  .tm-chart-lg-ctl,
+  .tm-chart-osc-ctl {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    margin-left: -2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .tm-chart-lg-ind:hover .tm-chart-lg-ctl,
+  .tm-chart-lg-ind[data-off] .tm-chart-lg-ctl,
+  .tm-chart-lg-ctl:focus-within,
+  .tm-chart-osc:hover .tm-chart-osc-ctl,
+  .tm-chart-osc[data-off] .tm-chart-osc-ctl,
+  .tm-chart-osc-ctl:focus-within {
+    opacity: 1;
+  }
+  .tm-chart-lg-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
-    margin-left: -2px;
-    border-radius: 5px;
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
     color: var(--color-muted);
-    opacity: 0;
     cursor: pointer;
-    transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+    transition: color 0.15s, background-color 0.15s;
   }
-  .tm-chart-lg-ind:hover .tm-chart-lg-rm,
-  .tm-chart-lg-rm:focus-visible {
-    opacity: 1;
-  }
-  .tm-chart-lg-rm:hover {
+  .tm-chart-lg-btn:hover {
     color: var(--color-fg);
     background: var(--row-hover);
   }
+  .tm-chart-lg-btn[aria-pressed="true"] {
+    color: var(--color-fg-2);
+  }
+  .tm-chart-lg-rm:hover {
+    color: var(--tm-down);
+  }
+  .tm-chart .tm-chart-lg-btn:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px rgb(77 227 193 / 0.6);
+  }
+  /* phones: the price legend keeps to its readings (the menu adds and removes) */
   @media (hover: none) and (pointer: coarse) {
-    .tm-chart-lg-rm {
+    .tm-chart-lg-ctl {
       display: none;
     }
   }
@@ -1131,7 +1165,8 @@
     position: absolute;
     z-index: 8;
     right: calc(var(--tm-axis) + 12px);
-    bottom: calc(var(--tm-taxis) + 12px);
+    /* the price pane's bottom: above the time axis, and above any oscillator panes */
+    bottom: calc(var(--tm-below, var(--tm-taxis)) + 12px);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1164,7 +1199,7 @@
     position: absolute;
     z-index: 8;
     left: calc((100% - var(--tm-axis)) / 2);
-    bottom: calc(var(--tm-taxis) + 14px);
+    bottom: calc(var(--tm-below, var(--tm-taxis)) + 14px);
     display: flex;
     align-items: center;
     gap: 2px;
@@ -1446,7 +1481,10 @@
     animation: tm-chart-pop 0.18s var(--ease-out);
   }
   .tm-chart-menu-ind {
-    width: 268px;
+    display: flex;
+    flex-direction: column;
+    width: 288px;
+    overflow: hidden;
   }
   .tm-chart-menu-head {
     display: flex;
@@ -1908,6 +1946,299 @@
     .tm-chart-lg-x {
       display: none;
     }
+  }
+  /* narrow panes: an oscillator's legend drops its parameters before its readings; a short price pane
+     (oscillators below it) keeps its legend to the close and the move, one line */
+  @container tmpane (max-width: 480px) {
+    .tm-chart-osc-n .tm-chart-lg-par {
+      display: none;
+    }
+    .tm-chart-pane[data-short] .tm-chart-lg-ohlc > span:not(:has(> .tm-chart-lg-c)) {
+      display: none;
+    }
+  }
+
+  /* ---------- panes: oscillators stack under the price pane ----------
+     the frame loop writes --tm-p0h (the price pane's height) and --tm-below (everything under it: the
+     oscillator panes, their 1px separators and the time axis) and sets [data-panes] while they exist.
+     what is drawn over the price keeps to the price pane; the separators stay free to drag. */
+  .tm-chart-p0 {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .tm-chart-pane[data-panes] .tm-chart-p0 {
+    bottom: auto;
+    height: var(--tm-p0h);
+  }
+  .tm-chart-pane[data-panes] .tm-chart-draw {
+    bottom: auto;
+    height: var(--tm-p0h);
+    overflow: hidden;
+  }
+  .tm-chart-pane[data-panes] .tm-chart-legend {
+    max-height: calc(var(--tm-p0h) - 6px);
+  }
+  /* near the price pane's floor (an oscillator right below), the countdown rides over the price */
+  .tm-chart-tag[data-flip] {
+    flex-direction: column-reverse;
+    margin-top: -25px;
+  }
+  .tm-chart-tag[data-flip]:has(.tm-chart-tag-cd:empty) {
+    margin-top: -10px;
+  }
+  .tm-chart-tag[data-flip] .tm-chart-tag-px:has(+ .tm-chart-tag-cd:not(:empty)) {
+    border-radius: 0 0 6px 6px;
+  }
+  .tm-chart-tag[data-flip] .tm-chart-tag-cd {
+    border-radius: 6px 6px 0 0;
+  }
+
+  /* an oscillator pane's legend: its name and parameters, the readings in their colours, the eye and
+     remove on hover (tradingview's). it sits just under the separator's drag band (which reaches 5px) */
+  .tm-chart-osc {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    max-width: calc(100% - var(--tm-axis) - 14px);
+    margin-top: 6px;
+    padding-left: 10px;
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    line-height: 18px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--color-dim);
+    text-shadow: 0 1px 2px rgb(0 0 0 / calc(0.6 * var(--glow)));
+    pointer-events: auto;
+    transition: opacity 0.2s;
+  }
+  .tm-chart-osc[data-hidden] {
+    visibility: hidden;
+  }
+  [data-theme="light"] .tm-chart-osc {
+    color: var(--color-muted);
+    text-shadow: 0 0 3px rgb(247 247 244 / 0.9);
+  }
+  .tm-chart-osc-n {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-weight: 500;
+    color: var(--color-fg-2);
+  }
+  .tm-chart-osc-n i {
+    flex-shrink: 0;
+    width: 12px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--c);
+    box-shadow: 0 0 6px var(--c);
+  }
+  .tm-chart-osc-n .tm-chart-lg-par {
+    font-weight: 400;
+    color: var(--color-dim);
+  }
+  .tm-chart-osc-v {
+    display: inline-flex;
+    gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .tm-chart-osc-v b {
+    font-weight: 500;
+    color: var(--c);
+  }
+  [data-theme="light"] .tm-chart-osc-v b {
+    color: color-mix(in srgb, var(--c) 72%, #000000);
+  }
+  [data-theme="light"] .tm-chart-osc-n i {
+    box-shadow: none;
+  }
+  [data-theme="light"] .tm-chart-osc-n .tm-chart-lg-par {
+    color: var(--color-muted);
+  }
+  .tm-chart-osc[data-off] .tm-chart-osc-n {
+    color: var(--color-dim);
+  }
+  .tm-chart-osc[data-off] .tm-chart-osc-n i {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--c);
+  }
+  /* touch: no hover to reveal them, so the pane's two controls stay in reach, quieter */
+  @media (hover: none) and (pointer: coarse) {
+    .tm-chart-osc-ctl {
+      opacity: 0.75;
+    }
+  }
+
+  /* ---------- the indicator menu: search, overlays, oscillators ---------- */
+  .tm-chart-ms {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    margin: 0 2px 4px;
+    padding: 0 5px 0 10px;
+    border-radius: 10px;
+    color: var(--color-dim);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    border: 1px solid var(--hair);
+    box-shadow: inset 0 1px 0 var(--inset-hi);
+    transition: border-color 0.2s, box-shadow 0.3s var(--ease-out), color 0.2s;
+  }
+  .tm-chart-ms:focus-within {
+    color: var(--color-brand-2);
+    border-color: rgb(77 227 193 / 0.45);
+    box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 3px rgb(77 227 193 / calc(0.12 * var(--glow))), 0 0 18px -6px rgb(77 227 193 / calc(0.6 * var(--glow)));
+  }
+  [data-theme="light"] .tm-chart-ms:focus-within {
+    color: var(--tm-teal);
+  }
+  .tm-chart-ms-in {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    outline: none;
+    background: transparent;
+    font-size: 12.5px;
+    color: var(--color-fg);
+  }
+  .tm-chart-ms-in::placeholder {
+    color: var(--color-dim);
+  }
+  [data-theme="light"] .tm-chart-ms-in::placeholder {
+    color: var(--color-muted);
+  }
+  .tm-chart-ms-clear {
+    flex-shrink: 0;
+    height: 22px;
+    padding-inline: 8px;
+    border-radius: 7px;
+    font-family: var(--font-label);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    background: linear-gradient(180deg, rgb(255 255 255 / calc(0.06 * var(--glow))), rgb(255 255 255 / calc(0.02 * var(--glow))));
+    box-shadow: inset 0 0 0 1px var(--hair-2);
+    cursor: pointer;
+    transition: color 0.15s, box-shadow 0.2s;
+  }
+  .tm-chart-ms-clear:hover {
+    color: var(--color-fg);
+    box-shadow: inset 0 0 0 1px var(--color-line-2);
+  }
+  .tm-chart .tm-chart-ms-clear:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px rgb(77 227 193 / 0.6);
+  }
+  /* the list scrolls between the search and the volume switch */
+  .tm-chart-ml {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--hair-2) transparent;
+  }
+  .tm-chart-ml[data-fb] {
+    mask-image: linear-gradient(180deg, #000 calc(100% - 30px), transparent);
+  }
+  .tm-chart-ml[data-ft] {
+    mask-image: linear-gradient(180deg, transparent, #000 22px);
+  }
+  .tm-chart-ml[data-ft][data-fb] {
+    mask-image: linear-gradient(180deg, transparent, #000 22px, #000 calc(100% - 30px), transparent);
+  }
+  .tm-chart-mg {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 10px 5px;
+  }
+  .tm-chart-mg-n {
+    letter-spacing: 0.04em;
+    opacity: 0.8;
+  }
+  .tm-chart-mi-ind {
+    gap: 10px;
+    min-height: 32px;
+    padding-block: 3px;
+  }
+  .tm-chart-mi-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 24px;
+    border-radius: 8px;
+    color: var(--c);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair);
+    transition: box-shadow 0.25s;
+  }
+  .tm-chart-mi-glyph svg {
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) calc(70% * var(--glow)), transparent));
+  }
+  .tm-chart-mi-ind[aria-checked="true"] .tm-chart-mi-glyph {
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent), 0 0 12px -4px var(--c);
+  }
+  [data-theme="light"] .tm-chart-mi-glyph svg {
+    filter: none;
+  }
+  [data-theme="light"] .tm-chart-mi-ind[aria-checked="true"] .tm-chart-mi-glyph {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 50%, transparent);
+  }
+  .tm-chart-mi-name {
+    display: flex;
+    flex: 1;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--color-fg-2);
+  }
+  .tm-chart-mi-name small {
+    font-family: var(--font-label);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--color-dim);
+  }
+  .tm-chart-mi-ind[aria-checked="true"] .tm-chart-mi-name {
+    color: var(--color-fg);
+  }
+  [data-theme="light"] .tm-chart-mi-name small {
+    color: var(--color-muted);
+  }
+  .tm-chart-mi-none {
+    padding: 20px 12px 18px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--color-muted);
+  }
+  .tm-chart-mi-none b {
+    font-weight: 600;
+    color: var(--color-fg-2);
   }
 
   @keyframes tm-chart-breathe {

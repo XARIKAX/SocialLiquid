@@ -3,8 +3,11 @@
  * in-app deposit and withdrawal. funds move wallet ⇄ hyperliquid directly; socialLiquid signs nothing and holds nothing.
  * both sides mirror hyperliquid's own dialogs: an asset (USDC or a native asset through Unit) and, for USDC, a chain
  * (Arbitrum via CCTP, the legacy bridge, HyperEVM, the other CCTP chains; deposits also offer the USDT swap).
+ * styles: the ticket's modal language (ticket.css, .tm-tk-*) and the dialog's own parts (funds.css, .tm-fd-*).
  */
-import { useEffect, useRef, useState } from "react";
+import "./ticket.css";
+import "./funds.css";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useAccount, useChainId, useReadContract, useWalletClient } from "wagmi";
 import { isPhantomWallet } from "@/hooks/use-signer";
 import { erc20Abi, formatUnits, parseUnits } from "viem";
@@ -36,8 +39,11 @@ import { cents, usdcSpotAvail } from "@/lib/spot";
 import { UNIT_APP_URL, UNIT_ASSETS, fetchUnitAddress, fetchUnitOperations, fetchUnitWithdrawAddress, looksLikeAddress, minNumber, spotEntry, unitDepositable, unitStateLabel, unitWithdrawable, type UnitAddress, type UnitAsset, type UnitOperation } from "@/lib/unit";
 import QRCode from "qrcode";
 import type { wagmiConfig } from "@/lib/wagmi";
-import { Icon } from "../ui";
+import { CoinIcon } from "../ui";
 import { openConvert } from "./convert";
+import { TkChain, TkClose, TkIcon, TkModal, TkMsg, TkNum, TkPicker, TkPickStatic, TkRoute, type TkPickOption } from "./tk-bits";
+
+/* the ticket region's icon set and number field moved to ./tk-bits; ticket.tsx and trade-panel.tsx import them from here */
 export { TkIcon, TkNum, groupDigits } from "./tk-bits";
 
 export type FundsMode = "deposit" | "withdraw";
@@ -56,8 +62,10 @@ export function FundsHost({ address }: { address: string }) {
     window.addEventListener(EVT, h);
     return () => window.removeEventListener(EVT, h);
   }, []);
+  const close = useCallback(() => setMode(null), []);
   if (!mode) return null;
-  return <FundsModal mode={mode} address={address} onClose={() => setMode(null)} onMode={setMode} />;
+  // the dialog portals itself to the body (TkModal) so no ancestor's stacking context can sit above the overlay
+  return <FundsModal mode={mode} address={address} onClose={close} onMode={setMode} />;
 }
 
 type Phase = { kind: "idle" } | { kind: "busy"; text: string } | { kind: "sent"; hash: string | null; explorer: string; text: string } | { kind: "done"; text: string } | { kind: "error"; text: string };
@@ -71,7 +79,9 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   const { connector } = useAccount();
   // Phantom's EVM side only shows Ethereum, Base and Polygon; asking it for anything else opens its "Unsupported network" screen
   const phantom = isPhantomWallet(connector?.name);
-  useEffect(() => { markPhantomWallet(phantom); }, [phantom]);
+  useEffect(() => {
+    markPhantomWallet(phantom);
+  }, [phantom]);
   const canSwitchTo = (id: number) => !phantom || PHANTOM_CHAINS.has(id);
   const qc = useQueryClient();
   const bal = useBalance(address);
@@ -86,6 +96,9 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const startBal = useRef<number | null>(null);
   const startSpotUsdc = useRef<number | null>(null);
+  const amtRef = useRef<HTMLInputElement>(null);
+  const destRef = useRef<HTMLInputElement>(null);
+  const uid = useId();
   const perpsAvail = bal.data ? Math.max(0, bal.data.withdrawable) : 0;
   const spotUsdcAvail = usdcSpotAvail(bal.data?.spot);
   const amt = Number(amount);
@@ -133,11 +146,10 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
     }
   }, [bal.data, phase.kind, mode, qc]);
 
+  // a pointer user lands in the amount; a touch user is not ambushed by the keyboard
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
+    if (window.matchMedia?.("(pointer: fine)").matches) amtRef.current?.focus({ preventScroll: true });
+  }, [mode]);
 
   // what the amount is in, where it can go, and how much of it there is
   const symbol = mode === "deposit" ? route.symbol : nativeW ? asset : USDC;
@@ -291,146 +303,407 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
         ? `Withdraw${amt >= min ? ` ${amountStr} ${asset}` : ""} to ${chainName}`
         : `Withdraw${amt >= min ? ` ${fmtUsd(amt)}` : ""} to ${chainName}`;
 
+  /* ---------- presentation ---------- */
+  const deposit = mode === "deposit";
+  const moving = busy || phase.kind === "sent";
+  const ctaOff = !valid || (!mockMode && !wallet) || (deposit && !canSwitchTo(route.chain.id));
+  /** dollars (USDC, USDT) get the $ sign; coins (SOL, BTC, ETH) are counted in their own unit */
+  const usdAmount = !nativeW;
+  const destIsMe = !nativeW && effDest.toLowerCase() === address.toLowerCase();
+  const title = `${deposit ? "Deposit" : "Withdraw"} ${asset}`;
+  const subline = deposit
+    ? isUsdc
+      ? route.kind === "swap"
+        ? "USDT from your wallet on Arbitrum, swapped for USDC, straight into your Hyperliquid perps balance."
+        : `From your wallet on ${route.chain.name} straight into your Hyperliquid perps balance.`
+      : unitInfo && unitDepositable(unitInfo)
+        ? `Send ${asset} on ${unitInfo.chainLabel} to your own Unit address. It lands in your Hyperliquid spot balance.`
+        : `${asset} deposits go through Unit's own dialog for now.`
+    : nativeW
+      ? unitInfo && unitWithdrawable(unitInfo)
+        ? `From your Hyperliquid spot balance to a ${unitInfo.chainLabel} address, through Unit.`
+        : `${asset} withdrawals go through Unit's own dialog for now.`
+      : `From your Hyperliquid balance to ${destIsMe ? "your wallet" : "an address"} on ${wRoute.chain.name}.`;
+  const sub = !(amt > 0)
+    ? `Min ${min} ${symbol}`
+    : deposit
+      ? cctpRoute
+        ? `≈ ${fmtUsd(Math.max(0, amt - feeUsd))} into perps after the ${feeUsd.toFixed(2)} USDC fee`
+        : `≈ ${fmtUsd(amt)} into perps · ${route.eta}`
+      : nativeW
+        ? `${amountStr} ${asset}, minus Unit's network fee`
+        : wRoute.fee > 0
+          ? `You receive ${fmtUsd(Math.max(0, amt - wRoute.fee))} after the ${fmtUsd(wRoute.fee)} fee`
+          : `You receive ${fmtUsd(amt)} · no fee`;
+
+  const assetOptions: TkPickOption[] = [
+    { value: USDC, text: USDC, icon: <CoinIcon coin={USDC} size={22} />, sub: `${deposit ? DEPOSIT_ROUTES.length : WITHDRAW_ROUTES.length} routes` },
+    // hyperliquid's own order; the ones without a verified minimum run in Unit's app (they keep their place at the end)
+    ...UNIT_ASSETS.map((a) => ({
+      value: a.symbol,
+      text: a.symbol,
+      icon: <CoinIcon coin={a.symbol} size={22} />,
+      sub: a.chainLabel,
+      section: (deposit ? unitDepositable(a) : unitWithdrawable(a)) ? undefined : "Through Unit's app",
+    })),
+  ];
+  const routeOptions: TkPickOption[] = DEPOSIT_ROUTES.map((r) => ({
+    value: r.id,
+    text: r.label,
+    icon: <TkChain name={r.label} size={20} />,
+    sub: `${r.fee === "none" ? "no fee" : r.fee} · ${r.eta}`,
+    tag: canSwitchTo(r.chain.id) ? undefined : (
+      <span className="tm-fd-tag" data-tone="warn">
+        not in Phantom
+      </span>
+    ),
+  }));
+  const wRouteOptions: TkPickOption[] = WITHDRAW_ROUTES.map((r) => ({
+    value: r.id,
+    text: r.label,
+    icon: <TkChain name={r.label} size={20} />,
+    sub: `${r.fee > 0 ? r.feeLabel : "no fee"} · ${r.eta}`,
+  }));
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label={mode}>
-      <div className="card w-full max-w-md p-4 shadow-2xl max-h-[calc(100vh-24px)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-3">
-          <span className="seg">
-            {(["deposit", "withdraw"] as FundsMode[]).map((m) => (
-              <button key={m} className={`seg-item h-8 capitalize ${mode === m ? "seg-active" : ""}`} onClick={() => { onMode(m); setDest(isUsdc ? address : ""); reset(); }}>{m}</button>
-            ))}
-          </span>
-          <button className="btn btn-ghost h-8 w-8 px-0" onClick={onClose} aria-label="close">✕</button>
-        </div>
+    <TkModal labelledBy={`${uid}-t`} onClose={onClose}>
+      <div className="tm-tk-modal-head">
+        <span className="seg" aria-label="Direction">
+          {(["deposit", "withdraw"] as FundsMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={mode === m}
+              className={`seg-item capitalize ${mode === m ? "seg-active" : ""}`}
+              onClick={() => {
+                onMode(m);
+                setDest(isUsdc ? address : "");
+                reset();
+              }}
+            >
+              {m === "deposit" ? <TkIcon.down size={13} /> : <TkIcon.up size={13} />}
+              {m}
+            </button>
+          ))}
+        </span>
+        <TkClose onClose={onClose} />
+      </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <label className="block">
-            <span className="text-[11px] text-muted">Asset</span>
-            <select className="input h-10 mt-1 w-full" value={asset} aria-label="asset" onChange={(e) => pickAsset(e.target.value)} disabled={busy}>
-              <option value={USDC}>USDC</option>
-              {UNIT_ASSETS.map((a) => (
-                <option key={a.symbol} value={a.symbol}>{a.symbol}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-[11px] text-muted">{mode === "deposit" ? "Deposit chain" : "Withdrawal chain"}</span>
-            {!isUsdc ? (
-              <span className="input h-10 mt-1 w-full inline-flex items-center text-fg-2">{unitInfo?.chainLabel}</span>
-            ) : mode === "deposit" ? (
-              <select className="input h-10 mt-1 w-full" value={routeId} aria-label="deposit chain" onChange={(e) => { setRouteId(e.target.value); reset(); }} disabled={busy}>
-                {DEPOSIT_ROUTES.map((r) => (
-                  <option key={r.id} value={r.id}>{r.label}{canSwitchTo(r.chain.id) ? "" : " · not in Phantom"}</option>
-                ))}
-              </select>
-            ) : (
-              <select className="input h-10 mt-1 w-full" value={wRouteId} aria-label="withdrawal chain" onChange={(e) => { setWRouteId(e.target.value); reset(); }} disabled={busy}>
-                {WITHDRAW_ROUTES.map((r) => (
-                  <option key={r.id} value={r.id}>{r.label}</option>
-                ))}
-              </select>
-            )}
-          </label>
-        </div>
+      <h2 id={`${uid}-t`} className="tm-tk-modal-title">
+        {title}
+      </h2>
+      <p className="tm-tk-modal-sub">{subline}</p>
 
-        {mode === "deposit" && !isUsdc ? (
-          unitInfo && !unitDepositable(unitInfo) ? <UnitLinkPanel mode="deposit" asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} /> : <UnitPanel asset={unitInfo!} q={unit} spot={bal.data?.spot} copied={copied} onCopy={copy} hlAddress={address} />
-        ) : nativeW && unitInfo && !unitWithdrawable(unitInfo) ? (
-          <UnitLinkPanel mode="withdraw" asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} />
+      <div className="tm-fd-picks">
+        <TkPicker
+          label="Asset"
+          listLabel="asset"
+          value={asset}
+          options={assetOptions}
+          onPick={pickAsset}
+          disabled={busy}
+          grid
+          face={
+            <>
+              <CoinIcon coin={asset} size={20} />
+              <span className="tm-fd-pick-t">{asset}</span>
+            </>
+          }
+        />
+        {!isUsdc ? (
+          <TkPickStatic label={deposit ? "Deposit chain" : "Withdrawal chain"}>
+            <TkChain name={unitInfo?.chainLabel ?? ""} size={18} />
+            <span className="tm-fd-pick-t">{unitInfo?.chainLabel}</span>
+          </TkPickStatic>
+        ) : deposit ? (
+          <TkPicker
+            label="Deposit chain"
+            listLabel="deposit chain"
+            value={routeId}
+            options={routeOptions}
+            onPick={(v) => {
+              setRouteId(v);
+              reset();
+            }}
+            disabled={busy}
+          />
         ) : (
-          <>
-            <div className="card-2 p-3 text-xs space-y-1.5">
-              {mode === "deposit" ? (
+          <TkPicker
+            label="Withdrawal chain"
+            listLabel="withdrawal chain"
+            value={wRouteId}
+            options={wRouteOptions}
+            onPick={(v) => {
+              setWRouteId(v);
+              reset();
+            }}
+            disabled={busy}
+          />
+        )}
+      </div>
+
+      {deposit && !isUsdc ? (
+        unitInfo && !unitDepositable(unitInfo) ? (
+          <UnitLinkPanel mode="deposit" asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} />
+        ) : (
+          <UnitPanel asset={unitInfo!} q={unit} spot={bal.data?.spot} copied={copied} onCopy={copy} hlAddress={address} />
+        )
+      ) : nativeW && unitInfo && !unitWithdrawable(unitInfo) ? (
+        <UnitLinkPanel mode="withdraw" asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} />
+      ) : (
+        <>
+          <TkRoute
+            from={deposit ? { name: "Wallet", sub: route.chain.name, tone: "peri" } : { name: "Hyperliquid", sub: nativeW ? "Spot" : undefined }}
+            to={deposit ? { name: "Hyperliquid", sub: "Perps" } : { name: destIsMe ? "Wallet" : "Address", sub: chainName, tone: "peri" }}
+            moving={moving}
+          />
+
+          <dl className="tm-tk-bal">
+            {deposit ? (
+              <>
+                <div>
+                  <dt>
+                    {route.symbol} in wallet · {route.chain.name}
+                  </dt>
+                  <dd>{mockMode ? "mock" : walletBal === null ? "…" : <b>{fmtUsd(walletBal)}</b>}</dd>
+                </div>
+                <div>
+                  <dt>Hyperliquid balance</dt>
+                  <dd>{bal.data ? fmtUsd(bal.data.withdrawable) : "…"}</dd>
+                </div>
+                <div>
+                  <dt>Fee</dt>
+                  <dd>{cctpRoute && amt > 0 ? `${feeUsd.toFixed(2)} USDC` : route.fee}</dd>
+                </div>
+                <div>
+                  <dt>Arrives</dt>
+                  <dd>{cctpRoute ? (fastBps !== null ? "seconds" : "~15 min (standard)") : route.eta}</dd>
+                </div>
+                {cctpRoute && fee.data !== null && fee.data !== undefined && (
+                  <div className="tm-fd-fast">
+                    <dt>
+                      Fast transfer <small>+{(fee.data / 100).toFixed(2)}% paid to Circle</small>
+                    </dt>
+                    <dd>
+                      <button type="button" role="switch" aria-checked={fast} aria-label={`Fast transfer · +${(fee.data / 100).toFixed(2)}% paid to Circle`} className="switch" onClick={() => setFast((v) => !v)} disabled={busy} />
+                    </dd>
+                  </div>
+                )}
+              </>
+            ) : nativeW ? (
+              <>
+                <div>
+                  <dt>{asset} on Hyperliquid spot</dt>
+                  <dd>{max === null ? "…" : <b>{`${max.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset}`}</b>}</dd>
+                </div>
+                <div>
+                  <dt>Minimum withdrawal</dt>
+                  <dd>{unitInfo?.withdrawMin}</dd>
+                </div>
+                <div>
+                  <dt>Fee</dt>
+                  <dd>Unit&apos;s network fee, deducted</dd>
+                </div>
+                <div>
+                  <dt>Arrives</dt>
+                  <dd>about 4 minutes</dd>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <dt>Available to withdraw</dt>
+                  <dd>
+                    {bal.data ? <b>{fmtUsd(perpsAvail + spotUsdcAvail)}</b> : "…"}
+                    {bal.data && spotUsdcAvail > 0.01 && (
+                      <span className="tm-fd-split">
+                        {" "}
+                        · perps {fmtUsd(perpsAvail)} + spot {fmtUsd(spotUsdcAvail)}
+                      </span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Fee</dt>
+                  <dd>{wRoute.feeLabel}</dd>
+                </div>
+                <div>
+                  <dt>Arrives</dt>
+                  <dd>{wRoute.eta}</dd>
+                </div>
+              </>
+            )}
+          </dl>
+
+          <div className="tm-tk-size" onClick={() => amtRef.current?.focus()}>
+            <div className="tm-tk-size-head">
+              <label htmlFor={`${uid}-a`} className="tm-tk-size-label">
+                Amount
+              </label>
+              {max !== null && (
+                <button
+                  type="button"
+                  className="tm-tk-max"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAmount(String(nativeW ? Math.floor(max * 1e6) / 1e6 : Math.floor(max * 100) / 100));
+                  }}
+                  disabled={busy}
+                >
+                  Max <b>{usdAmount ? fmtUsd(max) : `${max.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset}`}</b>
+                </button>
+              )}
+            </div>
+            <div className="tm-tk-size-main">
+              {usdAmount && (
+                <span className="tm-tk-size-cur" data-on={!!amount} aria-hidden>
+                  $
+                </span>
+              )}
+              <TkNum
+                id={`${uid}-a`}
+                ref={amtRef}
+                className="tm-tk-size-input"
+                inputMode="decimal"
+                placeholder="0"
+                value={amount}
+                onValue={(v) => setAmount(v.replace(/[^0-9.]/g, ""))}
+                disabled={busy}
+                autoComplete="off"
+              />
+              <span className="tm-tk-unit" aria-hidden>
+                {symbol}
+              </span>
+            </div>
+            <div className="tm-tk-size-sub">{sub}</div>
+          </div>
+
+          {mode === "withdraw" && (
+            <div className="tm-tk-size tm-tk-dest" data-locked={destLocked || undefined} onClick={() => destRef.current?.focus()}>
+              <div className="tm-tk-size-head">
+                <label htmlFor={`${uid}-d`} className="tm-tk-size-label">
+                  Destination
+                </label>
+                <span className="tm-tk-ref">
+                  {destLocked && <TkIcon.lock size={10} sw={2.2} />}
+                  {destIsMe ? `This wallet · ${chainName}` : `${chainName} address`}
+                </span>
+              </div>
+              <input
+                id={`${uid}-d`}
+                ref={destRef}
+                className="tm-tk-input tm-tk-input-mono tm-tk-dest-input"
+                value={effDest}
+                onChange={(e) => setDest(e.target.value.trim())}
+                disabled={busy || destLocked}
+                spellCheck={false}
+                autoComplete="off"
+                placeholder={nativeW ? `Your ${chainName} address` : "0x…"}
+                aria-label="destination"
+                aria-invalid={(!!dest && !destOk && !destLocked) || undefined}
+              />
+            </div>
+          )}
+          {mode === "withdraw" && destLocked && (
+            <p className="tm-fd-note">
+              <TkIcon.info size={12} sw={2} />
+              <span>USDC can only leave to HyperEVM at this same address. Send it on from there.</span>
+            </p>
+          )}
+          {mode === "withdraw" && dest && !destOk && !destLocked && <TkMsg tone="warn">That is not a valid {chainName} address.</TkMsg>}
+          {mode === "deposit" && !canSwitchTo(route.chain.id) && (
+            <TkMsg tone="warn" testid="phantom-route-warning">
+              Phantom cannot switch to {route.chain.name}. {PHANTOM_HINT}: pick Ethereum, Base or Polygon, or connect MetaMask or Rabby for this route.
+            </TkMsg>
+          )}
+          {amt > 0 && amt < min && (
+            <TkMsg tone="warn">
+              Minimum {mode === "deposit" ? "deposit" : "withdrawal"} is {min} {symbol}.
+            </TkMsg>
+          )}
+          {max !== null && amt > max + 1e-9 && <TkMsg tone="warn">That is more than you have available.</TkMsg>}
+          {/* the loss warning sits above the button: it is read before anything is signed */}
+          {nativeW && unitInfo && (
+            <div className="tm-fd-danger" role="alert" data-testid="unit-important">
+              <TkIcon.alert size={15} sw={2} />
+              <p>
+                <b>IMPORTANT:</b> There is a minimum withdrawal of <b>{unitInfo.withdrawMin}</b>. The destination must be a <b>{unitInfo.chainLabel}</b> address that you control. {asset} sent to an address on any other network, or below the minimum, will be lost.
+              </p>
+            </div>
+          )}
+
+          {phase.kind === "idle" || phase.kind === "error" ? (
+            <button type="button" className={`btn btn-primary tm-tk-cta ${ctaOff ? "" : "btn-glow"}`} onClick={run} disabled={ctaOff}>
+              {deposit ? wrongChain ? <TkIcon.swap size={15} /> : <TkIcon.down size={15} /> : <TkIcon.up size={15} />}
+              <span className="tm-fd-cta-t">{buttonLabel}</span>
+            </button>
+          ) : (
+            <div className="tm-tk-status" data-tone={phase.kind === "busy" ? undefined : "ok"} role="status">
+              {phase.kind === "busy" ? (
                 <>
-                  <div className="flex justify-between"><span className="text-muted">{route.symbol} in wallet · {route.chain.name}</span><span className="num">{mockMode ? "mock" : walletBal === null ? "…" : fmtUsd(walletBal)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Hyperliquid balance</span><span className="num">{bal.data ? fmtUsd(bal.data.withdrawable) : "…"}</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Fee</span><span className="num">{cctpRoute && amt > 0 ? `${feeUsd.toFixed(2)} USDC` : route.fee}</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Arrives</span><span className="num">{cctpRoute ? (fastBps !== null ? "seconds" : "~15 min (standard)") : route.eta}</span></div>
-                  {cctpRoute && fee.data !== null && fee.data !== undefined && (
-                    <label className="flex items-center justify-between gap-2 pt-1 cursor-pointer">
-                      <span className="text-muted">Fast transfer · +{(fee.data / 100).toFixed(2)}% paid to Circle</span>
-                      <input type="checkbox" checked={fast} onChange={(e) => setFast(e.target.checked)} disabled={busy} />
-                    </label>
-                  )}
-                </>
-              ) : nativeW ? (
-                <>
-                  <div className="flex justify-between"><span className="text-muted">{asset} on Hyperliquid spot</span><span className="num">{max === null ? "…" : `${max.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset}`}</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Minimum withdrawal</span><span className="num">{unitInfo?.withdrawMin}</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Fee</span><span className="num">Unit&apos;s network fee, deducted</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Arrives</span><span className="num">about 4 minutes</span></div>
+                  <TkIcon.spin size={15} className="tm-tk-spin" />
+                  <span className="tm-fd-status-t">{phase.text}</span>
                 </>
               ) : (
                 <>
-                  <div className="flex justify-between"><span className="text-muted">Available to withdraw</span><span className="num">{bal.data ? fmtUsd(perpsAvail + spotUsdcAvail) : "…"}{bal.data && spotUsdcAvail > 0.01 && <span className="text-dim"> · perps {fmtUsd(perpsAvail)} + spot {fmtUsd(spotUsdcAvail)}</span>}</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Fee</span><span className="num">{wRoute.feeLabel}</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Arrives</span><span className="num">{wRoute.eta}</span></div>
+                  <TkIcon.check size={15} sw={2.2} /> {phase.kind === "done" ? "Done" : "Sent"}
                 </>
               )}
             </div>
-
-            <label className="block mt-3 text-xs text-muted">Amount ({symbol})</label>
-            <div className="flex items-center gap-2 mt-1">
-              <input className="input h-11 flex-1 num text-[15px]" inputMode="decimal" placeholder={`min ${min}`} value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} disabled={busy} />
-              <button className="btn h-11 px-3" onClick={() => max !== null && setAmount(String(nativeW ? Math.floor(max * 1e6) / 1e6 : Math.floor(max * 100) / 100))} disabled={busy || max === null}>Max</button>
-            </div>
-            {mode === "withdraw" && (
-              <>
-                <label className="block mt-3 text-xs text-muted">Destination · {chainName} address</label>
-                <input
-                  className="input h-10 w-full mt-1 num text-xs"
-                  value={effDest}
-                  onChange={(e) => setDest(e.target.value.trim())}
-                  disabled={busy || destLocked}
-                  spellCheck={false}
-                  placeholder={nativeW ? `Your ${chainName} address` : "0x…"}
-                  aria-label="destination"
-                />
-                {destLocked && <p className="text-[11px] text-dim mt-1">USDC can only leave to HyperEVM at this same address. Send it on from there.</p>}
-                {dest && !destOk && !destLocked && <p className="text-warn text-[11px] mt-1.5">That is not a valid {chainName} address.</p>}
-              </>
-            )}
-            {mode === "deposit" && !canSwitchTo(route.chain.id) && (
-              <p className="text-warn text-[11px] mt-1.5" data-testid="phantom-route-warning">Phantom cannot switch to {route.chain.name}. {PHANTOM_HINT}: pick Ethereum, Base or Polygon, or connect MetaMask or Rabby for this route.</p>
-            )}
-            {amt > 0 && amt < min && <p className="text-warn text-[11px] mt-1.5">Minimum {mode === "deposit" ? "deposit" : "withdrawal"} is {min} {symbol}.</p>}
-            {max !== null && amt > max + 1e-9 && <p className="text-warn text-[11px] mt-1.5">That is more than you have available.</p>}
-
-            {phase.kind === "idle" || phase.kind === "error" ? (
-              <button className="btn btn-primary h-11 w-full mt-3 text-[14px]" onClick={run} disabled={!valid || (!mockMode && !wallet) || (mode === "deposit" && !canSwitchTo(route.chain.id))}>
-                {buttonLabel}
-              </button>
-            ) : (
-              <div className="btn h-11 w-full mt-3 text-[13px] justify-center cursor-default">
-                {phase.kind === "busy" ? <span className="animate-pulse">{phase.text}</span> : <span className="inline-flex items-center gap-1.5 text-up"><Icon.check /> {phase.kind === "done" ? "Done" : "Sent"}</span>}
-              </div>
-            )}
-            {phase.kind !== "idle" && phase.kind !== "busy" && (
-              <p className={`text-xs mt-2 leading-snug ${phase.kind === "error" ? "text-down" : "text-muted"}`}>
+          )}
+          {phase.kind !== "idle" && phase.kind !== "busy" && (
+            <p className="tm-tk-msg" data-tone={phase.kind === "error" ? "err" : "ok"} role={phase.kind === "error" ? "alert" : "status"}>
+              {phase.kind === "error" ? <TkIcon.alert size={13} /> : phase.kind === "sent" && mode === "deposit" ? <i className="tm-fd-live" aria-hidden /> : <TkIcon.check size={13} />}
+              <span>
                 {phase.text}
-                {phase.kind === "sent" && phase.hash && phase.explorer && <> <a className="text-brand hover:underline" href={`${phase.explorer}/tx/${phase.hash}`} target="_blank" rel="noreferrer">View transaction</a>.</>}
+                {phase.kind === "sent" && phase.hash && phase.explorer && (
+                  <>
+                    {" "}
+                    <a className="underline underline-offset-2" href={`${phase.explorer}/tx/${phase.hash}`} target="_blank" rel="noreferrer">
+                      View transaction
+                    </a>
+                    .
+                  </>
+                )}
                 {phase.kind === "sent" && mode === "deposit" && <> Waiting for Hyperliquid to credit it…</>}
-              </p>
-            )}
-            {mode === "deposit" && spotUsdcAvail > 0.01 && (
-              <button className="btn h-9 w-full mt-2 text-[13px]" onClick={() => { onClose(); openConvert("USDC"); }} data-testid="move-spot-usdc">
-                {fmtUsd(spotUsdcAvail)} USDC is in your spot balance · Move it to perps
-              </button>
-            )}
-
-            {nativeW && unitInfo && (
-              <div className="mt-3 rounded-md border border-down/60 bg-down/10 p-3 text-[12px] leading-snug text-down" role="alert" data-testid="unit-important">
-                <b>IMPORTANT:</b> There is a minimum withdrawal of <b>{unitInfo.withdrawMin}</b>. The destination must be a <b>{unitInfo.chainLabel}</b> address that you control. {asset} sent to an address on any other network, or below the minimum, will be lost.
-              </div>
-            )}
-
-            <p className="text-[11px] text-dim mt-3 leading-snug">
-              {mode === "deposit" ? <RouteNote kind={route.kind} /> : nativeW ? <>Signed by your main wallet, never by the trading agent. Your {asset} goes to Unit&apos;s guardians on Hyperliquid, who pay it out on {chainName}, the same rails as Hyperliquid&apos;s own withdrawal dialog.</> : <WithdrawNote kind={wRoute.kind} chain={wRoute.chain.name} />}
+              </span>
             </p>
-          </>
-        )}
-      </div>
-    </div>
+          )}
+          {mode === "deposit" && spotUsdcAvail > 0.01 && (
+            <button
+              type="button"
+              className="tm-fd-spot"
+              onClick={() => {
+                onClose();
+                openConvert("USDC");
+              }}
+              data-testid="move-spot-usdc"
+            >
+              <i className="tm-fd-spot-dot" aria-hidden />
+              <span className="tm-fd-spot-t">
+                <b>{fmtUsd(spotUsdcAvail)} USDC</b> is in your spot balance
+              </span>
+              <span className="tm-fd-spot-act">
+                Move it to perps
+                <TkIcon.arrow size={12} sw={2.2} />
+              </span>
+            </button>
+          )}
+
+          <p className="tm-tk-modal-foot">
+            {mode === "deposit" ? (
+              <RouteNote kind={route.kind} />
+            ) : nativeW ? (
+              <>
+                Signed by your main wallet, never by the trading agent. Your {asset} goes to Unit&apos;s guardians on Hyperliquid, who pay it out on {chainName}, the same rails as Hyperliquid&apos;s own withdrawal dialog.
+              </>
+            ) : (
+              <WithdrawNote kind={wRoute.kind} chain={wRoute.chain.name} />
+            )}
+          </p>
+        </>
+      )}
+    </TkModal>
   );
 }
 
@@ -454,7 +727,15 @@ function RouteNote({ kind }: { kind: string }) {
     case "swap":
       return <>Uniswap swaps your USDT for USDC in your own wallet (max 0.5% slippage), then the USDC takes the Arbitrum route: Circle burns it and credits your Hyperliquid perps balance. Two or three wallet confirmations.</>;
     default:
-      return <>Circle&apos;s CCTP burns the USDC on the source chain and its forwarder credits your Hyperliquid perps balance. The {CCTP_FORWARD_FEE} USDC fee is Circle&apos;s, the same route and fee Hyperliquid&apos;s own deposit uses. socialLiquid never holds funds. Other chains? <a className="text-brand hover:underline" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Hyperliquid&apos;s dialog</a> lists the same routes.</>;
+      return (
+        <>
+          Circle&apos;s CCTP burns the USDC on the source chain and its forwarder credits your Hyperliquid perps balance. The {CCTP_FORWARD_FEE} USDC fee is Circle&apos;s, the same route and fee Hyperliquid&apos;s own deposit uses. socialLiquid never holds funds. Other chains?{" "}
+          <a href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">
+            Hyperliquid&apos;s dialog
+          </a>{" "}
+          lists the same routes.
+        </>
+      );
   }
 }
 
@@ -464,13 +745,21 @@ type UnitQ = { data?: UnitAddress; isLoading: boolean; error: Error | null; refe
 function sendHint(asset: string, chain: string) {
   switch (chain) {
     case "solana":
-      return <>From Phantom, Solflare, Backpack or an exchange: send <b className="text-fg">{asset}</b> on Solana mainnet to this address. {asset === "SOL" ? "Plain SOL only, not wrapped SOL or an SPL token." : `The ${asset} SPL token only.`}</>;
+      return (
+        <>
+          From Phantom, Solflare, Backpack or an exchange: send <b>{asset}</b> on Solana mainnet to this address. {asset === "SOL" ? "Plain SOL only, not wrapped SOL or an SPL token." : `The ${asset} SPL token only.`}
+        </>
+      );
     case "bitcoin":
       return <>Send BTC on the Bitcoin network to this address. Not Lightning, not wrapped BTC on another chain.</>;
     case "ethereum":
       return <>Send ETH on Ethereum mainnet to this address. Not from an L2, not WETH.</>;
     default:
-      return <>Send only <b className="text-fg">{asset}</b> on its native chain to this address.</>;
+      return (
+        <>
+          Send only <b>{asset}</b> on its native chain to this address.
+        </>
+      );
   }
 }
 
@@ -478,11 +767,17 @@ function sendHint(asset: string, chain: string) {
 function OpRow({ o }: { o: UnitOperation }) {
   const st = unitStateLabel(o.state);
   const when = o.createdAt ? new Date(o.createdAt) : null;
+  const tone = st.done ? "up" : /^failed/i.test(st.text) ? "down" : "warn";
   return (
-    <li className="flex items-center justify-between gap-2 text-[11px]">
-      <span className="num">{o.sourceAmount ?? o.destinationAmount ?? "…"} {o.asset}</span>
-      <span className={st.done ? "text-up" : "text-warn animate-pulse"}>{st.text}</span>
-      <span className="text-dim num">{when && !Number.isNaN(when.getTime()) ? when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span>
+    <li className="tm-fd-op">
+      <span className="num">
+        {o.sourceAmount ?? o.destinationAmount ?? "…"} {o.asset}
+      </span>
+      <span className="tm-fd-op-state" data-tone={tone}>
+        {tone === "warn" && <i className="tm-fd-live" data-tone="warn" aria-hidden />}
+        {st.text}
+      </span>
+      <span className="tm-fd-op-time num">{when && !Number.isNaN(when.getTime()) ? when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span>
     </li>
   );
 }
@@ -491,9 +786,23 @@ function OpRow({ o }: { o: UnitOperation }) {
 function UnitLinkPanel({ mode, asset, chainLabel }: { mode: FundsMode; asset: string; chainLabel: string }) {
   const verb = mode === "deposit" ? "deposit" : "withdrawal";
   return (
-    <div className="card-2 p-3 text-xs space-y-2" data-testid="unit-link">
-      <div className="leading-snug">Unit sets a minimum {verb} for {asset} on {chainLabel} and anything below it is lost. We do not have that minimum verified yet, so for {asset} use Unit&apos;s own dialog, which shows it next to the address.{mode === "deposit" ? " It still lands in your Hyperliquid spot balance." : ""}</div>
-      <a className="btn btn-primary h-10 w-full" href={`${UNIT_APP_URL}/?asset=${asset.toLowerCase()}`} target="_blank" rel="noreferrer">{mode === "deposit" ? "Deposit" : "Withdraw"} {asset} on Unit</a>
+    <div className="tm-fd-linkout" data-testid="unit-link">
+      <div className="tm-fd-linkout-head">
+        <CoinIcon coin={asset} size={28} />
+        <span>
+          <b>{asset}</b>
+          <small>
+            {chainLabel} · through Unit&apos;s app
+          </small>
+        </span>
+      </div>
+      <p>
+        Unit sets a minimum {verb} for {asset} on {chainLabel} and anything below it is lost. We do not have that minimum verified yet, so for {asset} use Unit&apos;s own dialog, which shows it next to the address.{mode === "deposit" ? " It still lands in your Hyperliquid spot balance." : ""}
+      </p>
+      <a className="btn btn-primary btn-glow tm-fd-linkout-go" href={`${UNIT_APP_URL}/?asset=${asset.toLowerCase()}`} target="_blank" rel="noreferrer">
+        {mode === "deposit" ? "Deposit" : "Withdraw"} {asset} on Unit
+        <TkIcon.ext size={13} sw={2} />
+      </a>
     </div>
   );
 }
@@ -515,71 +824,147 @@ function UnitPanel({ asset: info, q, spot, copied, onCopy, hlAddress }: { asset:
   useEffect(() => {
     if (!addr) return setQr(null);
     let live = true;
-    QRCode.toDataURL(addr, { margin: 1, width: 192, errorCorrectionLevel: "M" }).then((u) => live && setQr(u)).catch(() => live && setQr(null));
+    QRCode.toDataURL(addr, { margin: 1, width: 192, errorCorrectionLevel: "M" })
+      .then((u) => live && setQr(u))
+      .catch(() => live && setQr(null));
     return () => {
       live = false;
     };
   }, [addr]);
   return (
     <>
-      <div className="card-2 p-3 text-xs space-y-2">
-        {q.isLoading && <div className="text-dim animate-pulse">Asking Unit&apos;s guardians for your {asset} address…</div>}
-        {q.error && (
-          <div className="text-down leading-snug">
-            {q.error.message}
-            <button className="btn btn-ghost h-7 px-2 ml-2 text-[11px]" onClick={() => q.refetch()}>Retry</button>
+      <TkRoute from={{ name: "Wallet", sub: info.chainLabel, tone: "peri" }} to={{ name: "Hyperliquid", sub: "Spot" }} />
+      <div className="tm-fd-unit">
+        {q.isLoading && (
+          <div className="tm-fd-loading" role="status">
+            <span className="skeleton tm-fd-loading-qr" aria-hidden />
+            <span className="tm-fd-loading-lines">
+              <span className="skeleton" aria-hidden />
+              <span className="skeleton" aria-hidden />
+              <span className="tm-fd-loading-t">Asking Unit&apos;s guardians for your {asset} address…</span>
+            </span>
           </div>
+        )}
+        {q.error && (
+          <p className="tm-tk-msg" data-tone="err" role="alert">
+            <TkIcon.alert size={13} />
+            <span className="min-w-0">{q.error.message}</span>
+            <button type="button" className="tm-fd-retry" onClick={() => q.refetch()}>
+              <TkIcon.retry size={12} sw={2} />
+              Retry
+            </button>
+          </p>
         )}
         {q.data && (
           <>
-            <div className="text-muted leading-snug">{sendHint(asset, q.data.chain)} It is yours: Unit derived it for your Hyperliquid account.</div>
-            <div className="flex items-start gap-3">
+            <p className="tm-fd-hint">
+              {sendHint(asset, q.data.chain)} It is yours: Unit derived it for your Hyperliquid account.
+            </p>
+            <div className="tm-fd-addr">
               {qr && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={qr} alt={`QR code of your ${asset} deposit address`} width={96} height={96} className="rounded-md bg-white p-1 shrink-0" data-testid="unit-qr" />
+                <img src={qr} alt={`QR code of your ${asset} deposit address`} width={104} height={104} className="tm-fd-qr" data-testid="unit-qr" />
               )}
-              <div className="min-w-0 flex-1 space-y-2">
-                <code className="input h-auto py-2 block text-[11px] break-all num leading-snug" data-testid="unit-address">{q.data.address}</code>
-                <button className="btn h-9 px-3 w-full" onClick={() => onCopy(q.data!.address)} data-testid="unit-copy">{copied ? "Copied" : <><Icon.copy /> Copy address</>}</button>
+              <div className="tm-fd-addr-main">
+                <span className="tm-fd-addr-k">
+                  Your {asset} address · {q.data.chainLabel}
+                </span>
+                <code className="tm-fd-code" data-testid="unit-address">
+                  {q.data.address}
+                </code>
+                <button type="button" className={`btn btn-primary tm-fd-copy ${copied ? "" : "btn-glow"}`} data-copied={copied || undefined} onClick={() => onCopy(q.data!.address)} data-testid="unit-copy">
+                  {copied ? (
+                    <>
+                      <TkIcon.check size={14} sw={2.4} />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <TkIcon.copy size={14} />
+                      Copy address
+                    </>
+                  )}
+                </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-              <span className="text-muted">Minimum</span><span className="num text-right">{q.data.min ?? "see Unit"}</span>
-              <span className="text-muted">Credited after</span><span className="num text-right">{q.data.confirmations ?? "chain finality"}</span>
-              <span className="text-muted">Fee</span><span className="num text-right">{q.data.fee ?? "network fee, set by Unit"}</span>
-              <span className="text-muted">Guardian signatures</span><span className="num text-right">{q.data.signatures} of 3{q.data.mock ? " · mock" : ""}</span>
-            </div>
+            <dl className="tm-tk-bal tm-fd-facts">
+              <div>
+                <dt>Minimum</dt>
+                <dd>
+                  <b>{q.data.min ?? "see Unit"}</b>
+                </dd>
+              </div>
+              <div>
+                <dt>Credited after</dt>
+                <dd>{q.data.confirmations ?? "chain finality"}</dd>
+              </div>
+              <div>
+                <dt>Fee</dt>
+                <dd>{q.data.fee ?? "network fee, set by Unit"}</dd>
+              </div>
+              <div>
+                <dt>Guardian signatures</dt>
+                <dd className="tm-fd-sigs">
+                  <TkIcon.shield size={12} sw={2} />
+                  {q.data.signatures} of 3{q.data.mock ? " · mock" : ""}
+                </dd>
+              </div>
+            </dl>
           </>
         )}
       </div>
       {q.data && (
-        <div className={`mt-3 card-2 p-3 text-xs ${arrived > 0 ? "border-up/60" : ""}`} data-testid="unit-arrival">
-          <div className="flex items-center justify-between">
-            <span className="text-muted">Your {asset} on Hyperliquid spot</span>
-            <span className="num font-semibold">{have === null ? "…" : `${have.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset}`}</span>
-          </div>
-          {arrived > 0 ? (
-            <div className="mt-1.5 inline-flex items-center gap-1.5 text-up"><Icon.check /> {arrived.toLocaleString(undefined, { maximumFractionDigits: 6 })} {asset} arrived. It sits in your Hyperliquid spot balance.</div>
-          ) : (
-            <div className="mt-1.5 text-dim animate-pulse">Watching for a deposit… it shows here {q.data.confirmations ? `about ${q.data.confirmations.replace(/^~/, "")} after you send` : "once Unit credits it"}.</div>
-          )}
-          <div className="mt-1.5 text-dim leading-snug">To trade perps with it, <button className="text-brand hover:underline" onClick={() => openConvert(info.spotCoin ?? asset)}>sell {asset} for USDC</button>: a market sell on Hyperliquid spot, then the USDC moves to your perps balance.</div>
-          {mine.length > 0 && (
-            <ul className="mt-2 border-t border-line pt-2 space-y-1" data-testid="unit-ops">
-              {mine.map((o) => <OpRow key={o.id} o={o} />)}
-            </ul>
-          )}
-          {ops.data && mine.length === 0 && <div className="mt-2 border-t border-line pt-2 text-dim">Unit has no {asset} deposit on record for this account yet. It appears here once the Solana transaction is seen.</div>}
-          {ops.error && <div className="mt-2 border-t border-line pt-2 text-dim">Unit&apos;s deposit tracker is not answering right now; the balance above still updates on its own.</div>}
+        <div className="tm-fd-danger" role="alert" data-testid="unit-important">
+          <TkIcon.alert size={15} sw={2} />
+          <p>
+            <b>IMPORTANT:</b> There is a minimum deposit of <b>{q.data.min}</b>. This address can only receive <b>{asset}</b> on the <b>{q.data.chainLabel}</b> network. Any other asset sent to it will be lost. Deposits below {q.data.min} will result in a loss of funds.
+          </p>
         </div>
       )}
       {q.data && (
-        <div className="mt-3 rounded-md border border-down/60 bg-down/10 p-3 text-[12px] leading-snug text-down" role="alert" data-testid="unit-important">
-          <b>IMPORTANT:</b> There is a minimum deposit of <b>{q.data.min}</b>. This address can only receive <b>{asset}</b> on the <b>{q.data.chainLabel}</b> network. Any other asset sent to it will be lost. Deposits below {q.data.min} will result in a loss of funds.
+        <div className="tm-fd-watch" data-arrived={arrived > 0 || undefined} data-testid="unit-arrival">
+          <div className="tm-fd-watch-head">
+            <span className="tm-fd-watch-k">
+              {arrived > 0 ? <TkIcon.check size={13} sw={2.4} /> : <i className="tm-fd-live" aria-hidden />}
+              Your {asset} on Hyperliquid spot
+            </span>
+            <span className="tm-fd-watch-v num">{have === null ? "…" : `${have.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset}`}</span>
+          </div>
+          {arrived > 0 ? (
+            <p className="tm-fd-watch-ok">
+              {arrived.toLocaleString(undefined, { maximumFractionDigits: 6 })} {asset} arrived. It sits in your Hyperliquid spot balance.
+            </p>
+          ) : (
+            <p className="tm-fd-watch-wait">Watching for a deposit… it shows here {q.data.confirmations ? `about ${q.data.confirmations.replace(/^~/, "")} after you send` : "once Unit credits it"}.</p>
+          )}
+          <p className="tm-fd-watch-sell">
+            To trade perps with it,{" "}
+            <button type="button" className="tm-fd-link" onClick={() => openConvert(info.spotCoin ?? asset)}>
+              sell {asset} for USDC
+            </button>
+            : a market sell on Hyperliquid spot, then the USDC moves to your perps balance.
+          </p>
+          {mine.length > 0 && (
+            <ul className="tm-fd-ops" data-testid="unit-ops">
+              {mine.map((o) => (
+                <OpRow key={o.id} o={o} />
+              ))}
+            </ul>
+          )}
+          {ops.data && mine.length === 0 && (
+            <p className="tm-fd-ops-none">
+              Unit has no {asset} deposit on record for this account yet. It appears here once the {q.data.chainLabel} transaction is seen.
+            </p>
+          )}
+          {ops.error && <p className="tm-fd-ops-none">Unit&apos;s deposit tracker is not answering right now; the balance above still updates on its own.</p>}
         </div>
       )}
-      <p className="text-[11px] text-dim mt-3 leading-snug">
-        Native deposits run on Unit, the same rails as Hyperliquid&apos;s own dialog, and land in your Hyperliquid <b>spot</b> balance. Sell for USDC on Hyperliquid spot to use it as perps margin. Below the minimum is not credited. Verify the address any time at <a className="text-brand hover:underline" href={`${UNIT_APP_URL}/?asset=${asset.toLowerCase()}`} target="_blank" rel="noreferrer">app.hyperunit.xyz</a>.
+      <p className="tm-tk-modal-foot">
+        Native deposits run on Unit, the same rails as Hyperliquid&apos;s own dialog, and land in your Hyperliquid <b>spot</b> balance. Sell for USDC on Hyperliquid spot to use it as perps margin. Below the minimum is not credited. Verify the address any time at{" "}
+        <a href={`${UNIT_APP_URL}/?asset=${asset.toLowerCase()}`} target="_blank" rel="noreferrer">
+          app.hyperunit.xyz
+        </a>
+        .
       </p>
     </>
   );

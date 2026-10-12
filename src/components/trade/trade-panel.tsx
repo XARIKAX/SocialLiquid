@@ -9,7 +9,7 @@ import { fmtPx, fmtUsd } from "@/lib/format";
 import type { MarketSummary } from "@/lib/hl-types";
 import { Icon, Switch } from "../ui";
 import { DepositBox, useOnboarding } from "./onboarding";
-import { TkIcon } from "./funds";
+import { TkIcon } from "./tk-bits";
 
 const QUICK = [10, 100, 500, 1000];
 
@@ -18,7 +18,7 @@ type OrderResponse = { order: { status: "filled" | "resting"; avgPx?: number; to
 export function TradePanel({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
   const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
   return (
-    <section className="card tm-tk" data-tone={side === "LONG" ? "long" : "short"} aria-label={`Trade ${coin}`}>
+    <section className="card tm-tk" data-tone={side === "LONG" ? "long" : "short"} aria-label={`Trade ${market?.name ?? coin}`}>
       <span className="tm-tk-spec" aria-hidden />
       <div className="flex items-center gap-2">
         <div className="tm-tk-side flex-1" role="radiogroup" aria-label="Side" data-side={side}>
@@ -55,6 +55,9 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const uid = useId();
+  /** what a human reads: the market's name for titles ("SOL/USDC", "GOLD"), its base for size units; `coin` stays the api id */
+  const name = market?.name ?? coin;
+  const unit = market?.base ?? coin;
   const maxLev = market?.maxLeverage ?? 50;
   useEffect(() => setLev((l) => Math.min(l, maxLev)), [maxLev]);
   useEffect(() => setMsg(null), [coin]);
@@ -87,7 +90,7 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
           thesis: thesis.trim() || undefined,
         },
       });
-      if (r.order.status === "filled") setMsg({ ok: true, text: `Filled ${r.order.totalSz} ${coin} at ${fmtPx(r.order.avgPx)}${r.thesis ? " · thesis posted" : ""}` });
+      if (r.order.status === "filled") setMsg({ ok: true, text: `Filled ${r.order.totalSz} ${unit} at ${fmtPx(r.order.avgPx)}${r.thesis ? " · thesis posted" : ""}` });
       else setMsg({ ok: true, text: `Resting limit order #${r.order.oid}${r.thesis ? " · thesis posted" : ""}` });
       setThesis("");
       setUsd("");
@@ -107,7 +110,7 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
     setMsg(null);
     try {
       await api("/api/trade/close", { method: "POST", json: { coin } });
-      setMsg({ ok: true, text: `Closed ${coin}` });
+      setMsg({ ok: true, text: `Closed ${name}` });
       qc.invalidateQueries({ queryKey: ["balance"] });
       qc.invalidateQueries({ queryKey: ["feed"] });
       qc.invalidateQueries({ queryKey: ["market", coin] });
@@ -145,7 +148,7 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
             USDC
           </span>
         </span>
-        <span className="tm-tk-size-sub block">{usdNum ? `≈ ${sz.toFixed(market?.szDecimals ?? 4)} ${coin}` : "Enter amount"}</span>
+        <span className="tm-tk-size-sub block">{usdNum ? `≈ ${sz.toFixed(market?.szDecimals ?? 4)} ${unit}` : "Enter amount"}</span>
       </label>
       <div className="tm-tk-quick">
         {QUICK.map((qv) => (
@@ -232,7 +235,7 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
 
       <button type="button" className={`btn tm-tk-cta ${ready ? (side === "LONG" ? "btn-up" : "btn-down") : "btn-primary"} ${disabled || ob.busy ? "" : "btn-glow"}`} onClick={onCta} disabled={disabled || ob.busy}>
         {!ready && <Icon.wallet />}
-        {ready ? (busy ? "Sending…" : `${side === "LONG" ? "Long" : "Short"} ${coin}${usdNum ? ` · ${fmtUsd(usdNum)}` : ""}`) : ob.cta}
+        {ready ? (busy ? "Sending…" : `${side === "LONG" ? "Long" : "Short"} ${name}${usdNum ? ` · ${fmtUsd(usdNum)}` : ""}`) : ob.cta}
       </button>
       {!ready && (
         <p className="tm-tk-note">
@@ -273,7 +276,7 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
           <div className="flex justify-between">
             <span>Current position</span>
             <span className={`font-semibold ${myPos.szi > 0 ? "tm-tk-up" : "tm-tk-down"}`}>
-              {myPos.szi > 0 ? "Long" : "Short"} {Math.abs(myPos.szi)} {coin}
+              {myPos.szi > 0 ? "Long" : "Short"} {Math.abs(myPos.szi)} {unit}
             </span>
           </div>
           <div className="flex justify-between num">

@@ -1,12 +1,19 @@
 import {
   customSeriesDefaultOptions,
+  type AutoscaleInfo,
   type CustomData,
   type CustomSeriesOptions,
   type CustomSeriesWhitespaceData,
   type ICustomSeriesPaneRenderer,
   type ICustomSeriesPaneView,
+  type IPrimitivePaneRenderer,
+  type IPrimitivePaneView,
+  type ISeriesApi,
+  type ISeriesPrimitive,
   type PaneRendererCustomData,
   type PriceToCoordinateConverter,
+  type SeriesAttachedParameter,
+  type SeriesType,
   type Time,
 } from "lightweight-charts";
 
@@ -17,8 +24,13 @@ import {
      corners, wicks are translucent, the live candle glows, and history
      fades gently toward the left edge of the pane (a vignette, not data).
    - GlowLine: indicator lines that fade in from the left and brighten
-     toward "now", with an optional soft halo pass (no blur filters).
-   - Band: bollinger bands as a faint cloud with hairline edges.
+     toward "now", with an optional soft halo pass (no blur filters), or
+     a trail of dots (parabolic sar).
+   - Band: channels (bollinger, donchian) as a faint cloud with hairline edges.
+   - SoftHist: an oscillator histogram (macd) in the volume's language,
+     signed around zero, brighter while the move grows.
+   - LevelBand: an oscillator's reference zone (rsi 30-70) as a faint
+     tint, kept in view by the pane's autoscale.
    all drawing happens in bitmap space so 1px lines stay crisp on retina.
    ===================================================================== */
 
@@ -248,6 +260,8 @@ export interface GlowLineOptions extends CustomSeriesOptions {
   /** alpha at the far left edge; the line brightens to full toward the right (1 = flat) */
   fade: number;
   dashed: boolean;
+  /** a trail of dots instead of a line (parabolic sar) */
+  dots: boolean;
 }
 
 const LINE_DEFAULTS: GlowLineOptions = {
@@ -257,6 +271,7 @@ const LINE_DEFAULTS: GlowLineOptions = {
   halo: 0,
   fade: 1,
   dashed: false,
+  dots: false,
 };
 
 class GlowLineRenderer implements ICustomSeriesPaneRenderer {
@@ -279,6 +294,24 @@ class GlowLineRenderer implements ICustomSeriesPaneRenderer {
     const from = Math.max(0, d.visibleRange.from - 1);
     const to = Math.min(d.bars.length, d.visibleRange.to + 1);
     ctx.save();
+    if (o.dots) {
+      // the stop and reverse: a dot per bar, fading in from the left like the lines
+      const r = Math.max(1, o.lineWidth * 1.05 * hr);
+      ctx.fillStyle = o.lineColor;
+      for (let i = from; i < to; i++) {
+        const v = d.bars[i].originalData?.value;
+        if (v === undefined || !Number.isFinite(v)) continue;
+        const y = p2c(v);
+        if (y === null) continue;
+        const x = barX(d, i) * hr;
+        ctx.globalAlpha = fadeAt(x, bitmapSize.width, o.fade, 0.6);
+        ctx.beginPath();
+        ctx.arc(x, y * vr, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
+    }
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.beginPath();
@@ -529,4 +562,166 @@ export class SoftVolumeSeries implements ICustomSeriesPaneView<Time, VolPoint, S
     return VOL_DEFAULTS;
   }
   destroy() {}
+}
+
+/* ---------- soft histogram (macd): signed around zero, in the volume's language ---------- */
+
+export interface HistPoint extends CustomData<Time> {
+  value?: number;
+}
+
+export interface SoftHistOptions extends CustomSeriesOptions {
+  upColor: string;
+  downColor: string;
+  /** alpha at a bar's tip; it fades toward zero */
+  tipAlpha: number;
+  baseAlpha: number;
+}
+
+const HIST_DEFAULTS: SoftHistOptions = { ...customSeriesDefaultOptions, upColor: "#45e3a6", downColor: "#ff5a5c", tipAlpha: 0.78, baseAlpha: 0.14 };
+
+class SoftHistRenderer implements ICustomSeriesPaneRenderer {
+  private data: PaneRendererCustomData<Time, HistPoint> | null = null;
+  private opts: SoftHistOptions | null = null;
+  update(data: PaneRendererCustomData<Time, HistPoint>, opts: SoftHistOptions) {
+    this.data = data;
+    this.opts = opts;
+  }
+  draw(target: Target, p2c: PriceToCoordinateConverter) {
+    target.useBitmapCoordinateSpace((scope) => this.paint(scope, p2c));
+  }
+  private paint(scope: Scope, p2c: PriceToCoordinateConverter) {
+    const d = this.data;
+    const o = this.opts;
+    if (!d || !o || !d.visibleRange || d.bars.length === 0) return;
+    const { context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr, bitmapSize } = scope;
+    const zero = p2c(0);
+    if (zero === null) return;
+    const yz = Math.round(zero * vr);
+    const spacing = d.barSpacing * (d.conflationFactor || 1) * hr;
+    const w = Math.max(1, Math.floor(spacing * (spacing > 6 * hr ? 0.62 : 0.82)));
+    const lit = w >= 3 * hr;
+    ctx.save();
+    for (let i = Math.max(0, d.visibleRange.from); i < Math.min(d.bars.length, d.visibleRange.to); i++) {
+      const b = d.bars[i];
+      const v = b.originalData?.value;
+      if (v === undefined || !Number.isFinite(v)) continue;
+      const y = p2c(v);
+      if (y === null) continue;
+      const yt = Math.round(y * vr);
+      const up = v >= 0;
+      // tradingview's reading: a bar that grows on the last one is lit, one that shrinks steps back
+      const prev = i > 0 ? d.bars[i - 1].originalData?.value : undefined;
+      const k = prev === undefined || !Number.isFinite(prev) || Math.abs(v) >= Math.abs(prev) ? 1 : 0.5;
+      const c = up ? o.upColor : o.downColor;
+      const top = Math.min(yt, yz);
+      const h = Math.max(1, Math.abs(yz - yt));
+      const x = Math.round(b.x * hr) - Math.floor(w / 2);
+      ctx.globalAlpha = fadeAt(x, bitmapSize.width, 0.6, 0.24);
+      if (lit && h > 2) {
+        const g = ctx.createLinearGradient(0, yt, 0, yz);
+        g.addColorStop(0, withAlpha(c, o.tipAlpha * k));
+        g.addColorStop(1, withAlpha(c, o.baseAlpha * k));
+        ctx.fillStyle = g;
+      } else ctx.fillStyle = withAlpha(c, o.tipAlpha * k);
+      ctx.fillRect(x, top, w, h);
+      // the lit rim at the tip, like the volume's caps
+      if (lit && h > 3) {
+        ctx.fillStyle = withAlpha(c, Math.min(1, o.tipAlpha * 1.25 * k));
+        ctx.fillRect(x, up ? yt : yt - Math.max(1, Math.round(vr)), w, Math.max(1, Math.round(vr)));
+      }
+    }
+    ctx.restore();
+  }
+}
+
+export class SoftHistSeries implements ICustomSeriesPaneView<Time, HistPoint, SoftHistOptions> {
+  private r = new SoftHistRenderer();
+  renderer() {
+    return this.r;
+  }
+  update(data: PaneRendererCustomData<Time, HistPoint>, opts: SoftHistOptions) {
+    this.r.update(data, opts);
+  }
+  priceValueBuilder(p: HistPoint) {
+    // zero stays in the pane's range; the reading (last) is the bar's value
+    return [0, p.value ?? 0];
+  }
+  isWhitespace(p: HistPoint | CustomSeriesWhitespaceData<Time>): p is CustomSeriesWhitespaceData<Time> {
+    const v = (p as HistPoint).value;
+    return v === undefined || !Number.isFinite(v);
+  }
+  defaultOptions() {
+    return HIST_DEFAULTS;
+  }
+  destroy() {}
+}
+
+/* ---------- level band: an oscillator's reference zone (rsi 30-70, stoch 20-80) ---------- */
+
+/**
+ * a series primitive on an oscillator's first line: a faint tint between its outer reference levels
+ * (the dashed levels themselves are the series' price lines), brightening toward "now" like the lines.
+ * its autoscale range keeps the levels in view, as tradingview's oscillator panes do.
+ */
+export class LevelBand implements ISeriesPrimitive<Time> {
+  private series: ISeriesApi<SeriesType, Time> | null = null;
+  private request: (() => void) | null = null;
+  /** follows the series' visibility (the legend's eye): bottom primitives are drawn for hidden series too */
+  private on = true;
+  private readonly lo: number;
+  private readonly hi: number;
+  private readonly view: IPrimitivePaneView;
+  constructor(
+    levels: number[],
+    private color: string,
+    private alpha: number,
+  ) {
+    this.lo = Math.min(...levels);
+    this.hi = Math.max(...levels);
+    const renderer: IPrimitivePaneRenderer = { draw: (target) => this.paint(target as Target) };
+    this.view = { zOrder: () => "bottom", renderer: () => renderer };
+  }
+  attached(p: SeriesAttachedParameter<Time, SeriesType>) {
+    this.series = p.series;
+    this.request = p.requestUpdate;
+  }
+  detached() {
+    this.series = null;
+    this.request = null;
+  }
+  setColor(color: string, alpha: number) {
+    if (color === this.color && alpha === this.alpha) return;
+    this.color = color;
+    this.alpha = alpha;
+    this.request?.();
+  }
+  setVisible(on: boolean) {
+    if (on === this.on) return;
+    this.on = on;
+    this.request?.();
+  }
+  paneViews() {
+    return [this.view];
+  }
+  autoscaleInfo(): AutoscaleInfo | null {
+    return Number.isFinite(this.lo) && Number.isFinite(this.hi) ? { priceRange: { minValue: this.lo, maxValue: this.hi } } : null;
+  }
+  private paint(target: Target) {
+    const s = this.series;
+    if (!s || !this.on || this.hi <= this.lo || this.alpha <= 0) return;
+    const y1 = s.priceToCoordinate(this.hi);
+    const y2 = s.priceToCoordinate(this.lo);
+    if (y1 === null || y2 === null) return;
+    target.useBitmapCoordinateSpace(({ context: ctx, verticalPixelRatio: vr, bitmapSize }) => {
+      const top = Math.round(Math.min(y1, y2) * vr);
+      const h = Math.round(Math.abs(y2 - y1) * vr);
+      if (h < 1) return;
+      const g = ctx.createLinearGradient(0, 0, bitmapSize.width, 0);
+      g.addColorStop(0, withAlpha(this.color, this.alpha * 0.45));
+      g.addColorStop(1, withAlpha(this.color, this.alpha));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, top, bitmapSize.width, h);
+    });
+  }
 }

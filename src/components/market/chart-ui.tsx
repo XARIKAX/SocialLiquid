@@ -1,14 +1,15 @@
 "use client";
-import { memo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { IChartApi, MouseEventParams, Time } from "lightweight-charts";
 import { timeAgo } from "@/lib/format";
-import { CHART_TYPES, INDICATORS, INTERVALS, fmtCompact, fmtFixed, fmtSigned, type Candle, type ChartType, type Ind, type IndData, type IndValue, type Interval } from "./chart-lib";
+import { CHART_TYPES, IND_DEFS, INTERVALS, fmtCompact, fmtFixed, fmtInd, fmtSigned, indLook, indMatches, splitIndName, type Candle, type ChartType, type Ind, type IndDef, type IndFmt, type Interval } from "./chart-lib";
 
 /* =====================================================================
-   chart chrome: local icons, the legend, the clock, thesis pins, the
-   tooltip layer and the menus (interval, chart type, indicators, the
-   right-click menu). positions of pins and tags are written by the
-   chart's frame loop, never by react renders.
+   chart chrome: local icons, the legends (the price pane's and one per
+   oscillator pane), the clock, thesis pins, the tooltip layer and the
+   menus (interval, chart type, indicators, the right-click menu).
+   positions of pins, tags and pane legends are written by the chart's
+   frame loop, never by react renders.
    ===================================================================== */
 
 /** a marker on the chart. optional fields enrich thesis pins when the caller has them */
@@ -81,6 +82,20 @@ const GLYPHS: Record<string, ReactNode> = {
       <path d="M8 11V7a4 4 0 0 1 7.6-1.7" />
     </>
   ),
+  eye: (
+    <>
+      <path d="M2.5 12s3.4-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.4 6.5-9.5 6.5S2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </>
+  ),
+  eyeOff: <path d="M3.5 3.5l17 17M10.4 10.5a2.8 2.8 0 0 0 3.9 3.9M9.6 5.8A9.6 9.6 0 0 1 12 5.5c6.1 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.9 3.7M6.6 7.1C4 8.9 2.5 12 2.5 12s3.4 6.5 9.5 6.5c1.5 0 2.8-.3 4-.8" />,
+  close: <path d="m6.5 6.5 11 11M17.5 6.5l-11 11" />,
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m20 20-4.4-4.4" />
+    </>
+  ),
 };
 export function CIcon({ n, size = 15, className }: { n: keyof typeof GLYPHS | ChartType; size?: number; className?: string }) {
   return (
@@ -110,11 +125,79 @@ export const whoOf = (m: ChartMarker) => {
   return /^[a-z0-9_]{2,24}$/i.test(m.label) && !/^0x/i.test(m.label) ? `@${m.label}` : m.label;
 };
 
-/* ---------- legend ---------- */
+/* ---------- legends ---------- */
+
+/** one indicator as a legend shows it: its lines (colour, values aligned with the candles, the live reading) */
+export type LegendInd = {
+  id: Ind;
+  /** the short name and its parameters ("RSI", "14"), and the full name for labels */
+  short: string;
+  params: string;
+  title: string;
+  fmt: IndFmt;
+  /** hidden with the eye: the name stays, the readings go */
+  off: boolean;
+  lines: { key: string; color: string; values: number[]; live?: number; hist?: boolean }[];
+};
+
+/** the bar under the crosshair (any pane: the vertical line spans them all), or null */
+function useHoverIdx(chart: IChartApi | null) {
+  const [idx, setIdx] = useState<number | null>(null);
+  useEffect(() => {
+    const c = chart;
+    if (!c) return;
+    const h = (e: MouseEventParams<Time>) => setIdx(e.time !== undefined && e.logical !== undefined ? Math.round(e.logical) : null);
+    c.subscribeCrosshairMove(h);
+    return () => c.unsubscribeCrosshairMove(h);
+  }, [chart]);
+  return idx;
+}
+
+/** the reading at bar i (a step back over a gap), or the live one off the crosshair */
+function readAt(l: LegendInd["lines"][number], i: number, hovering: boolean) {
+  if (!hovering && l.live !== undefined) return l.live;
+  const k = Math.min(i, l.values.length - 1);
+  for (let j = k; j >= Math.max(0, k - 2); j--) if (Number.isFinite(l.values[j])) return l.values[j];
+  return NaN;
+}
+
+/** tradingview's legend controls: hide (the eye) and remove, shown on hover */
+function IndControls({ d, onToggle, onRemove, className }: { d: LegendInd; onToggle: (id: Ind) => void; onRemove: (id: Ind) => void; className: string }) {
+  const name = d.params ? `${d.short} ${d.params}` : d.short;
+  return (
+    <span className={className}>
+      <button type="button" className="tm-chart-lg-btn" aria-pressed={d.off} aria-label={d.off ? `Show ${name}` : `Hide ${name}`} onClick={() => onToggle(d.id)}>
+        <CIcon n={d.off ? "eyeOff" : "eye"} size={12} />
+      </button>
+      <button type="button" className="tm-chart-lg-btn tm-chart-lg-rm" aria-label={`Remove ${name}`} onClick={() => onRemove(d.id)}>
+        <CIcon n="close" size={11} />
+      </button>
+    </span>
+  );
+}
+
+/** an indicator's readings, each in its line's colour (a histogram in up / down by its sign) */
+function Readings({ d, i, hovering, prec }: { d: LegendInd; i: number; hovering: boolean; prec: number }) {
+  if (d.off) return null;
+  return (
+    <>
+      {d.lines.map((l) => {
+        const v = readAt(l, i, hovering);
+        const tone = l.hist && Number.isFinite(v) ? (v >= 0 ? "var(--tm-up)" : "var(--tm-down)") : l.color;
+        return (
+          <b key={l.key} style={{ "--c": tone } as CSSProperties}>
+            {fmtInd(v, d.fmt, prec)}
+          </b>
+        );
+      })}
+    </>
+  );
+}
 
 type LegendProps = {
   chart: IChartApi | null;
-  coin: string;
+  /** the market as people read it ("BTC-USD", "SOL/USDC", "GOLD-USD") */
+  name: string;
   ivLabel: string;
   typeLabel: string | null;
   rows: Candle[];
@@ -122,27 +205,17 @@ type LegendProps = {
   live: Candle | null;
   liveIdx: number;
   prec: number;
-  inds: Ind[];
-  ind: IndData;
-  colors: Record<Ind, string>;
+  /** the overlays on the price pane, in the order they were added */
+  inds: LegendInd[];
   showVol: boolean;
   onRemove: (id: Ind) => void;
-  /** indicator readings on the live bar (they follow the streaming price between fetches) */
-  liveInd?: Partial<Record<Ind, IndValue>>;
+  onToggle: (id: Ind) => void;
   /** the legend box, so the chart can keep the candles clear of it */
   boxRef?: (el: HTMLDivElement | null) => void;
 };
 
 export const Legend = memo(function Legend(p: LegendProps) {
-  const [idx, setIdx] = useState<number | null>(null);
-  useEffect(() => {
-    const c = p.chart;
-    if (!c) return;
-    const h = (e: MouseEventParams<Time>) => setIdx(e.time !== undefined && e.logical !== undefined ? Math.round(e.logical) : null);
-    c.subscribeCrosshairMove(h);
-    return () => c.unsubscribeCrosshairMove(h);
-  }, [p.chart]);
-
+  const idx = useHoverIdx(p.chart);
   const n = p.rows.length;
   if (!n || !p.live) return null;
   const hovering = idx !== null && idx >= 0 && idx < p.liveIdx && idx < n;
@@ -155,20 +228,18 @@ export const Legend = memo(function Legend(p: LegendProps) {
   const pct = base ? chg / base : 0;
   const dir = row.close >= row.open ? "up" : "down";
   const v = (x: number) => fmtFixed(x, p.prec);
-  const at = (arr: number[]) => {
-    const k = Math.min(i, arr.length - 1);
-    for (let j = k; j >= Math.max(0, k - 2); j--) if (Number.isFinite(arr[j])) return arr[j];
-    return NaN;
-  };
-
   const pctText = `${pct >= 0 ? "+" : "−"}${Math.abs(pct * 100).toFixed(2)}%`;
 
   return (
     <div ref={p.boxRef} className="tm-chart-legend" data-dir={dir} aria-live="off">
       <div className="tm-chart-lg-id">
         <i className="tm-chart-lg-dot" data-live={!hovering || undefined} />
-        <span className="tm-chart-lg-sym">{p.coin}-USD</span>
-        <span className="tm-chart-lg-sep">·</span>
+        {p.name && (
+          <>
+            <span className="tm-chart-lg-sym">{p.name}</span>
+            <span className="tm-chart-lg-sep">·</span>
+          </>
+        )}
         <span>{p.ivLabel}</span>
         <span className="tm-chart-lg-sep tm-chart-lg-x">·</span>
         <span className="tm-chart-lg-x">Hyperliquid</span>
@@ -201,40 +272,79 @@ export const Legend = memo(function Legend(p: LegendProps) {
       </div>
       {p.inds.length > 0 && (
         <div className="tm-chart-lg-inds">
-          {p.inds.map((id) => {
-            const d = p.ind[id];
-            const meta = INDICATORS.find((x) => x.id === id);
-            if (!d || !meta) return null;
-            const c = p.colors[id];
-            // off the crosshair, the reading follows the live bar
-            const lv = !hovering ? p.liveInd?.[id] : undefined;
-            const val =
-              lv !== undefined
-                ? typeof lv === "number"
-                  ? fmtNum(lv, p.prec)
-                  : `${fmtNum(lv.upper, p.prec)} ${fmtNum(lv.mid, p.prec)} ${fmtNum(lv.lower, p.prec)}`
-                : d.kind === "line"
-                  ? `${fmtNum(at(d.values), p.prec)}`
-                  : `${fmtNum(at(d.upper), p.prec)} ${fmtNum(at(d.mid), p.prec)} ${fmtNum(at(d.lower), p.prec)}`;
-            return (
-              <span key={id} className="tm-chart-lg-ind" style={{ "--c": c } as CSSProperties}>
-                <i />
-                <span>{meta.short}</span>
-                <b>{val}</b>
-                <button type="button" className="tm-chart-lg-rm" aria-label={`Remove ${meta.label}`} onClick={() => p.onRemove(id)}>
-                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
-                    <path d="m2 2 6 6M8 2 2 8" />
-                  </svg>
-                </button>
+          {/* off the crosshair, the readings follow the live bar */}
+          {p.inds.map((d) => (
+            <span key={d.id} className="tm-chart-lg-ind" data-off={d.off || undefined} style={{ "--c": d.lines[0]?.color } as CSSProperties}>
+              <i />
+              <span>
+                {d.short}
+                {d.params && <span className="tm-chart-lg-par"> {d.params}</span>}
               </span>
-            );
-          })}
+              <Readings d={d} i={i} hovering={hovering} prec={p.prec} />
+              <IndControls d={d} onToggle={p.onToggle} onRemove={p.onRemove} className="tm-chart-lg-ctl" />
+            </span>
+          ))}
         </div>
       )}
     </div>
   );
 });
-const fmtNum = (x: number, prec: number) => (Number.isFinite(x) ? fmtFixed(x, prec) : "–");
+
+/**
+ * one small legend per oscillator pane, as tradingview's: the name and its parameters, the readings at
+ * the crosshair (or the live bar), and the eye / remove controls. the frame loop moves each to the top
+ * of its pane (register), so they follow a dragged separator without a render.
+ */
+export const PaneLegends = memo(function PaneLegends(p: {
+  chart: IChartApi | null;
+  /** the oscillators, in pane order (pane 1 first) */
+  inds: LegendInd[];
+  rows: number;
+  liveIdx: number;
+  prec: number;
+  register: (id: Ind, el: HTMLElement | null) => void;
+  onRemove: (id: Ind) => void;
+  onToggle: (id: Ind) => void;
+}) {
+  const idx = useHoverIdx(p.chart);
+  const n = p.rows;
+  if (!n || !p.inds.length) return null;
+  const hovering = idx !== null && idx >= 0 && idx < p.liveIdx && idx < n;
+  const i = hovering ? (idx as number) : Math.min(p.liveIdx, n - 1);
+  return (
+    <>
+      {p.inds.map((d) => (
+        <OscRow key={d.id} d={d} register={p.register}>
+          <span className="tm-chart-osc-n">
+            <i aria-hidden />
+            {d.short}
+            {d.params && <span className="tm-chart-lg-par">{d.params}</span>}
+          </span>
+          <span className="tm-chart-osc-v">
+            <Readings d={d} i={i} hovering={hovering} prec={p.prec} />
+          </span>
+          <IndControls d={d} onToggle={p.onToggle} onRemove={p.onRemove} className="tm-chart-osc-ctl" />
+        </OscRow>
+      ))}
+    </>
+  );
+});
+/** a pane legend's box; its ref is stable, so a crosshair render does not re-register it with the frame loop */
+function OscRow({ d, register, children }: { d: LegendInd; register: (id: Ind, el: HTMLElement | null) => void; children: ReactNode }) {
+  const id = d.id;
+  const ref = useCallback((el: HTMLDivElement | null) => register(id, el), [register, id]);
+  return (
+    <div ref={ref} className="tm-chart-osc" data-off={d.off || undefined} data-hidden="" role="group" aria-label={`${d.title} pane`} style={{ "--c": d.lines[0]?.color } as CSSProperties}>
+      {children}
+    </div>
+  );
+}
+
+/** a catalogue entry as the legends show it */
+export function legendInd(d: IndDef, off: boolean, lines: LegendInd["lines"]): LegendInd {
+  const l = indLook(d);
+  return { id: d.id, short: l.short, params: l.params, title: d.name, fmt: l.fmt, off, lines };
+}
 
 /* ---------- clock (its own component: ticking does not re-render the chart) ---------- */
 export function Clock() {
@@ -388,20 +498,23 @@ export function TipLayer({ root }: { root: RefObject<HTMLElement | null> }) {
 
 /* ---------- menus ---------- */
 
-/** arrow keys move between items, esc closes and hands focus back */
-function useMenuKeys(onClose: () => void) {
+/** arrow keys move between items, esc closes and hands focus back. focusSel: what takes focus on open (the first item by default) */
+function useMenuKeys(onClose: () => void, focusSel = "[role^=menuitem][aria-checked=true], [role^=menuitem]") {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const first = ref.current?.querySelector<HTMLElement>("[role^=menuitem][aria-checked=true], [role^=menuitem]");
+    const first = ref.current?.querySelector<HTMLElement>(focusSel);
     first?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const onKeyDown = (e: ReactKeyboardEvent) => {
     const items = [...(ref.current?.querySelectorAll<HTMLElement>("[role^=menuitem]") ?? [])];
     const i = items.indexOf(document.activeElement as HTMLElement);
+    const inField = (e.target as HTMLElement).tagName === "INPUT";
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
+      // from the search field, down enters the list at the top and up at the bottom
       items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
-    } else if (e.key === "Home" || e.key === "End") {
+    } else if ((e.key === "Home" || e.key === "End") && !inField) {
       e.preventDefault();
       items[e.key === "Home" ? 0 : items.length - 1]?.focus();
     } else if (e.key === "Escape" || e.key === "Tab") {
@@ -413,8 +526,25 @@ function useMenuKeys(onClose: () => void) {
   return { ref, onKeyDown };
 }
 
-export type CtxAction = "reset" | "realtime" | "hline" | "copy" | "clear" | "snapshot";
-export function CtxMenu({ style, price, canDraw, hasDrawings, onAction, onClose }: { style: CSSProperties; price: string | null; canDraw: boolean; hasDrawings: boolean; onAction: (a: CtxAction) => void; onClose: () => void }) {
+export type CtxAction = "reset" | "realtime" | "hline" | "copy" | "clear" | "snapshot" | "ind-toggle" | "ind-remove";
+export function CtxMenu({
+  style,
+  price,
+  canDraw,
+  hasDrawings,
+  ind,
+  onAction,
+  onClose,
+}: {
+  style: CSSProperties;
+  price: string | null;
+  canDraw: boolean;
+  hasDrawings: boolean;
+  /** right-clicked on an oscillator's pane: its name, and whether it is hidden */
+  ind?: { name: string; off: boolean } | null;
+  onAction: (a: CtxAction) => void;
+  onClose: () => void;
+}) {
   const { ref, onKeyDown } = useMenuKeys(onClose);
   const item = (a: CtxAction, label: ReactNode, kbd?: string, disabled?: boolean) => (
     <button type="button" role="menuitem" className="tm-chart-ci" disabled={disabled} onClick={() => onAction(a)}>
@@ -424,6 +554,23 @@ export function CtxMenu({ style, price, canDraw, hasDrawings, onAction, onClose 
   );
   return (
     <div ref={ref} className="pop tm-chart-menu tm-chart-ctx" role="menu" aria-label="Chart menu" style={style} onKeyDown={onKeyDown} onContextMenu={(e) => e.preventDefault()}>
+      {ind && (
+        <>
+          {item(
+            "ind-toggle",
+            <>
+              {ind.off ? "Show" : "Hide"} <b>{ind.name}</b>
+            </>,
+          )}
+          {item(
+            "ind-remove",
+            <>
+              Remove <b>{ind.name}</b>
+            </>,
+          )}
+          <div className="tm-chart-menu-rule" />
+        </>
+      )}
       {item("reset", "Reset chart view", "Alt R")}
       {item("realtime", "Scroll to the latest bar")}
       <div className="tm-chart-menu-rule" />
@@ -489,10 +636,54 @@ export function TypeMenu({ value, onPick, onClose, style }: { value: ChartType; 
   );
 }
 
+/** a tiny glyph per kind of indicator for the menu's swatch: a line, a channel, dots, an oscillator, a histogram */
+function IndGlyph({ d }: { d: IndDef }) {
+  const look = indLook(d);
+  const P2 = { fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+  let g: ReactNode;
+  if (d.pane === "own" && d.lines.some((l) => l.histogram))
+    g = (
+      <>
+        <path d="M5 12v-3.5M9 12V6M13 12v3.5M17 12v5.5" strokeWidth={2.4} strokeLinecap="butt" />
+        <path d="M3 12h18" strokeOpacity={0.4} strokeWidth={1} />
+      </>
+    );
+  else if (d.pane === "own") g = <path d="m3 14 3.5-5 3.5 6 3.5-9 3.5 7 3.5-3" />;
+  else if (look.draw === "band")
+    g = (
+      <>
+        <path d="M3 9c4-4 8 1 18-4v9c-10 5-14 0-18 4z" fill="currentColor" fillOpacity={0.2} stroke="none" />
+        <path d="M3 9c4-4 8 1 18-4M3 18c4-4 8 1 18-4" />
+      </>
+    );
+  else if (look.draw === "dots")
+    g = (
+      <>
+        {[4, 8, 12, 16, 20].map((x, i) => (
+          <circle key={x} cx={x} cy={[16, 14, 12, 9.5, 7][i]} r={1.5} fill="currentColor" stroke="none" />
+        ))}
+      </>
+    );
+  else g = <path d="M3 16c4.5-1 6.5-8 10.5-8.5S18 9 21 6" />;
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" {...P2} aria-hidden>
+      {g}
+    </svg>
+  );
+}
+
+/**
+ * the indicator menu: a searchable catalogue (the shared library's), overlays on the price pane and
+ * oscillators each in a pane of their own, with clear and the volume toggle. typing anywhere in it
+ * searches; enter in the search adds the first match.
+ */
 export function IndMenu({
   inds,
   toggle,
-  colors,
+  clear,
+  colorOf,
+  query,
+  setQuery,
   showVol,
   setShowVol,
   onClose,
@@ -500,36 +691,102 @@ export function IndMenu({
 }: {
   inds: Ind[];
   toggle: (id: Ind) => void;
-  colors: Record<Ind, string>;
+  clear: () => void;
+  colorOf: (d: IndDef) => string;
+  query: string;
+  setQuery: (q: string) => void;
   showVol: boolean;
   setShowVol: (v: boolean) => void;
   onClose: () => void;
   style: CSSProperties;
 }) {
-  const { ref, onKeyDown } = useMenuKeys(onClose);
+  const { ref, onKeyDown } = useMenuKeys(onClose, "input");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const groups = useMemo(() => (["price", "own"] as const).map((pane) => ({ pane, list: IND_DEFS.filter((d) => d.pane === pane && indMatches(d, query)) })), [query]);
+  // the list's edges dissolve while there is more to scroll to (the oscillators sit below the fold)
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const upd = () => {
+      el.toggleAttribute("data-ft", el.scrollTop > 2);
+      el.toggleAttribute("data-fb", el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+    };
+    upd();
+    el.addEventListener("scroll", upd, { passive: true });
+    const ro = new ResizeObserver(upd);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", upd);
+      ro.disconnect();
+    };
+  }, [query]);
+  const first = groups[0].list[0] ?? groups[1].list[0];
+  const onKey = (e: ReactKeyboardEvent) => {
+    const input = inputRef.current;
+    if (e.target !== input && input && e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      input.focus();
+      return;
+    }
+    if (e.target === input && e.key === "Enter") {
+      e.preventDefault();
+      if (first) toggle(first.id);
+      return;
+    }
+    onKeyDown(e);
+  };
   return (
-    <div ref={ref} className="pop tm-chart-menu tm-chart-menu-ind" role="menu" aria-label="Indicators" style={style} onKeyDown={onKeyDown}>
+    <div ref={ref} className="pop tm-chart-menu tm-chart-menu-ind" role="menu" aria-label="Indicators" data-testid="indicator-menu" style={style} onKeyDown={onKey}>
       <div className="tm-chart-menu-head">
         <span className="label-caps">Indicators</span>
         {inds.length > 0 && <span className="tm-chart-menu-n">{inds.length} on</span>}
       </div>
-      {INDICATORS.map(({ id, label, desc }) => {
-        const on = inds.includes(id);
-        return (
-          <button key={id} type="button" role="menuitemcheckbox" aria-checked={on} className="tm-chart-mi" onClick={() => toggle(id)} style={{ "--c": colors[id] } as CSSProperties}>
-            <span className="tm-chart-mi-sw" data-band={id === "bb" || undefined} aria-hidden />
-            <span className="tm-chart-mi-txt">
-              <b>{label}</b>
-              <small>{desc}</small>
-            </span>
-            <span className="tm-chart-mi-check" aria-hidden>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M1.8 5.4 4 7.6l4.3-5" />
-              </svg>
-            </span>
+      <div className="tm-chart-ms">
+        <CIcon n="search" size={14} />
+        <input ref={inputRef} type="text" className="tm-chart-ms-in" placeholder="Search indicators" aria-label="search indicators" value={query} spellCheck={false} autoComplete="off" onChange={(e) => setQuery(e.target.value)} />
+        {inds.length > 0 && (
+          <button type="button" className="tm-chart-ms-clear" onClick={clear} aria-label={`Clear all ${inds.length} indicators`}>
+            Clear
           </button>
-        );
-      })}
+        )}
+      </div>
+      <div ref={listRef} className="tm-chart-ml">
+        {groups.map(({ pane, list }) =>
+          list.length ? (
+            <div key={pane} role="group" aria-label={pane === "price" ? "Overlays" : "Oscillators · own pane"}>
+              <div className="tm-chart-mg label-caps" aria-hidden>
+                <span>{pane === "price" ? "Overlays" : "Oscillators · own pane"}</span>
+                <span className="tm-chart-mg-n">{list.length}</span>
+              </div>
+              {list.map((d) => {
+                const on = inds.includes(d.id);
+                const [title, params] = splitIndName(d.name);
+                return (
+                  <button key={d.id} type="button" role="menuitemcheckbox" aria-checked={on} className="tm-chart-mi tm-chart-mi-ind" onClick={() => toggle(d.id)} style={{ "--c": colorOf(d) } as CSSProperties}>
+                    <span className="tm-chart-mi-glyph" aria-hidden>
+                      <IndGlyph d={d} />
+                    </span>
+                    <span className="tm-chart-mi-name">
+                      {title}
+                      {params && <small>{params}</small>}
+                    </span>
+                    <span className="tm-chart-mi-check" aria-hidden>
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1.8 5.4 4 7.6l4.3-5" />
+                      </svg>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null,
+        )}
+        {!groups[0].list.length && !groups[1].list.length && (
+          <div className="tm-chart-mi-none" role="status">
+            No indicator matches <b>{query.trim()}</b>
+          </div>
+        )}
+      </div>
       <div className="tm-chart-menu-rule" />
       <button type="button" role="menuitemcheckbox" aria-checked={showVol} className="tm-chart-mi tm-chart-mi-vol" onClick={() => setShowVol(!showVol)}>
         <span className="tm-chart-mi-vbars" aria-hidden>

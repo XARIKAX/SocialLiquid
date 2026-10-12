@@ -27,10 +27,9 @@ import {
 import { api } from "@/lib/client";
 import { chartPalette, useTheme } from "@/lib/theme";
 import { Icon } from "../icons";
-import { BandSeries, GlowCandleSeries, GlowLineSeries, SoftVolumeSeries, withAlpha } from "./chart-series";
+import { BandSeries, GlowCandleSeries, GlowLineSeries, LevelBand, SoftHistSeries, SoftVolumeSeries, withAlpha } from "./chart-series";
 import {
   CHART_TYPES,
-  IND_IDS,
   INTERVALS,
   INTERVAL_SEC,
   RANGES,
@@ -39,10 +38,16 @@ import {
   fmtCountdown,
   fmtCrossTime,
   fmtFixed,
+  fmtInd,
   fmtTick,
   haNext,
   heikinAshi,
+  indColor,
+  indDecimals,
+  indDef,
+  indLook,
   intervalLabel,
+  isInd,
   liveIndicatorValues,
   precisionFor,
   rangeBars,
@@ -52,10 +57,11 @@ import {
   type Candle,
   type ChartType,
   type Ind,
-  type IndValue,
+  type IndDef,
+  type IndLive,
   type Interval,
 } from "./chart-lib";
-import { CIcon, Clock, CtxMenu, IndMenu, Legend, TfMenu, ThesisPins, TipLayer, TypeMenu, type ChartMarker, type PinGroup, type PriceLine } from "./chart-ui";
+import { CIcon, Clock, CtxMenu, IndMenu, Legend, PaneLegends, TfMenu, ThesisPins, TipLayer, TypeMenu, legendInd, type ChartMarker, type LegendInd, type PinGroup, type PriceLine } from "./chart-ui";
 import { DrawingLayer, createViewport, type Drawing, type Part, type Pt, type Tool } from "./chart-draw";
 import { downloadSnapshot } from "./chart-snapshot";
 
@@ -87,6 +93,13 @@ const PIN_CARD_W = 268;
 /** the price tag's reach on the axis around its price (cell -10..+10, countdown to +25), plus air for a label's glyphs */
 const TAG_ABOVE = 17;
 const TAG_BELOW = 32;
+/** the indicator selection (production's key); the revamp kept it under the second, read once so a choice made there carries over */
+const IND_STORE = "sl:indicators";
+const IND_STORE_OLD = "sl:chart:inds";
+/** an oscillator pane's height when it opens (production's compact 110px), and the least the price pane keeps of the room */
+const PANE_H = 110;
+const PANE_MIN = 40;
+const PRICE_SHARE = 0.5;
 
 const uid = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const isTyping = (t: EventTarget | null) => {
@@ -159,9 +172,30 @@ const fundFmt = (hook?: TickHook) => ({
 
 /* ---------- the chart ---------- */
 
-export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string; markers?: ChartMarker[]; lastPx?: number; lines?: PriceLine[] }) {
+export function Chart({
+  coin,
+  label,
+  kind,
+  markers = [],
+  lastPx,
+  lines = [],
+}: {
+  /** hyperliquid's id, for the api ("BTC", "@107", "xyz:GOLD") */
+  coin: string;
+  /** the market's name for people ("BTC-USD", "SOL/USDC", "GOLD-USD") */
+  label?: string;
+  /** the market's kind; spot has no funding. derived from the id when absent (spot ids start with "@") */
+  kind?: "perp" | "spot" | "hip3";
+  markers?: ChartMarker[];
+  lastPx?: number;
+  lines?: PriceLine[];
+}) {
   const [theme] = useTheme();
   const pal = useMemo(() => chartPalette(theme), [theme]);
+  const isSpot = kind ? kind === "spot" : coin.startsWith("@");
+  /** the market as people read it: the label, else the id made readable ("xyz:GOLD" reads GOLD-USD); a spot id waits for its label */
+  const bare = coin.includes(":") ? coin.slice(coin.indexOf(":") + 1) : coin;
+  const name = label ?? (isSpot ? "" : `${bare}-USD`);
 
   /* view state (ui preferences persist; the data flow does not change) */
   const [interval, setInterval_] = useState<Interval>("1h");
@@ -171,12 +205,26 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     const v = readPref("sl:chart:type");
     return CHART_TYPES.some((t) => t[0] === v) ? (v as ChartType) : "candles";
   });
+  // the selection, in the order it was added (oscillator panes stack in that order); ema 20 for a first visit
   const [inds, setInds] = useState<Ind[]>(() => {
     try {
-      const v = JSON.parse(readPref("sl:chart:inds") ?? "null");
-      if (Array.isArray(v)) return v.filter((x): x is Ind => IND_IDS.includes(x));
-    } catch {}
-    return ["ema20"];
+      const raw = readPref(IND_STORE) ?? readPref(IND_STORE_OLD);
+      if (raw === null) return ["ema20"];
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? [...new Set(v.filter(isInd))] : [];
+    } catch {
+      return [];
+    }
+  });
+  const [indQuery, setIndQuery] = useState("");
+  // indicators hidden with the eye (they keep their place and pane)
+  const [indOff, setIndOff] = useState<Ind[]>(() => {
+    try {
+      const v = JSON.parse(readPref("sl:chart:indoff") ?? "[]");
+      return Array.isArray(v) ? v.filter(isInd) : [];
+    } catch {
+      return [];
+    }
   });
   const [showVol, setShowVol] = useState(() => readPref("sl:chart:vol") !== "0");
   const [magnet, setMagnet] = useState(() => readPref("sl:chart:magnet") === "1");
@@ -203,27 +251,38 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
   const [draft, setDraft] = useState<Drawing | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ kind: "type" | "ind" | "tf"; x: number; y: number; h: number } | null>(null);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; pt: Pt | null } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; pt: Pt | null; ind: Ind | null } | null>(null);
   const [chart, setChart] = useState<IChartApi | null>(null);
   const [build, setBuild] = useState(0);
   // once candles are on the canvas, later loads (interval, range, market) veil them instead of blanking
   const [drawn, setDrawn] = useState(false);
 
   useEffect(() => writePref("sl:chart:type", chartType), [chartType]);
-  useEffect(() => writePref("sl:chart:inds", JSON.stringify(inds)), [inds]);
+  useEffect(() => writePref(IND_STORE, JSON.stringify(inds)), [inds]);
+  useEffect(() => {
+    // the old key has been read into the new one: drop it so it is read once
+    try {
+      localStorage.removeItem(IND_STORE_OLD);
+    } catch {}
+  }, []);
+  useEffect(() => writePref("sl:chart:indoff", JSON.stringify(indOff.filter((x) => inds.includes(x)))), [indOff, inds]);
   useEffect(() => writePref("sl:chart:vol", showVol ? "1" : "0"), [showVol]);
   useEffect(() => writePref("sl:chart:magnet", magnet ? "1" : "0"), [magnet]);
   useEffect(() => {
     if (railPref !== null) writePref("sl:chart:rail", railPref ? "1" : "0");
   }, [railPref]);
 
-  /* data (unchanged: same keys, same endpoints, same refresh) */
+  /* data (same keys, endpoints and refresh; the id is encoded: builder-dex ids can hold "&", e.g. xyz:S&P500) */
   const q = useQuery({
     queryKey: ["candles", coin, interval, bars],
-    queryFn: () => api<{ candles: Candle[] }>(`/api/candles?coin=${coin}&interval=${interval}&bars=${bars}`).then((r) => r.candles),
+    queryFn: () => api<{ candles: Candle[] }>(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${interval}&bars=${bars}`).then((r) => r.candles),
     refetchInterval: interval === "1m" ? 5000 : 15_000,
   });
-  const funding = useQuery({ queryKey: ["funding-hist", coin], queryFn: () => api<{ rows: { time: number; rate: number }[] }>(`/api/funding?coin=${coin}&days=7`).then((r) => r.rows), enabled: mode === "funding" });
+  const funding = useQuery({ queryKey: ["funding-hist", coin], queryFn: () => api<{ rows: { time: number; rate: number }[] }>(`/api/funding?coin=${encodeURIComponent(coin)}&days=7`).then((r) => r.rows), enabled: mode === "funding" });
+  // spot pairs pay no funding: the view is not offered there, and a funding view left open goes back to the chart
+  useEffect(() => {
+    if (isSpot && mode === "funding") setMode("chart");
+  }, [isSpot, mode]);
 
   const candles = useMemo(() => q.data ?? [], [q.data]);
   const rows = useMemo(() => (chartType === "ha" ? heikinAshi(candles) : candles), [candles, chartType]);
@@ -252,12 +311,31 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     return { row, raw: last, prevClose, idx, time: row.time, ivSec, dir };
   }, [candles, rows, chartType, lastPx, ivSec]);
 
+  /* indicators: the shared library's definitions (src/lib/indicators), computed from the candles */
   const indData = useMemo(() => computeIndicators(q.data, inds, ivSec), [q.data, inds, ivSec]);
   /** the indicators' readings on the live bar: the lines follow the streaming price, as on tradingview */
-  const liveInd = useMemo<Partial<Record<Ind, IndValue>>>(
-    () => (live && mode === "chart" ? liveIndicatorValues(candles, indData, inds, live.raw, live.idx, ivSec) : {}),
-    [live, candles, indData, inds, ivSec, mode],
+  const liveInd = useMemo<IndLive>(() => (live && mode === "chart" ? liveIndicatorValues(candles, inds, live.raw, live.idx, ivSec) : {}), [live, candles, inds, ivSec, mode]);
+  const light = theme === "light";
+  /** a line's colour on this theme (the palette's tuned colours for the averages the terminal shipped with) */
+  const colorOf = useCallback((d: IndDef, line = 0) => indColor(d, indLook(d).draw === "band" ? 0 : line, pal.ind as Record<string, string>, light), [pal, light]);
+  const overlayIds = useMemo(() => inds.filter((id) => indDef(id)?.pane === "price"), [inds]);
+  /** the oscillators in pane order: pane 1 is the first one added */
+  const oscIds = useMemo(() => inds.filter((id) => indDef(id)?.pane === "own"), [inds]);
+  const legendOf = useCallback(
+    (id: Ind): LegendInd | null => {
+      const d = indDef(id);
+      const data = indData[id];
+      if (!d || !data) return null;
+      return legendInd(
+        d,
+        indOff.includes(id),
+        d.lines.map((l, i) => ({ key: l.key, color: colorOf(d, i), values: data[l.key] ?? [], live: liveInd[id]?.[l.key], hist: !!l.histogram })),
+      );
+    },
+    [indData, indOff, colorOf, liveInd],
   );
+  const overlayLegend = useMemo(() => overlayIds.map(legendOf).filter((x): x is LegendInd => !!x), [overlayIds, legendOf]);
+  const oscLegend = useMemo(() => oscIds.map(legendOf).filter((x): x is LegendInd => !!x), [oscIds, legendOf]);
 
   /* ---------- refs the frame loop and handlers read ---------- */
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -280,7 +358,37 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
   const mainRef = useRef<AnySeries | null>(null);
   const volRef = useRef<AnySeries | null>(null);
   const fundRef = useRef<ISeriesApi<"Baseline"> | null>(null);
+  /** indicator series: "<id>:<line>" (a channel drawn as one band is "<id>:band") */
   const indRef = useRef<Map<string, AnySeries>>(new Map());
+  /** the data each indicator series was last given, so a restyle does not wipe its live point */
+  const indSetRef = useRef<Map<string, unknown>>(new Map());
+  /** an oscillator's dashed reference levels (price lines) and its tinted zone, by series key */
+  const levelRef = useRef<Map<string, IPriceLine[]>>(new Map());
+  const zoneRef = useRef<Map<string, LevelBand>>(new Map());
+  /** the oscillators that have a pane, in pane order (pane 1 first) */
+  const paneOrderRef = useRef<Ind[]>([]);
+  /**
+   * the oscillator panes' layout, remembered across rebuilds and reloads ("sl:chart:panes"): each pane's
+   * last height, and which panes the trader sized by dragging a separator (those keep their height when
+   * others open or close; the rest stay compact and share the room)
+   */
+  const paneMem = useMemo(() => {
+    const h = new Map<Ind, number>();
+    const sized = new Set<Ind>();
+    try {
+      const v = JSON.parse(readPref("sl:chart:panes") ?? "{}") as { h?: Record<string, unknown>; u?: unknown };
+      for (const [id, x] of Object.entries(v.h ?? {})) if (isInd(id) && typeof x === "number" && x > 0) h.set(id, x);
+      if (Array.isArray(v.u)) for (const id of v.u) if (isInd(id)) sized.add(id);
+    } catch {}
+    return { h, sized };
+  }, []);
+  const paneHRef = useRef(paneMem.h);
+  const sizedRef = useRef(paneMem.sized);
+  /** the oscillator pane legends, positioned by the frame loop */
+  const oscElsRef = useRef(new Map<Ind, HTMLElement>());
+  const oscVerRef = useRef(0);
+  /** the price pane's height, as the frame loop last saw it (pointer maths for the drawings) */
+  const p0hRef = useRef(0);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const liveRef = useRef<Live | null>(null);
@@ -292,7 +400,9 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
   const palRef = useRef(pal);
   const magnetRef = useRef(magnet);
   const autoRef = useRef(true);
+  /** the crosshair's y on the price pane (null off it), and whether it is on any pane */
   const crossYRef = useRef<number | null>(null);
+  const crossOnRef = useRef(false);
   const hoverRef = useRef(false);
   const drawingsRef = useRef(drawings);
   const draftRef = useRef(draft);
@@ -377,7 +487,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     const c = chartRef.current;
     const m = marginRef.current;
     if (!c) return;
-    if (crossYRef.current !== null) {
+    if (crossOnRef.current) {
       m.pending = true;
       return;
     }
@@ -426,7 +536,8 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
       width: Math.max(1, Math.floor(host.clientWidth)),
       height: Math.max(1, Math.floor(host.clientHeight)),
       autoSize: false,
-      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: p.text, fontSize: 11, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", attributionLogo: false, panes: { separatorColor: p.border, separatorHoverColor: withAlpha(p.brand, 0.2), enableResize: false } },
+      // oscillator panes stack under the price pane; their separators drag, as tradingview's do
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: p.text, fontSize: 11, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", attributionLogo: false, panes: { separatorColor: p.border, separatorHoverColor: withAlpha(p.brand, 0.16), enableResize: true } },
       grid: { vertLines: { color: p.gridV }, horzLines: { color: p.grid } },
       rightPriceScale: { borderVisible: true, borderColor: p.border, scaleMargins: { top: 0.13, bottom: 0.2 }, minimumWidth: 78, entireTextOnly: true },
       timeScale: { borderVisible: true, borderColor: p.border, timeVisible: true, secondsVisible: false, rightOffset: 7, barSpacing: 9, minBarSpacing: 0.4, shiftVisibleRangeOnNewBar: true, allowBoldLabels: false, tickMarkFormatter: (t: Time, type: TickMarkType) => fmtTick(Number(t), type) },
@@ -441,7 +552,9 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     });
     chartRef.current = c;
     c.subscribeCrosshairMove((e) => {
-      crossYRef.current = e.point ? e.point.y : null;
+      // the point is the hovered pane's own: only the price pane's y can sit under the price tag
+      crossOnRef.current = !!e.point;
+      crossYRef.current = e.point && (e.paneIndex ?? 0) === 0 ? e.point.y : null;
       if (!e.point && marginRef.current.pending) fitMargins();
     });
     // canvas text cannot read css variables: hand it geist mono by name once the face is in
@@ -480,10 +593,110 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
       fundRef.current = null;
       markersRef.current = null;
       indRef.current.clear();
+      indSetRef.current.clear();
+      levelRef.current.clear();
+      zoneRef.current.clear();
+      paneOrderRef.current = [];
       priceLinesRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ---------- oscillator panes: heights ---------- */
+  const paneSaveRef = useRef(0);
+  const savePanes = useCallback(() => {
+    clearTimeout(paneSaveRef.current);
+    paneSaveRef.current = window.setTimeout(() => writePref("sl:chart:panes", JSON.stringify({ h: Object.fromEntries(paneHRef.current), u: [...sizedRef.current] })), 800);
+  }, []);
+  /** each oscillator pane's height into the memory (dragged separators included), saved for the next visit */
+  const rememberPaneHeights = useCallback((c: IChartApi) => {
+    let ps: ReturnType<IChartApi["panes"]>;
+    try {
+      ps = c.panes();
+    } catch {
+      return;
+    }
+    let changed = false;
+    paneOrderRef.current.forEach((id, i) => {
+      const h = Math.round(ps[i + 1]?.getHeight() ?? 0);
+      if (h >= 30 && paneHRef.current.get(id) !== h) {
+        paneHRef.current.set(id, h);
+        changed = true;
+      }
+    });
+    if (changed) savePanes();
+  }, [savePanes]);
+  /**
+   * pane heights, set only when an oscillator pane opens or closes, never on a data update (so a dragged
+   * separator stays where the trader left it):
+   * - once the trader drags a separator the panes are theirs: each keeps its height when another opens or
+   *   closes, and comes back at it after a reload or a rebuild (chart type, the funding view);
+   * - panes never dragged stay compact: they share what the price pane can spare (PRICE_SHARE of the room
+   *   is the price pane's), at most 110px each (production's height), and follow the window's size;
+   * - the price pane takes the rest, never less than a quarter: on a short chart the panes shrink together.
+   */
+  const layoutPanes = useCallback((c: IChartApi, opened: Set<Ind>) => {
+    let ps: ReturnType<IChartApi["panes"]>;
+    try {
+      ps = c.panes();
+    } catch {
+      return;
+    }
+    if (ps.length < 2) return;
+    let axis = 0;
+    try {
+      axis = c.timeScale().height();
+    } catch {}
+    const room = (hostRef.current?.clientHeight ?? 0) - (axis || 28) - (ps.length - 1);
+    if (room < 80) return;
+    const order = paneOrderRef.current;
+    const mem = paneHRef.current;
+    const sized = order.map((id, i) => {
+      if (!sizedRef.current.has(id)) return null;
+      const cur = ps[i + 1]?.getHeight() ?? 0;
+      return !opened.has(id) && cur >= 20 ? cur : (mem.get(id) ?? PANE_H);
+    });
+    const fixed = sized.reduce<number>((a, h) => a + (h ?? 0), 0);
+    const n = sized.filter((h) => h === null).length;
+    const each = n ? Math.max(64, Math.min(PANE_H, (room * (1 - PRICE_SHARE) - fixed) / n)) : 0;
+    let osc = sized.map((h) => h ?? each);
+    const most = room - Math.max(80, room * 0.25);
+    const sum = osc.reduce((a, b) => a + b, 0);
+    if (sum > most) osc = osc.map((h) => (h * most) / sum);
+    osc = osc.map((h) => Math.max(PANE_MIN, Math.round(h)));
+    // heights follow the stretch factors in proportion: pixels make factors that read as pixels
+    try {
+      ps[0].setStretchFactor(Math.max(PANE_MIN, room - osc.reduce((a, b) => a + b, 0)));
+      osc.forEach((h, i) => ps[i + 1]?.setStretchFactor(h));
+    } catch {}
+  }, []);
+
+  /* a separator dragged: the oscillator panes are now the trader's size */
+  useEffect(() => {
+    const host = hostRef.current;
+    const c = chart;
+    if (!host || !c) return;
+    const down = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t || getComputedStyle(t).cursor !== "row-resize") return;
+      const up = () => {
+        window.removeEventListener("pointerup", up, true);
+        window.removeEventListener("pointercancel", up, true);
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            // the trader has arranged the panes: all of them keep the heights they now have
+            for (const id of paneOrderRef.current) sizedRef.current.add(id);
+            rememberPaneHeights(c);
+            savePanes();
+          }),
+        );
+      };
+      window.addEventListener("pointerup", up, true);
+      window.addEventListener("pointercancel", up, true);
+    };
+    host.addEventListener("pointerdown", down, true);
+    return () => host.removeEventListener("pointerdown", down, true);
+  }, [chart, rememberPaneHeights, savePanes]);
 
   /* ---------- (re)build the series for the chart type / view ---------- */
   useEffect(() => {
@@ -497,10 +710,25 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
       markersRef.current?.detach();
     } catch {}
     markersRef.current = null;
-    for (const s of indRef.current.values()) c.removeSeries(s);
+    // the indicators go with the series they sit over (and come back on top of the new ones); their
+    // panes close with them, so each oscillator's height is kept to reopen at
+    rememberPaneHeights(c);
+    // (guarded: a hot reload can hand this effect series of a chart that is already gone)
+    for (const s of indRef.current.values())
+      try {
+        c.removeSeries(s);
+      } catch {}
     indRef.current.clear();
+    indSetRef.current.clear();
+    levelRef.current.clear();
+    zoneRef.current.clear();
+    paneOrderRef.current = [];
     priceLinesRef.current = [];
-    for (const s of [mainRef.current, volRef.current, fundRef.current]) if (s) c.removeSeries(s as AnySeries);
+    for (const s of [mainRef.current, volRef.current, fundRef.current])
+      if (s)
+        try {
+          c.removeSeries(s as AnySeries);
+        } catch {}
     mainRef.current = null;
     volRef.current = null;
     fundRef.current = null;
@@ -628,53 +856,142 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pal, chart]);
 
-  /* ---------- indicators ---------- */
+  /* ---------- indicators: overlays on the price pane, each oscillator in a pane of its own ---------- */
   useEffect(() => {
     const c = chart;
     if (!c || mode !== "chart" || !mainRef.current) return;
-    const keep = new Set(Object.keys(indData));
-    for (const [k, s] of indRef.current)
-      if (!keep.has(k)) {
-        c.removeSeries(s);
-        indRef.current.delete(k);
-      }
     const times = candles.map((x) => x.time as UTCTimestamp);
-    for (const id of IND_IDS) {
-      const d = indData[id];
-      if (!d) continue;
-      const color = pal.ind[id];
-      let s = indRef.current.get(id);
-      if (d.kind === "band") {
-        const opts = { lineColor: color, fillAlpha: theme === "light" ? 0.06 : 0.07, lastValueVisible: false, priceLineVisible: false };
-        if (!s) {
-          s = c.addCustomSeries(new BandSeries(), opts) as unknown as AnySeries;
-          indRef.current.set(id, s);
-        } else s.applyOptions(opts as never);
-        s.setData(times.map((time, i) => (Number.isFinite(d.upper[i]) ? { time, upper: d.upper[i], mid: d.mid[i], lower: d.lower[i] } : { time })) as never);
+    // oscillators stack below the price pane in the order they were added (production's rule)
+    const own = oscIds.filter((id) => indData[id]);
+    type Want = { id: Ind; d: IndDef; line: number; pane: number };
+    const wanted = new Map<string, Want>();
+    for (const id of inds) {
+      const d = indDef(id);
+      if (!d || !indData[id]) continue;
+      const pane = d.pane === "own" ? 1 + own.indexOf(id) : 0;
+      if (d.pane === "price" && indLook(d).draw === "band") wanted.set(`${id}:band`, { id, d, line: -1, pane });
+      else d.lines.forEach((l, line) => wanted.set(`${id}:${l.key}`, { id, d, line, pane }));
+    }
+    // an oscillator that leaves gives its pane's room back to the price pane; the others keep theirs
+    const closed = paneOrderRef.current.some((id) => !own.includes(id));
+    for (const [k, s] of indRef.current)
+      if (!wanted.has(k)) {
+        try {
+          c.removeSeries(s);
+        } catch {}
+        indRef.current.delete(k);
+        indSetRef.current.delete(k);
+        levelRef.current.delete(k);
+        zoneRef.current.delete(k);
+      }
+    paneOrderRef.current = own;
+    const opened = new Set<Ind>();
+    const levelColor = withAlpha(pal.text, light ? 0.5 : 0.42);
+    for (const [key, { id, d, line, pane }] of wanted) {
+      const look = indLook(d);
+      const off = indOff.includes(id);
+      const data = indData[id];
+      const color = colorOf(d, Math.max(0, line));
+      let s = indRef.current.get(key);
+      const fresh = !s;
+      if (line < 0) {
+        // a channel (bollinger, donchian): the revamp's faint cloud with hairline edges
+        const opts = { lineColor: color, color, fillAlpha: light ? 0.06 : 0.07, lastValueVisible: false, priceLineVisible: false, visible: !off };
+        if (!s) s = c.addCustomSeries(new BandSeries(), opts) as unknown as AnySeries;
+        else s.applyOptions(opts as never);
+      } else if (d.pane === "own") {
+        const l = d.lines[line];
+        const fmt = look.fmt;
+        const priceFormat = { type: "custom" as const, minMove: Math.pow(10, -indDecimals(fmt, prec)), formatter: (v: number) => fmtInd(v, fmt, prec) };
+        if (l.histogram) {
+          // the histogram in the volume's language, up / down by its sign (production colours it by sign)
+          const opts = { upColor: pal.up, downColor: pal.down, color, tipAlpha: light ? 0.72 : 0.8, baseAlpha: light ? 0.1 : 0.14, priceLineVisible: false, lastValueVisible: false, priceFormat, visible: !off };
+          if (!s) s = c.addCustomSeries(new SoftHistSeries(), opts, pane) as unknown as AnySeries;
+          else s.applyOptions(opts as never);
+        } else {
+          // the last reading rides the pane's own scale, as tradingview's does
+          const opts = { lineColor: color, color, lineWidth: 1.4, halo: 0, fade: 0.62, dashed: l.style === 2, dots: false, priceLineVisible: false, lastValueVisible: true, priceFormat, visible: !off };
+          if (!s) s = c.addCustomSeries(new GlowLineSeries(), opts, pane) as unknown as AnySeries;
+          else s.applyOptions(opts as never);
+        }
       } else {
         // the hero average (ema 20) gets the mock's treatment: a halo and a fade-in from the left
         const hero = id === "ema20";
-        const opts = { lineColor: color, lineWidth: hero ? 1.7 : 1.4, halo: hero ? (theme === "light" ? 0.07 : 0.16) : 0, fade: hero ? 0.32 : 0.62, dashed: id === "vwap", lastValueVisible: false, priceLineVisible: false };
-        if (!s) {
-          s = c.addCustomSeries(new GlowLineSeries(), opts) as unknown as AnySeries;
-          indRef.current.set(id, s);
-        } else s.applyOptions(opts as never);
-        s.setData(times.map((time, i) => (Number.isFinite(d.values[i]) ? { time, value: d.values[i] } : { time })) as never);
+        const l = d.lines[line];
+        const opts = { lineColor: color, color, lineWidth: hero ? 1.7 : 1.4, halo: hero ? (light ? 0.07 : 0.16) : 0, fade: hero ? 0.32 : 0.62, dashed: id === "vwap" || l.style === 2, dots: look.draw === "dots", lastValueVisible: false, priceLineVisible: false, visible: !off };
+        if (!s) s = c.addCustomSeries(new GlowLineSeries(), opts) as unknown as AnySeries;
+        else s.applyOptions(opts as never);
+      }
+      if (fresh) {
+        indRef.current.set(key, s);
+        if (pane > 0 && line === 0) {
+          opened.add(id);
+          // room under the pane's legend at the top
+          try {
+            c.priceScale("right", pane).applyOptions({ scaleMargins: { top: 0.22, bottom: 0.1 } });
+          } catch {}
+        }
+      } else if (pane > 0) {
+        // an oscillator above this one closed: follow its pane up (production's moveToPane)
+        try {
+          if (s.getPane().paneIndex() !== pane) s.moveToPane(pane);
+        } catch {}
+      }
+      // reference levels (rsi 30 / 70, macd 0): dashed price lines on the first line, the zone between them tinted
+      if (d.pane === "own" && line === 0 && d.levels?.length) {
+        const lv = levelRef.current.get(key);
+        if (!lv) levelRef.current.set(key, d.levels.map((price) => s.createPriceLine({ price, color: levelColor, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "" })));
+        else lv.forEach((pl) => pl.applyOptions({ color: levelColor }));
+        const zone = zoneRef.current.get(key);
+        const alpha = d.levels.length > 1 ? (light ? 0.05 : 0.055) : 0;
+        const zc = colorOf(d, 0);
+        const z = zone ?? new LevelBand(d.levels, zc, alpha);
+        if (!zone) {
+          s.attachPrimitive(z);
+          zoneRef.current.set(key, z);
+        } else z.setColor(zc, alpha);
+        z.setVisible(!off);
+      }
+      // new data only when the candles moved: a restyle (theme, the eye) keeps the live point
+      if (indSetRef.current.get(key) !== data) {
+        indSetRef.current.set(key, data);
+        if (line < 0) {
+          const [u, m, lo] = [data.upper, data.mid, data.lower];
+          s.setData(times.map((time, i) => (u && lo && Number.isFinite(u[i]) && Number.isFinite(lo[i]) ? { time, upper: u[i], mid: m?.[i], lower: lo[i] } : { time })) as never);
+        } else {
+          const vs = data[d.lines[line].key] ?? [];
+          s.setData(times.map((time, i) => (Number.isFinite(vs[i]) ? { time, value: vs[i] } : { time })) as never);
+        }
       }
     }
+    // pane heights change only when a pane opened or closed: a refetch never undoes a dragged separator
+    if (opened.size || closed) layoutPanes(c, opened);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indData, build, pal, chart]);
+  }, [indData, build, pal, chart, indOff, prec, colorOf]);
 
   /* ---------- the indicators ride the live bar between fetches (declared after setData above) ---------- */
   useEffect(() => {
     if (!live || mode !== "chart") return;
     const time = live.time as UTCTimestamp;
-    for (const [id, v] of Object.entries(liveInd) as [Ind, IndValue][]) {
-      const s = indRef.current.get(id);
-      if (!s) continue;
-      try {
-        s.update((typeof v === "number" ? { time, value: v } : { time, upper: v.upper, mid: v.mid, lower: v.lower }) as never);
-      } catch {}
+    for (const [id, row] of Object.entries(liveInd)) {
+      const d = indDef(id);
+      if (!d) continue;
+      const band = indRef.current.get(`${id}:band`);
+      if (band) {
+        if (Number.isFinite(row.upper) && Number.isFinite(row.lower))
+          try {
+            band.update({ time, upper: row.upper, mid: row.mid, lower: row.lower } as never);
+          } catch {}
+        continue;
+      }
+      for (const l of d.lines) {
+        const s = indRef.current.get(`${id}:${l.key}`);
+        const v = row[l.key];
+        if (!s || v === undefined) continue;
+        try {
+          s.update({ time, value: v } as never);
+        } catch {}
+      }
     }
     // build / pal: a rebuilt or restyled series starts from the fetched values again
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -746,13 +1063,21 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     else pinElsRef.current.delete(id);
     pinVerRef.current++;
   }, []);
+  /** an oscillator pane's legend mounting or leaving: the frame loop places it on its next pass */
+  const registerOsc = useCallback((id: Ind, el: HTMLElement | null) => {
+    const m = oscElsRef.current;
+    if (el ? m.get(id) === el : !m.has(id)) return;
+    if (el) m.set(id, el);
+    else m.delete(id);
+    oscVerRef.current++;
+  }, []);
 
   /* ---------- the frame loop: tag, countdown, price line, glow, pins, realtime button ---------- */
   useEffect(() => {
     const c = chart;
     const pane = paneRef.current;
     if (!c || !pane) return;
-    const st = { sig: "", pinSig: "", plSig: "", px: "", cd: "", dir: "", y: NaN, x: NaN, w: NaN, aw: NaN, ah: NaN, edge: "", under: false, ly: NaN, lw: NaN, nx: NaN, ny: NaN, on: false, rt: false, n: 0, pinW: -1, rl: -99 };
+    const st = { sig: "", pinSig: "", plSig: "", px: "", cd: "", dir: "", y: NaN, x: NaN, w: NaN, aw: NaN, ah: NaN, edge: "", under: false, ly: NaN, lw: NaN, nx: NaN, ny: NaN, on: false, rt: false, n: 0, pinW: -1, rl: -99, geo: "", flip: false };
     const pinW = new Map<string, [number, number]>();
     const pinD = new Map<string, number>();
     const show = (el: Element | null, on: boolean) => el?.toggleAttribute("data-on", on);
@@ -819,6 +1144,55 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
         pane.style.setProperty("--tm-axis", `${axisW}px`);
         pane.style.setProperty("--tm-taxis", `${axisH}px`);
       }
+      // the panes: everything drawn over the price (tag, pins, drawings, the pool of light, the nav) keeps
+      // to the price pane's geometry, and each oscillator's legend rides the top of its pane
+      let ps: ReturnType<IChartApi["panes"]> = [];
+      try {
+        ps = c.panes();
+      } catch {}
+      const multi = ps.length > 1;
+      let below = axisH;
+      let geo = `${paneH}|${axisH}|${oscVerRef.current}|${paneOrderRef.current.join(",")}`;
+      for (let i = 1; i < ps.length; i++) {
+        const h = ps[i].getHeight();
+        below += h + 1;
+        geo += `|${h}`;
+      }
+      if (geo !== st.geo) {
+        st.geo = geo;
+        p0hRef.current = paneH;
+        pane.toggleAttribute("data-panes", multi);
+        // a short price pane (oscillators below it) keeps its legend to the close and the move on phones
+        pane.toggleAttribute("data-short", multi && paneH < 190);
+        pane.style.setProperty("--tm-p0h", `${paneH}px`);
+        pane.style.setProperty("--tm-below", `${below}px`);
+        const order = paneOrderRef.current;
+        // each oscillator keeps its readings clear of its legend: a top margin of ~28px, whatever the pane's height
+        for (let i = 1; i < ps.length; i++) {
+          const h = ps[i].getHeight();
+          if (h < 30) continue;
+          const top = Math.round(Math.min(0.45, Math.max(0.12, 28 / h)) * 100) / 100;
+          try {
+            const sc = c.priceScale("right", i);
+            if (sc.options().scaleMargins.top !== top) sc.applyOptions({ scaleMargins: { top, bottom: 0.1 } });
+          } catch {}
+        }
+        for (const [id, el] of oscElsRef.current) {
+          // pane i + 1 starts under the price pane and the panes (and 1px separators) above it
+          const i = order.indexOf(id);
+          const h = i >= 0 ? (ps[i + 1]?.getHeight() ?? 0) : 0;
+          if (i < 0 || h < 26) {
+            el.setAttribute("data-hidden", "");
+            continue;
+          }
+          let y = paneH + 1;
+          for (let j = 1; j <= i; j++) y += ps[j].getHeight() + 1;
+          el.removeAttribute("data-hidden");
+          el.style.transform = `translate3d(0, ${Math.round(y)}px, 0)`;
+        }
+      }
+      // the heights a trader drags to are kept for the next time the pane opens
+      if (multi && st.n % 30 === 0) rememberPaneHeights(c);
       const tag = tagRef.current;
       const line = pxLineRef.current;
       const now = nowRef.current;
@@ -864,6 +1238,13 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
       // the tag rides the price scale; past an edge it parks there, dimmed
       const edge = yA < 11 ? "top" : yA > paneH - 11 ? "bottom" : "";
       const y = Math.round(Math.min(Math.max(yA, 11), paneH - 11));
+      // with an oscillator pane right below, the countdown moves over the price near the bottom, so the
+      // tag never spills across the separator onto the oscillator's scale
+      const flip = multi && y > paneH - 27;
+      if (flip !== st.flip) {
+        st.flip = flip;
+        tag.toggleAttribute("data-flip", flip);
+      }
       if (y !== st.y || paneW !== st.x || axisW !== st.w) {
         st.y = y;
         st.x = paneW;
@@ -878,11 +1259,13 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
         else delete tag.dataset.edge;
       }
       // the axis labels under the tag (price cell and countdown, with air for the glyphs) step aside
+      const zTop = y - (flip ? TAG_BELOW : TAG_ABOVE);
+      const zBot = y + (flip ? TAG_ABOVE : TAG_BELOW);
       const zone = tagZoneRef.current;
-      if (!zone || zone.top !== y - TAG_ABOVE || zone.bottom !== y + TAG_BELOW) tagZoneRef.current = { top: y - TAG_ABOVE, bottom: y + TAG_BELOW };
+      if (!zone || zone.top !== zTop || zone.bottom !== zBot) tagZoneRef.current = { top: zTop, bottom: zBot };
       if (!moved) relabel(lv ? main : fundRef.current);
       const cy = crossYRef.current;
-      const under = cy !== null && cy > y - 16 && cy < y + 30;
+      const under = cy !== null && (flip ? cy > y - 30 && cy < y + 16 : cy > y - 16 && cy < y + 30);
       if (under !== st.under) {
         st.under = under;
         tag.toggleAttribute("data-under", under);
@@ -1059,7 +1442,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
       io.disconnect();
       document.removeEventListener("visibilitychange", vis);
     };
-  }, [chart, vp, tickHook]);
+  }, [chart, vp, tickHook, rememberPaneHeights]);
 
   /* the svg pen layer sits over the canvas: hand wheel zoom/scroll through to the chart */
   useEffect(() => {
@@ -1124,14 +1507,26 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     }
   }, []);
   const axisWidth = useCallback(() => chartRef.current?.priceScale("right").width() ?? 0, []);
-  /** a point under the pointer; with the magnet on it snaps to the nearest o/h/l/c within reach */
-  const ptAt = useCallback((clientX: number, clientY: number): Pt | null => {
+  /**
+   * a point under the pointer; with the magnet on it snaps to the nearest o/h/l/c within reach. only the
+   * price pane holds drawings: off it there is no point, unless a drag that started on it is clamped back
+   */
+  const ptAt = useCallback((clientX: number, clientY: number, clamp = false): Pt | null => {
     const host = hostRef.current;
     const main = mainRef.current;
     if (!host || !main) return null;
     const r = host.getBoundingClientRect();
     const x = clientX - r.left;
-    const y = clientY - r.top;
+    let y = clientY - r.top;
+    let p0 = p0hRef.current;
+    if (!p0)
+      try {
+        p0 = chartRef.current?.paneSize(0).height ?? 0;
+      } catch {}
+    if (p0 > 0 && (y < 0 || y > p0)) {
+      if (!clamp) return null;
+      y = Math.min(Math.max(y, 0), p0);
+    }
     const t = tOf(x);
     const p = main.coordinateToPrice(y);
     if (t === null || p === null) return null;
@@ -1187,7 +1582,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
   };
   const onDrawMove = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (tool === "cursor") return;
-    const pt = ptAt(e.clientX, e.clientY);
+    const pt = ptAt(e.clientX, e.clientY, !!draftRef.current);
     if (!pt) return;
     follow(pt);
     const cur = draftRef.current;
@@ -1199,7 +1594,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     const cur = draftRef.current;
     if (!cur || !d0) return;
     // dragged: finish on release; clicked: wait for the second click
-    if (Math.hypot(e.clientX - d0.x, e.clientY - d0.y) > 5) finish({ ...cur, b: ptAt(e.clientX, e.clientY) ?? cur.b });
+    if (Math.hypot(e.clientX - d0.x, e.clientY - d0.y) > 5) finish({ ...cur, b: ptAt(e.clientX, e.clientY, true) ?? cur.b });
   };
   const onShapeDown = useCallback(
     (e: ReactPointerEvent, id: string, part: Part) => {
@@ -1211,7 +1606,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
       const start = ptAt(e.clientX, e.clientY);
       if (!d0 || !start || d0.type === "ruler") return;
       const move = (ev: PointerEvent) => {
-        const pt = ptAt(ev.clientX, ev.clientY);
+        const pt = ptAt(ev.clientX, ev.clientY, true);
         if (!pt) return;
         const dt = pt.t - start.t;
         const dp = pt.p - start.p;
@@ -1241,10 +1636,36 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     if (e.pointerType === "touch") return;
     const el = e.currentTarget;
     const r = el.getBoundingClientRect();
-    const near = e.clientY - r.top > r.height * 0.62;
+    const y = e.clientY - r.top;
+    // it belongs to the price pane: with oscillators below, only the price pane's lower part calls it
+    const p0 = paneOrderRef.current.length ? p0hRef.current : 0;
+    const near = p0 > 0 ? y > p0 * 0.62 && y <= p0 : y > r.height * 0.62;
     if (near !== el.hasAttribute("data-nav")) el.toggleAttribute("data-nav", near);
   };
-  const removeInd = useCallback((id: Ind) => setInds((s) => s.filter((x) => x !== id)), []);
+  const removeInd = useCallback((id: Ind) => {
+    setInds((s) => s.filter((x) => x !== id));
+    setIndOff((s) => (s.includes(id) ? s.filter((x) => x !== id) : s));
+  }, []);
+  /** the eye: hide an indicator without losing its place (or its pane) */
+  const toggleIndOff = useCallback((id: Ind) => setIndOff((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id])), []);
+  /** the oscillator whose pane is under a point (y from the chart's top), if any */
+  const oscAt = (y: number): Ind | null => {
+    const c = chartRef.current;
+    if (!c) return null;
+    let ps: ReturnType<IChartApi["panes"]>;
+    try {
+      ps = c.panes();
+    } catch {
+      return null;
+    }
+    let top = 0;
+    for (let i = 0; i < ps.length; i++) {
+      const h = ps[i].getHeight();
+      if (y >= top && y < top + h) return i > 0 ? (paneOrderRef.current[i - 1] ?? null) : null;
+      top += h + 1;
+    }
+    return null;
+  };
   /** right click: tradingview's chart menu, at the pointer */
   const onPaneContext = (e: React.MouseEvent<HTMLDivElement>) => {
     if (mode !== "chart" || !hostRef.current?.contains(e.target as Node)) return;
@@ -1252,10 +1673,12 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     const w = wrapRef.current;
     if (!w) return;
     const R = w.getBoundingClientRect();
+    // on an oscillator's pane the menu leads with that oscillator (hide, remove), as tradingview's does
+    const ind = oscAt(e.clientY - hostRef.current.getBoundingClientRect().top);
     const x = Math.min(e.clientX - R.left, R.width - 250);
-    const y = Math.min(e.clientY - R.top, R.height - 260);
+    const y = Math.min(e.clientY - R.top, R.height - (ind ? 330 : 260));
     setMenu(null);
-    setCtxMenu({ x: Math.max(6, x), y: Math.max(6, y), pt: ptAt(e.clientX, e.clientY) });
+    setCtxMenu({ x: Math.max(6, x), y: Math.max(6, y), pt: ptAt(e.clientX, e.clientY), ind });
   };
   useEffect(() => {
     if (!ctxMenu) return;
@@ -1289,7 +1712,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     const sx = e.clientX;
     const sy = e.clientY;
     const move = (ev: PointerEvent) => {
-      const p2 = ptAt(ev.clientX, ev.clientY);
+      const p2 = ptAt(ev.clientX, ev.clientY, true);
       if (p2) setDraft({ ...d, b: p2 });
     };
     const done = () => {
@@ -1299,7 +1722,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     };
     const up = (ev: PointerEvent) => {
       done();
-      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 5) finish({ ...d, b: ptAt(ev.clientX, ev.clientY) ?? d.b });
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 5) finish({ ...d, b: ptAt(ev.clientX, ev.clientY, true) ?? d.b });
       else setTool("ruler"); // a plain shift+click: the next click ends the measure
     };
     const cancel = () => {
@@ -1352,6 +1775,10 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     if (!c) return;
     c.timeScale().resetTimeScale();
     c.priceScale("right").applyOptions({ autoScale: true });
+    // every oscillator pane's scale fits its readings again too
+    try {
+      for (let i = 1; i < c.panes().length; i++) c.priceScale("right", i).applyOptions({ autoScale: true });
+    } catch {}
     autoRef.current = true;
     setAutoScale(true);
   }, []);
@@ -1481,7 +1908,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     if (!w || !btn) return;
     const R = w.getBoundingClientRect();
     const r = btn.getBoundingClientRect();
-    const width = kind === "ind" ? 268 : kind === "tf" ? 190 : 236;
+    const width = kind === "ind" ? 288 : kind === "tf" ? 190 : 236;
     const y = r.bottom - R.top + 6;
     openerRef.current = btn;
     setMenu({ kind, x: Math.max(8, Math.min(r.left - R.left - 6, R.width - width - 8)), y, h: Math.max(160, R.height - y - 10) });
@@ -1539,18 +1966,48 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     const host = hostRef.current;
     if (!c || !host) return;
     const lv = liveRef.current;
+    const p = palRef.current;
+    const shown = name || (isSpot ? "Spot" : bare);
+    // the legends the canvas does not carry: the overlays at the price pane's top, each oscillator at its pane's
+    const labels: { y: number; parts: { text: string; color: string }[] }[] = [];
+    const partsOf = (d: LegendInd) => [
+      { text: d.params ? `${d.short} ${d.params}` : d.short, color: d.off ? p.text : p.textStrong },
+      ...(d.off
+        ? []
+        : d.lines.map((l) => {
+            let v = l.live ?? NaN;
+            for (let i = l.values.length - 1; !Number.isFinite(v) && i >= Math.max(0, l.values.length - 3); i--) v = l.values[i];
+            return { text: fmtInd(v, d.fmt, prec), color: l.hist ? (v >= 0 ? p.up : p.down) : l.color };
+          })),
+    ];
+    if (mode === "chart") {
+      if (overlayLegend.length) labels.push({ y: 4, parts: overlayLegend.flatMap(partsOf) });
+      try {
+        const ps = c.panes();
+        let top = 0;
+        ps.forEach((pn, i) => {
+          if (i > 0) {
+            const d = oscLegend.find((x) => x.id === paneOrderRef.current[i - 1]);
+            if (d) labels.push({ y: top + 4, parts: partsOf(d) });
+          }
+          top += pn.getHeight() + 1;
+        });
+      } catch {}
+    }
     void downloadSnapshot({
       chart: c,
       host,
       svg: hidden || !drawings.length ? null : svgRef.current,
-      pal: palRef.current,
+      pal: p,
       light: theme === "light",
       main: mode === "chart" ? mainRef.current : null,
       live: lv && mode === "chart" ? { close: lv.row.close, dir: lv.dir } : null,
       prec,
-      title: `${coin}-USD`,
+      title: shown,
       subtitle: mode === "funding" ? "Funding · 7d" : `${intervalLabel(interval)} · Hyperliquid`,
-      fileName: `${coin}-${interval}-${new Date().toISOString().slice(0, 19)}.png`,
+      // production's name: the market's label with anything but letters and digits as one dash
+      fileName: `${shown.replace(/[^A-Za-z0-9]+/g, "-")}-${interval}-${new Date().toISOString().slice(0, 19)}.png`,
+      labels,
     });
   };
 
@@ -1558,7 +2015,6 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
   const ivLabel = intervalLabel(interval);
   const typeMeta = CHART_TYPES.find((t) => t[0] === chartType)!;
   const lastFunding = funding.data?.at(-1);
-  const colors = pal.ind as Record<Ind, string>;
   const visibleDrawings = hidden || mode !== "chart" ? [] : draft ? [...drawings, draft] : drawings;
   const drawColors = useMemo(
     () => ({ line: pal.thesis, sel: pal.brand, up: pal.up, down: pal.down, bg: pal.bgTop, ink: theme === "light" ? "#ffffff" : "#04120d", muted: pal.text, font: "ui-monospace, SFMono-Regular, Menlo, monospace" }),
@@ -1630,10 +2086,13 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
             <span className="tm-chart-pt-l">Thesis</span>
           </button>
           <i className="tm-chart-sep" aria-hidden />
-          <button type="button" className="tm-chart-tool tm-chart-text" aria-pressed={mode === "funding"} data-tip="Funding rate, hourly, last 7 days" aria-label="Funding history" onClick={() => setMode((m) => (m === "funding" ? "chart" : "funding"))}>
-            <CIcon n="funding" size={14} />
-            <span className="tm-chart-lbl">Funding</span>
-          </button>
+          {/* spot pairs pay no funding: no funding view for them */}
+          {!isSpot && (
+            <button type="button" className="tm-chart-tool tm-chart-text" aria-pressed={mode === "funding"} data-tip="Funding rate, hourly, last 7 days" aria-label="Funding history" onClick={() => setMode((m) => (m === "funding" ? "chart" : "funding"))}>
+              <CIcon n="funding" size={14} />
+              <span className="tm-chart-lbl">Funding</span>
+            </button>
+          )}
           <button type="button" className="tm-chart-tool" data-tip="Download a snapshot" aria-label="Download a snapshot" onClick={snapshot}>
             <Icon.camera />
           </button>
@@ -1706,14 +2165,17 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
           tabIndex={0}
           role="region"
           aria-roledescription="chart"
-          aria-label={`${coin}-USD ${ivLabel} chart. Arrow keys pan, plus and minus zoom, Alt R resets the view.`}
+          aria-label={`${name || "Market"} ${ivLabel} chart. Arrow keys pan, plus and minus zoom, Alt R resets the view.`}
           data-tool={tool}
           onPointerDownCapture={onPaneDownCapture}
           onPointerMove={onPaneMove}
           onPointerLeave={(e) => e.currentTarget.removeAttribute("data-nav")}
           onContextMenu={onPaneContext}
         >
-          <span ref={nowRef} className="tm-chart-now" aria-hidden />
+          {/* the pool of light under "now" stays inside the price pane when oscillator panes sit below it */}
+          <span className="tm-chart-p0" aria-hidden>
+            <span ref={nowRef} className="tm-chart-now" />
+          </span>
           <div ref={hostRef} className="tm-chart-host" />
           <DrawingLayer
             vp={vp}
@@ -1736,10 +2198,11 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
           />
           <span ref={pxLineRef} className="tm-chart-pxline" aria-hidden />
           {mode === "chart" && <ThesisPins groups={pinGroups} register={registerPin} />}
+          {mode === "chart" && <PaneLegends chart={chart} inds={oscLegend} rows={rows.length} liveIdx={live?.idx ?? 0} prec={prec} register={registerOsc} onRemove={removeInd} onToggle={toggleIndOff} />}
           {mode === "chart" ? (
             <Legend
               chart={chart}
-              coin={coin}
+              name={name}
               ivLabel={ivLabel}
               typeLabel={chartType === "candles" ? null : typeMeta[1]}
               rows={rows}
@@ -1747,20 +2210,22 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
               live={live?.row ?? null}
               liveIdx={live?.idx ?? 0}
               prec={prec}
-              inds={inds}
-              ind={indData}
-              colors={colors}
+              inds={overlayLegend}
               showVol={showVol}
               onRemove={removeInd}
-              liveInd={liveInd}
+              onToggle={toggleIndOff}
               boxRef={legendBox}
             />
           ) : (
             <div className="tm-chart-legend">
               <div className="tm-chart-lg-id">
                 <i className="tm-chart-lg-dot" data-live="" />
-                <span className="tm-chart-lg-sym">{coin}-USD</span>
-                <span className="tm-chart-lg-sep">·</span>
+                {name && (
+                  <>
+                    <span className="tm-chart-lg-sym">{name}</span>
+                    <span className="tm-chart-lg-sep">·</span>
+                  </>
+                )}
                 <span>Funding · hourly · 7d</span>
               </div>
               {lastFunding && (
@@ -1827,7 +2292,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
               <span className="tm-chart-veil-bar" />
               <span className="tm-chart-veil-chip">
                 <i />
-                Loading {coin} funding
+                Loading {name || "market"} funding
               </span>
             </div>
           )}
@@ -1836,7 +2301,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
               <span className="tm-chart-veil-bar" />
               <span className="tm-chart-veil-chip">
                 <i />
-                Loading {coin} · {ivLabel}
+                Loading {name || "market"} · {ivLabel}
               </span>
             </div>
           )}
@@ -1923,7 +2388,22 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
         />
       )}
       {menu?.kind === "ind" && (
-        <IndMenu inds={inds} colors={colors} showVol={showVol} setShowVol={setShowVol} toggle={(id) => setInds((s) => (s.includes(id) ? s.filter((x) => x !== id) : IND_IDS.filter((x) => x === id || s.includes(x))))} onClose={closeMenu} style={{ left: menu.x, top: menu.y, maxHeight: menu.h } as CSSProperties} />
+        <IndMenu
+          inds={inds}
+          colorOf={colorOf}
+          query={indQuery}
+          setQuery={setIndQuery}
+          showVol={showVol}
+          setShowVol={setShowVol}
+          // production's order: a new indicator goes last (an oscillator opens the pane under the others)
+          toggle={(id) => (inds.includes(id) ? removeInd(id) : setInds((s) => (s.includes(id) ? s : [...s, id])))}
+          clear={() => {
+            setInds([]);
+            setIndOff([]);
+          }}
+          onClose={closeMenu}
+          style={{ left: menu.x, top: menu.y, maxHeight: menu.h } as CSSProperties}
+        />
       )}
       {ctxMenu && (
         <CtxMenu
@@ -1931,11 +2411,18 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
           price={ctxMenu.pt ? fmtFixed(ctxMenu.pt.p, prec) : null}
           canDraw={!locked && !!ctxMenu.pt}
           hasDrawings={drawings.length > 0}
+          ind={(() => {
+            const d = ctxMenu.ind ? indDef(ctxMenu.ind) : undefined;
+            return d ? { name: d.name, off: indOff.includes(d.id) } : null;
+          })()}
           onClose={() => setCtxMenu(null)}
           onAction={(a) => {
             const pt = ctxMenu.pt;
+            const ind = ctxMenu.ind;
             setCtxMenu(null);
-            if (a === "reset") reset();
+            if (a === "ind-toggle" && ind) toggleIndOff(ind);
+            else if (a === "ind-remove" && ind) removeInd(ind);
+            else if (a === "reset") reset();
             else if (a === "realtime") chartRef.current?.timeScale().scrollToRealTime();
             else if (a === "hline" && pt) finish({ id: uid(), type: "hline", a: pt });
             else if (a === "copy" && pt) navigator.clipboard?.writeText(fmtFixed(pt.p, prec).replace(/,/g, "")).catch(() => {});

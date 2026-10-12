@@ -1,4 +1,6 @@
 "use client";
+import "./ticket.css";
+import "./funds.css";
 import { useState, useSyncExternalStore } from "react";
 import { useChainId } from "wagmi";
 import { chainLabel, useSigner } from "@/hooks/use-signer";
@@ -10,13 +12,23 @@ import { approveAgentWithWallet, approveBuilderFeeWithWallet, usdClassTransferWi
 import { fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
 import { openFunds } from "./funds";
+import { TkIcon } from "./tk-bits";
 import { useConnectModal } from "../connect-modal";
 
 /** a wallet prompt that never comes back should not leave the button spinning forever */
 function withTimeout<T>(p: Promise<T>, what: string, ms = 120_000): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`${what} within 2 minutes; open the wallet, then try again`)), ms);
-    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
   });
 }
 /**
@@ -45,11 +57,11 @@ function explain(e: unknown): string {
   return msg.split("\n")[0];
 }
 
-
 type Prepare = { agentAddress: string; agentName: string; needsAgentApproval: boolean; needsBuilderApproval: boolean; builder: string; builderEnabled: boolean; builderFeeTenthsBp: number; maxFeeRate: string };
 
 export type Stage = "connect" | "signin" | "invite" | "handle" | "enable" | "ready";
-/** where each stage sits on the four-step rail (connect, sign in, handle, enable); ready is past the end */
+
+/** which of the four onboarding steps a stage belongs to (the invite gate sits inside step 3); ready is past the end */
 export const STAGE_STEP: Record<Stage, number> = { connect: 1, signin: 2, invite: 3, handle: 3, enable: 4, ready: 5 };
 
 /** where the user is in onboarding, the label the trade cta should carry, and the panel to expand when clicked */
@@ -65,38 +77,50 @@ export function useOnboarding(): { stage: Stage; cta: string; act: (() => void) 
 }
 
 /** stable component identities: an inline `() => <Step />` would remount the step (and drop its busy/log/error state,
- *  orphaning the in-flight wallet prompts) every time the ticket re-renders on a mids or balance tick. */
+ *  orphaning the in-flight wallet prompts, or losing what the user typed) every time the ticket re-renders on a mids or
+ *  balance tick. */
 function useRefreshMe() {
   const qc = useQueryClient();
   return () => qc.invalidateQueries({ queryKey: ["me"] });
 }
-function InvitePanel() { return <InviteStep onDone={useRefreshMe()} />; }
-function HandlePanel() { return <HandleStep onDone={useRefreshMe()} />; }
-export function EnablePanel() { return <EnableTradingStep onDone={useRefreshMe()} />; }
+function InvitePanel() {
+  return <InviteStep onDone={useRefreshMe()} />;
+}
+function HandlePanel() {
+  return <HandleStep onDone={useRefreshMe()} />;
+}
+export function EnablePanel() {
+  return <EnableTradingStep onDone={useRefreshMe()} />;
+}
 
 /** legacy gate: renders children only when ready. kept for places that want the step cards up front. */
 export function OnboardingGate({ children }: { children: React.ReactNode }) {
   const o = useOnboarding();
   if (o.stage === "ready") return <>{children}</>;
   if (o.Panel) return <o.Panel />;
+  const first = o.stage === "connect";
   return (
-    <Step n={o.stage === "connect" ? 1 : 2} title={o.stage === "connect" ? "Connect a wallet" : "Sign in"} hint={o.stage === "connect" ? "Hyperliquid signs with an EVM key. Any wallet works." : "Sign a message to prove you own this wallet. No gas, no permissions."}>
-      <button className="btn btn-primary w-full h-11 text-[15px]" onClick={o.act ?? undefined} disabled={o.busy}>{o.cta}</button>
-      <Steps current={o.stage === "connect" ? 1 : 2} />
+    <Step n={first ? 1 : 2} title={first ? "Connect a wallet" : "Sign in"} hint={first ? "Hyperliquid signs with an EVM key. Any wallet works." : "Sign a message to prove you own this wallet. No gas, no permissions."}>
+      <button type="button" className={`btn btn-primary w-full h-11 text-[15px] ${o.busy ? "" : "btn-glow"}`} onClick={o.act ?? undefined} disabled={o.busy}>
+        {first ? <Icon.wallet /> : o.busy ? <TkIcon.spin size={15} className="tm-tk-spin" /> : <TkIcon.key size={15} />}
+        {o.cta}
+      </button>
+      <Steps current={first ? 1 : 2} />
     </Step>
   );
 }
 
+const STEP_LABELS = ["Connect", "Sign in", "Handle", "Enable"];
+
 function Steps({ current }: { current: number }) {
-  const labels = ["Connect", "Sign in", "Handle", "Enable trading"];
   return (
-    <ol className="flex items-center gap-1.5 mt-4">
-      {labels.map((l, i) => {
+    <ol className="tm-tk-progress" aria-label={`Step ${current} of ${STEP_LABELS.length}`}>
+      {STEP_LABELS.map((l, i) => {
         const n = i + 1;
         return (
-          <li key={l} className="flex items-center gap-1.5 flex-1 min-w-0">
-            <span className={`h-1 flex-1 rounded-full ${n < current ? "bg-brand" : n === current ? "bg-brand/60" : "bg-line-2"}`} />
-            <span className={`text-[10px] whitespace-nowrap ${n <= current ? "text-fg-2" : "text-dim"}`}>{l}</span>
+          <li key={l} data-state={n < current ? "done" : n === current ? "now" : "next"} aria-current={n === current ? "step" : undefined}>
+            <span className="tm-tk-progress-bar" />
+            <span className="tm-tk-progress-label">{l}</span>
           </li>
         );
       })}
@@ -106,14 +130,30 @@ function Steps({ current }: { current: number }) {
 
 function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="mt-3 card-2 p-4">
-      <div className="flex items-center gap-2">
-        <span className="w-5 h-5 rounded-full bg-brand/15 text-brand text-[11px] font-semibold inline-flex items-center justify-center num">{n}</span>
-        <h2 className="text-[15px] font-semibold">{title}</h2>
+    <div className="tm-tk-scope tm-tk-step tm-fd">
+      <div className="tm-tk-step-head">
+        <span className="tm-tk-step-num" aria-hidden>
+          {String(n).padStart(2, "0")}
+        </span>
+        <div className="min-w-0">
+          <span className="tm-tk-step-kicker">
+            Step {n} of {STEP_LABELS.length}
+          </span>
+          <h2 className="tm-tk-step-title">{title}</h2>
+        </div>
       </div>
-      {hint && <p className="text-xs text-muted mt-1.5 mb-3 leading-snug">{hint}</p>}
+      {hint && <p className="tm-tk-step-hint">{hint}</p>}
       {children}
     </div>
+  );
+}
+
+function StepError({ text, testid }: { text: string; testid?: string }) {
+  return (
+    <p className="tm-tk-msg tm-tk-err" data-tone="err" role="alert" data-testid={testid}>
+      <TkIcon.alert size={13} />
+      <span>{text}</span>
+    </p>
   );
 }
 
@@ -124,7 +164,7 @@ function InviteStep({ onDone }: { onDone: () => void }) {
   return (
     <Step n={3} title="Invite code" hint="Mainnet trading is invite only while we test with real money.">
       <form
-        className="flex gap-2"
+        className="tm-tk-step-inline"
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -139,10 +179,16 @@ function InviteStep({ onDone }: { onDone: () => void }) {
           }
         }}
       >
-        <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Code" autoFocus />
-        <button className="btn btn-primary h-10" disabled={busy || !code}>Enter</button>
+        <label className="tm-tk-row flex-1 min-w-0">
+          <span className="sr-only">Invite code</span>
+          <input className="tm-tk-input tm-tk-input-mono uppercase tracking-[0.12em]" value={code} onChange={(e) => setCode(e.target.value)} placeholder="CODE" autoFocus autoComplete="off" spellCheck={false} />
+        </label>
+        <button className="btn btn-primary h-10 px-4" disabled={busy || !code}>
+          {busy ? <TkIcon.spin size={14} className="tm-tk-spin" /> : null}
+          Enter
+        </button>
       </form>
-      {err && <p className="text-down text-xs mt-2">{err}</p>}
+      {err && <StepError text={err} />}
       <Steps current={3} />
     </Step>
   );
@@ -156,7 +202,7 @@ function HandleStep({ onDone }: { onDone: () => void }) {
   return (
     <Step n={3} title="Pick a handle" hint="Your name on the feed and your profile URL. The X handle is optional and shows next to your posts.">
       <form
-        className="space-y-2"
+        className="tm-tk-step-form"
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -171,17 +217,22 @@ function HandleStep({ onDone }: { onDone: () => void }) {
           }
         }}
       >
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dim text-xs">socialliquid.fun/t/</span>
-          <input className="input pl-[118px]" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="handle" maxLength={20} autoFocus />
-        </div>
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dim"><Icon.x /></span>
-          <input className="input pl-8" value={x} onChange={(e) => setX(e.target.value)} placeholder="x handle (optional)" maxLength={16} />
-        </div>
-        <button className="btn btn-primary w-full h-10" disabled={busy || handle.length < 3}>{busy ? "Saving…" : "Claim handle"}</button>
+        <label className="tm-tk-row">
+          <span className="tm-tk-step-prefix">socialliquid.fun/t/</span>
+          <input className="tm-tk-input -ml-1.5" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="handle" maxLength={20} autoFocus autoComplete="off" spellCheck={false} aria-label="Handle" />
+        </label>
+        <label className="tm-tk-row">
+          <span className="tm-tk-step-prefix inline-flex">
+            <Icon.x />
+          </span>
+          <input className="tm-tk-input" value={x} onChange={(e) => setX(e.target.value)} placeholder="x handle (optional)" maxLength={16} autoComplete="off" spellCheck={false} aria-label="X handle (optional)" />
+        </label>
+        <button className={`btn btn-primary w-full h-10 mt-1 ${busy || handle.length < 3 ? "" : "btn-glow"}`} disabled={busy || handle.length < 3}>
+          {busy ? <TkIcon.spin size={14} className="tm-tk-spin" /> : <TkIcon.at size={14} />}
+          {busy ? "Saving…" : "Claim handle"}
+        </button>
       </form>
-      {err && <p className="text-down text-xs mt-2">{err}</p>}
+      {err && <StepError text={err} />}
       <Steps current={3} />
     </Step>
   );
@@ -203,7 +254,16 @@ function setEnable(patch: Partial<EnableState>) {
   enableSubs.forEach((f) => f());
 }
 function useEnableState() {
-  return useSyncExternalStore((f) => { enableSubs.add(f); return () => { enableSubs.delete(f); }; }, () => enableState, () => enableState);
+  return useSyncExternalStore(
+    (f) => {
+      enableSubs.add(f);
+      return () => {
+        enableSubs.delete(f);
+      };
+    },
+    () => enableState,
+    () => enableState,
+  );
 }
 
 function EnableTradingStep({ onDone }: { onDone: () => void }) {
@@ -285,25 +345,57 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
 
   return (
     <Step n={4} title="Enable trading" hint="A signature from your main wallet, once. No gas, nothing leaves Hyperliquid; your wallet may label it 'Ethereum' or your current network, that is only the signing network. We never hold your main key.">
-      <ul className="text-xs text-fg-2 space-y-2 mb-3">
-        <li className="flex gap-2"><span className="text-brand">1.</span><span><b>Approve an API wallet</b> so you don't sign every click. <span className="text-dim">approveAgent</span></span></li>
-        <li className="flex gap-2"><span className="text-brand">2.</span><span><b>Approve the builder fee</b>, max 0.1%, so our code goes on your fills. <span className="text-dim">approveBuilderFee</span> — skipped while this deployment charges no fee.</span></li>
+      <ul className="tm-tk-step-list">
+        <li>
+          <i>1</i>
+          <span>
+            <b>Approve an API wallet</b> so you don&apos;t sign every click.
+            <code>approveAgent</code>
+          </span>
+        </li>
+        <li>
+          <i>2</i>
+          <span>
+            <b>Approve the builder fee</b>, max 0.1%, so our code goes on your fills.
+            <code>approveBuilderFee</code>
+            <span className="tm-fd-skip">— skipped while this deployment charges no fee.</span>
+          </span>
+        </li>
       </ul>
       {walletName && (
-        <p className="text-[11px] text-dim mb-2 leading-snug" data-testid="enable-wallet">
-          Signing with <b className="text-fg-2">{walletName}</b> on <b className="text-fg-2">{chainLabel(liveChainId)}</b>. No network switch is needed: Hyperliquid accepts these signatures from any network{phantom ? ", so Phantom on Ethereum, Base or Polygon is fine (Arbitrum is not in Phantom)" : ""}.
+        <p className="tm-fd-signer" data-testid="enable-wallet">
+          <TkIcon.wallet size={13} />
+          <span>
+            Signing with <b>{walletName}</b> on <b>{chainLabel(liveChainId)}</b>. No network switch is needed: Hyperliquid accepts these signatures from any network{phantom ? ", so Phantom on Ethereum, Base or Polygon is fine (Arbitrum is not in Phantom)" : ""}.
+          </span>
         </p>
       )}
-      <button className="btn btn-primary w-full h-11 text-[15px]" onClick={run} disabled={busy} data-testid="enable-run">{busy ? "Working… check your wallet" : err ? "Try again" : "Approve both"}</button>
+      <button type="button" className={`btn btn-primary w-full h-11 text-[14px] ${busy ? "" : "btn-glow"}`} onClick={run} disabled={busy} data-testid="enable-run">
+        {busy ? <TkIcon.spin size={15} className="tm-tk-spin" /> : err ? <TkIcon.retry size={15} sw={2} /> : <TkIcon.bolt size={15} />}
+        {busy ? "Working… check your wallet" : err ? "Try again" : "Approve both"}
+      </button>
       {log.length > 0 && (
-        <ol className="mt-3 text-[11px] text-muted space-y-1" data-testid="enable-log">
-          {log.map((l, i) => (
-            <li key={i} className="flex gap-1.5"><span className="text-brand"><Icon.check /></span>{l}</li>
-          ))}
+        <ol className="tm-tk-log" aria-live="polite" data-testid="enable-log">
+          {log.map((l, i) => {
+            const last = i === log.length - 1;
+            const state = last && busy ? "now" : last && err ? "fail" : "done";
+            return (
+              <li key={i} data-state={state}>
+                {state === "now" ? <TkIcon.spin size={12} className="tm-tk-spin" /> : state === "fail" ? <TkIcon.close size={12} sw={2.4} /> : <TkIcon.check size={12} sw={2.2} />}
+                {l}
+              </li>
+            );
+          })}
         </ol>
       )}
-      {err && <p className="text-down text-xs mt-2 leading-snug" role="alert" data-testid="enable-error">{err}</p>}
-      <p className="text-[11px] text-dim mt-2">Stuck? <a className="text-brand hover:underline" href="/api/me/trading-check" target="_blank" rel="noreferrer">Open the trading check</a> and send us what it says.</p>
+      {err && <StepError text={err} testid="enable-error" />}
+      <p className="tm-fd-help">
+        Stuck?{" "}
+        <a href="/api/me/trading-check" target="_blank" rel="noreferrer">
+          Open the trading check
+        </a>{" "}
+        and send us what it says.
+      </p>
       <Steps current={4} />
     </Step>
   );
@@ -314,16 +406,29 @@ export function DepositBox({ address }: { address: string }) {
   const [open, setOpen] = useState(false);
   const low = bal.data !== undefined && bal.data.withdrawable < 10;
   return (
-    <div className="text-xs">
-      <div className="flex items-center justify-between px-1">
-        <span className="text-muted">Available to trade</span>
-        <span className="num">{bal.data ? fmtUsd(bal.data.withdrawable) : "…"} <button className="text-brand font-medium ml-1 hover:underline" onClick={() => setOpen((v) => !v)}>{low ? "Deposit" : open ? "Hide" : "Deposit"}</button></span>
+    <div className="tm-tk-scope tm-tk-depo">
+      <div className="tm-tk-depo-row">
+        <span>Available to trade</span>
+        <span className="num text-fg-2">
+          {bal.data ? fmtUsd(bal.data.withdrawable) : "…"}{" "}
+          <button type="button" className="tm-tk-link ml-1" onClick={() => setOpen((v) => !v)}>
+            {low ? "Deposit" : open ? "Hide" : "Deposit"}
+          </button>
+        </span>
       </div>
       {(open || low) && (
-        <div className="card-2 p-3 mt-2 space-y-1.5 text-muted leading-snug">
-          <p>Deposit USDC from <b className="text-fg-2">Arbitrum</b> straight into your Hyperliquid balance (min 5 USDC, about a minute). Funds go wallet → Hyperliquid; socialLiquid never holds them.</p>
-          <button className="btn btn-primary h-9 w-full mt-1" onClick={() => openFunds("deposit")}>Deposit USDC</button>
-          <button className="btn h-8 w-full" onClick={() => openFunds("withdraw")}>Withdraw</button>
+        <div className="tm-tk-box">
+          <p>
+            Deposit USDC from <b>Arbitrum</b> straight into your Hyperliquid balance (min 5 USDC, about a minute). Funds go wallet → Hyperliquid; socialLiquid never holds them.
+          </p>
+          <button type="button" className="btn btn-primary h-9 w-full" onClick={() => openFunds("deposit")}>
+            <TkIcon.down size={14} />
+            Deposit USDC
+          </button>
+          <button type="button" className="btn h-8 w-full" onClick={() => openFunds("withdraw")}>
+            <TkIcon.up size={13} />
+            Withdraw
+          </button>
         </div>
       )}
     </div>

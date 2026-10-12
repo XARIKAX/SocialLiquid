@@ -5,8 +5,11 @@
  * approved trading agent; browser wallets cannot sign hyperliquid orders themselves), then usdClassTransfer of
  * the USDC from spot to perps (a user-signed message from the main wallet). not enabled yet → the enable step
  * renders right here.
+ * styles: the funds dialog's language (ticket.css .tm-tk-*, funds.css .tm-fd-*).
  */
-import { useEffect, useRef, useState } from "react";
+import "./ticket.css";
+import "./funds.css";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useChainId } from "wagmi";
 import { useSigner } from "@/hooks/use-signer";
 import { useQueryClient } from "@tanstack/react-query";
@@ -17,8 +20,9 @@ import { api } from "@/lib/client";
 import { fmtUsd } from "@/lib/format";
 import { usdClassTransferWithWallet } from "@/lib/hl-client";
 import { displayCoin, fmtQty, spotRows } from "@/lib/spot";
-import { CoinIcon, Icon } from "../ui";
+import { CoinIcon } from "../ui";
 import { EnablePanel, needWallet } from "./onboarding";
+import { TkClose, TkIcon, TkModal, TkMsg, TkNum, TkPicker, TkRoute, type TkPickOption } from "./tk-bits";
 
 const EVT = "sl:convert";
 /** open the sell-for-USDC modal for a spot coin (USOL) or its display name (SOL); no coin = the largest holding */
@@ -33,8 +37,10 @@ export function ConvertHost({ address }: { address: string }) {
     window.addEventListener(EVT, h);
     return () => window.removeEventListener(EVT, h);
   }, []);
+  const close = useCallback(() => setCoin(undefined), []);
   if (coin === undefined) return null;
-  return <ConvertModal address={address} want={coin} onClose={() => setCoin(undefined)} />;
+  // the dialog portals itself to the body (TkModal), above anything that opened it (the funds dialog included)
+  return <ConvertModal address={address} want={coin} onClose={close} />;
 }
 
 type Phase = { kind: "idle" } | { kind: "busy"; text: string } | { kind: "done"; text: string } | { kind: "error"; text: string };
@@ -52,6 +58,8 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
   const [amount, setAmount] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [picked, setPicked] = useState<string | null>(null);
+  const uid = useId();
+  const amtRef = useRef<HTMLInputElement>(null);
   // once a sale runs the coin leaves the balance; keep showing the row we sold so the result stays on screen
   const lastSel = useRef<(typeof rows)[number] | null>(null);
   const live = picked ? rows.find((r) => r.coin === picked) ?? row : row;
@@ -60,11 +68,6 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
   useEffect(() => {
     if (sel && amount === "" && phase.kind === "idle") setAmount(String(Math.floor(sel.available * 1e6) / 1e6));
   }, [sel, amount, phase.kind]);
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
 
   const amt = Number(amount);
   const px = sel && sel.usd !== null && sel.total > 0 ? sel.usd / sel.total : null;
@@ -118,75 +121,179 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
     }
   };
 
+  /* ---------- presentation ---------- */
+  const spotFree = spotUsdc ? spotUsdc.total - spotUsdc.hold : 0;
+  const options: TkPickOption[] = rows.map((r) => ({ value: r.coin, text: r.name, icon: <CoinIcon coin={r.name} size={22} />, sub: `${fmtQty(r.available)} ${r.name}${r.usd !== null ? ` · ≈ ${fmtUsd(r.usd)}` : ""}` }));
+  const goOff = !valid || busy;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label="sell for USDC">
-      <div className="card w-full max-w-md p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[15px] font-semibold">{sel ? "Sell for USDC" : unified ? "Your USDC balance" : "Move USDC to perps"}</h2>
-          <button className="btn btn-ghost h-8 w-8 px-0" onClick={onClose} aria-label="close">✕</button>
-        </div>
-        {spotUsdc && spotUsdc.total - spotUsdc.hold > 0.01 && (
-          <div className="card-2 p-3 text-xs mb-3" data-testid="usdc-spot-card">
-            <div className="flex items-center justify-between">
-              <span className="text-muted">USDC in your spot balance</span>
-              <span className="num font-semibold">{fmtUsd(spotUsdc.total - spotUsdc.hold)}</span>
-            </div>
-            {unified ? (
-              <p className="text-dim mt-1 leading-snug">Your Hyperliquid account is unified: spot and perps share one margin pool, so this USDC already backs your trades. There is nothing to move.</p>
-            ) : (
-              <>
-                <p className="text-dim mt-1 leading-snug">Deposits sometimes land in spot. Perps trade from the perps balance, so move it over: one signed message, no fee, instant.</p>
-                <button className="btn btn-primary h-10 w-full mt-2" onClick={moveOnly} disabled={busy || (!mockMode && !wallet)} data-testid="move-usdc-go">{busy ? "Working…" : `Move ${fmtUsd(spotUsdc.total - spotUsdc.hold)} to perps`}</button>
-              </>
-            )}
-            {phase.kind !== "idle" && phase.kind !== "busy" && !sel && <p className={`text-xs mt-2 leading-snug ${phase.kind === "error" ? "text-down" : "text-up"}`} data-testid="convert-status">{phase.text}</p>}
-          </div>
-        )}
-        {!sel ? (
-          <div className="card-2 p-3 text-xs text-muted">Nothing to sell: no spot coins in your Hyperliquid balance.{spotUsdc && spotUsdc.total > 0.01 ? " Your spot USDC is above." : ""}</div>
-        ) : (
-          <>
-            {rows.length > 1 && (
-              <label className="block mb-3">
-                <span className="text-[11px] text-muted">Asset</span>
-                <select className="input h-10 mt-1 w-full" value={sel.coin} aria-label="asset" onChange={(e) => { setPicked(e.target.value); setAmount(""); setPhase({ kind: "idle" }); }} disabled={busy}>
-                  {rows.map((r) => <option key={r.coin} value={r.coin}>{r.name} · {fmtQty(r.available)}</option>)}
-                </select>
-              </label>
-            )}
-            <div className="card-2 p-3 text-xs space-y-1.5">
-              <div className="flex justify-between items-center"><span className="text-muted">In your spot balance</span><span className="num inline-flex items-center gap-1.5"><CoinIcon coin={sel.name} size={16} />{fmtQty(sel.available)} {sel.name}</span></div>
-              <div className="flex justify-between"><span className="text-muted">Price · Hyperliquid spot</span><span className="num">{px !== null ? fmtUsd(px) : "…"}</span></div>
-              <div className="flex justify-between"><span className="text-muted">You get · to perps</span><span className="num font-semibold" data-testid="convert-est">{est !== null ? `≈ ${fmtUsd(est)}` : "…"}</span></div>
-              <div className="flex justify-between"><span className="text-muted">Fee</span><span className="num">Hyperliquid spot taker fee</span></div>
-            </div>
-            <label className="block mt-3 text-xs text-muted">Amount ({sel.name})</label>
-            <div className="flex items-center gap-2 mt-1">
-              <input className="input h-11 flex-1 num text-[15px]" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} disabled={busy} aria-label="amount" />
-              <button className="btn h-11 px-3" onClick={() => setAmount(String(Math.floor(sel.available * 1e6) / 1e6))} disabled={busy}>Max</button>
-            </div>
-            {amt > sel.available + 1e-9 && <p className="text-warn text-[11px] mt-1.5">That is more than you have.</p>}
-            {!enabled ? (
-              <div className="mt-1" data-testid="convert-enable">
-                <p className="text-xs text-muted mt-3 leading-snug">Hyperliquid fills spot sells through your approved trading agent, so enable trading first. Two signatures, once; the sell button appears right after.</p>
-                <EnablePanel />
-              </div>
-            ) : phase.kind === "idle" || phase.kind === "error" ? (
-              <button className="btn btn-primary h-11 w-full mt-3 text-[14px]" onClick={run} disabled={!valid || busy} data-testid="convert-go">
-                Sell {amt > 0 ? `${fmtQty(amt)} ` : ""}{sel.name} → USDC
-              </button>
-            ) : (
-              <div className="btn h-11 w-full mt-3 text-[13px] justify-center cursor-default">
-                {phase.kind === "busy" ? <span className="animate-pulse">{phase.text}</span> : <span className="inline-flex items-center gap-1.5 text-up"><Icon.check /> Done</span>}
-              </div>
-            )}
-            {phase.kind !== "idle" && phase.kind !== "busy" && <p className={`text-xs mt-2 leading-snug ${phase.kind === "error" ? "text-down" : "text-muted"}`} data-testid="convert-status">{phase.text}</p>}
-            <p className="text-[11px] text-dim mt-3 leading-snug">
-              Same two moves as the Hyperliquid app: a market sell of {displayCoin(sel.coin)} on Hyperliquid spot, placed by your trading agent (no wallet prompt), then one signed message from your wallet moves the USDC from spot to perps. No gas, nothing leaves Hyperliquid. Your wallet may label the signature &quot;Ethereum&quot; or your current network; that is only the signing network.
-            </p>
-          </>
-        )}
+    <TkModal labelledBy={`${uid}-t`} onClose={onClose} className="tm-fd-cv">
+      <div className="tm-tk-modal-head">
+        <span className="tm-fd-kicker">
+          <span className="tm-fd-badge" aria-hidden>
+            <TkIcon.swap size={13} sw={2} />
+          </span>
+          Spot → perps
+        </span>
+        <TkClose onClose={onClose} />
       </div>
-    </div>
+      <h2 id={`${uid}-t`} className="tm-tk-modal-title">
+        {sel ? "Sell for USDC" : unified ? "Your USDC balance" : "Move USDC to perps"}
+      </h2>
+
+      {spotUsdc && spotFree > 0.01 && (
+        <div className="tm-fd-usdc" data-testid="usdc-spot-card">
+          <div className="tm-fd-usdc-head">
+            <span>
+              <CoinIcon coin="USDC" size={18} />
+              USDC in your spot balance
+            </span>
+            <b className="num">{fmtUsd(spotFree)}</b>
+          </div>
+          {unified ? (
+            <p>Your Hyperliquid account is unified: spot and perps share one margin pool, so this USDC already backs your trades. There is nothing to move.</p>
+          ) : (
+            <>
+              <p>Deposits sometimes land in spot. Perps trade from the perps balance, so move it over: one signed message, no fee, instant.</p>
+              <button type="button" className={`btn tm-fd-usdc-go ${sel ? "" : `btn-primary ${busy || (!mockMode && !wallet) ? "" : "btn-glow"}`}`} onClick={moveOnly} disabled={busy || (!mockMode && !wallet)} data-testid="move-usdc-go">
+                {busy ? <TkIcon.spin size={14} className="tm-tk-spin" /> : <TkIcon.arrow size={14} sw={2} />}
+                {busy ? "Working…" : `Move ${fmtUsd(spotFree)} to perps`}
+              </button>
+            </>
+          )}
+          {phase.kind !== "idle" && phase.kind !== "busy" && !sel && (
+            <p className="tm-tk-msg" data-tone={phase.kind === "error" ? "err" : "ok"} role={phase.kind === "error" ? "alert" : "status"} data-testid="convert-status">
+              {phase.kind === "error" ? <TkIcon.alert size={13} /> : <TkIcon.check size={13} sw={2.2} />}
+              <span>{phase.text}</span>
+            </p>
+          )}
+        </div>
+      )}
+      {!sel ? (
+        <div className="tm-fd-empty">
+          Nothing to sell: no spot coins in your Hyperliquid balance.{spotUsdc && spotUsdc.total > 0.01 ? " Your spot USDC is above." : ""}
+        </div>
+      ) : (
+        <>
+          {rows.length > 1 && (
+            <div className="tm-fd-picks" data-one="">
+              <TkPicker
+                label="Asset"
+                listLabel="asset"
+                value={sel.coin}
+                options={options}
+                onPick={(v) => {
+                  setPicked(v);
+                  setAmount("");
+                  setPhase({ kind: "idle" });
+                }}
+                disabled={busy}
+                face={
+                  <>
+                    <CoinIcon coin={sel.name} size={20} />
+                    <span className="tm-fd-pick-t">{sel.name}</span>
+                    <small className="tm-fd-pick-s">{fmtQty(sel.available)} available</small>
+                  </>
+                }
+              />
+            </div>
+          )}
+          <TkRoute from={{ name: "Spot", sub: sel.name, tone: "peri" }} to={{ name: "Perps", sub: "USDC" }} moving={busy} />
+          <dl className="tm-tk-bal">
+            <div>
+              <dt>In your spot balance</dt>
+              <dd className="tm-fd-coinval">
+                <CoinIcon coin={sel.name} size={16} />
+                <b>
+                  {fmtQty(sel.available)} {sel.name}
+                </b>
+              </dd>
+            </div>
+            <div>
+              <dt>Price · Hyperliquid spot</dt>
+              <dd>{px !== null ? fmtUsd(px) : "…"}</dd>
+            </div>
+            <div>
+              <dt>You get · to perps</dt>
+              <dd className="tm-fd-est" data-testid="convert-est">
+                {est !== null ? `≈ ${fmtUsd(est)}` : "…"}
+              </dd>
+            </div>
+            <div>
+              <dt>Fee</dt>
+              <dd>Hyperliquid spot taker fee</dd>
+            </div>
+          </dl>
+          <div className="tm-tk-size" onClick={() => amtRef.current?.focus()}>
+            <div className="tm-tk-size-head">
+              <label htmlFor={`${uid}-a`} className="tm-tk-size-label">
+                Amount
+              </label>
+              <button
+                type="button"
+                className="tm-tk-max"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAmount(String(Math.floor(sel.available * 1e6) / 1e6));
+                }}
+                disabled={busy}
+              >
+                Max{" "}
+                <b>
+                  {fmtQty(sel.available)} {sel.name}
+                </b>
+              </button>
+            </div>
+            <div className="tm-tk-size-main">
+              <TkNum id={`${uid}-a`} ref={amtRef} className="tm-tk-size-input" inputMode="decimal" value={amount} onValue={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} disabled={busy} aria-label="amount" autoComplete="off" placeholder="0" />
+              <span className="tm-tk-unit" aria-hidden>
+                {sel.name}
+              </span>
+            </div>
+            <div className="tm-tk-size-sub">{amt > 0 && est !== null ? `≈ ${fmtUsd(est)} of USDC to perps` : `${fmtQty(sel.available)} ${sel.name} available`}</div>
+          </div>
+          {amt > sel.available + 1e-9 && <TkMsg tone="warn">That is more than you have.</TkMsg>}
+          {!enabled ? (
+            <div className="tm-fd-cv-enable" data-testid="convert-enable">
+              <p className="tm-fd-note">
+                <TkIcon.info size={12} sw={2} />
+                <span>Hyperliquid fills spot sells through your approved trading agent, so enable trading first. Two signatures, once; the sell button appears right after.</span>
+              </p>
+              <EnablePanel />
+            </div>
+          ) : phase.kind === "idle" || phase.kind === "error" ? (
+            <button type="button" className={`btn btn-primary tm-tk-cta ${goOff ? "" : "btn-glow"}`} onClick={run} disabled={goOff} data-testid="convert-go">
+              <TkIcon.swap size={15} />
+              <span className="tm-fd-cta-t">
+                Sell {amt > 0 ? `${fmtQty(amt)} ` : ""}
+                {sel.name} → USDC
+              </span>
+            </button>
+          ) : (
+            <div className="tm-tk-status" data-tone={phase.kind === "busy" ? undefined : "ok"} role="status">
+              {phase.kind === "busy" ? (
+                <>
+                  <TkIcon.spin size={15} className="tm-tk-spin" />
+                  <span className="tm-fd-status-t">{phase.text}</span>
+                </>
+              ) : (
+                <>
+                  <TkIcon.check size={15} sw={2.2} /> Done
+                </>
+              )}
+            </div>
+          )}
+          {phase.kind !== "idle" && phase.kind !== "busy" && (
+            <p className="tm-tk-msg" data-tone={phase.kind === "error" ? "err" : "ok"} role={phase.kind === "error" ? "alert" : "status"} data-testid="convert-status">
+              {phase.kind === "error" ? <TkIcon.alert size={13} /> : <TkIcon.check size={13} sw={2.2} />}
+              <span>{phase.text}</span>
+            </p>
+          )}
+          <p className="tm-tk-modal-foot">
+            Same two moves as the Hyperliquid app: a market sell of {displayCoin(sel.coin)} on Hyperliquid spot, placed by your trading agent (no wallet prompt), then one signed message from your wallet moves the USDC from spot to perps. No gas, nothing leaves Hyperliquid. Your wallet may label the signature &quot;Ethereum&quot; or your current network; that is only the signing network.
+          </p>
+        </>
+      )}
+    </TkModal>
   );
 }

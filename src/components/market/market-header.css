@@ -1,11 +1,14 @@
 /* =====================================================================
    market header (.tm-head-*): the landing mock's header, made real.
-   a lit coin and the symbol on the left, boxed glass chips on the right,
-   mark as the hero chip. layout follows the header's own width through
-   container queries: narrow = identity over one scrolling chip row,
-   mid = identity + hero over a full-width chip row, wide = one row.
-   js (useFit) steps a layout down through data-fit when the live numbers
-   would not fit it, so the symbol never truncates and one row never scrolls.
+   a lit coin and the market's name on the left, boxed glass chips on the
+   right, the price as the hero chip. every hyperliquid market: perps,
+   spot pairs (fewer chips: no oracle, oi, funding or long / short) and
+   builder-dex tradfi (plus who deployed it). layout follows the header's
+   own width through container queries: narrow = identity over one
+   scrolling chip row, mid = identity + hero over a full-width chip row,
+   wide = one row. js (useFit) steps a layout down through data-fit when
+   the live numbers would not fit it, so the symbol never truncates and
+   one row never scrolls.
    ===================================================================== */
 
 @layer components {
@@ -56,29 +59,43 @@
     overscroll-behavior-x: contain;
   }
   .tm-head-stats::-webkit-scrollbar,
-  .tm-head-rest::-webkit-scrollbar { display: none; }
+  .tm-head-rest::-webkit-scrollbar,
+  .tm-head-pop-tabs::-webkit-scrollbar,
+  .tm-head-pop-sub::-webkit-scrollbar { display: none; }
   .tm-head-hero,
   .tm-head-rest { display: flex; align-items: center; gap: 6px; flex: none; }
   .tm-head-id .tm-head-star { margin-left: auto; }
 
   /* soft fades on whichever edge still has chips to scroll to (set from js) */
   .tm-head-stats,
-  .tm-head-rest { --tm-head-fl: 0px; --tm-head-fr: 0px; }
+  .tm-head-rest,
+  .tm-head-pop-tabs,
+  .tm-head-pop-sub { --tm-head-fl: 0px; --tm-head-fr: 0px; }
   .tm-head-stats[data-fade-l],
-  .tm-head-rest[data-fade-l] { --tm-head-fl: 30px; }
+  .tm-head-rest[data-fade-l],
+  .tm-head-pop-tabs[data-fade-l],
+  .tm-head-pop-sub[data-fade-l] { --tm-head-fl: 30px; }
   .tm-head-stats[data-fade-r],
-  .tm-head-rest[data-fade-r] { --tm-head-fr: 30px; }
+  .tm-head-rest[data-fade-r],
+  .tm-head-pop-tabs[data-fade-r],
+  .tm-head-pop-sub[data-fade-r] { --tm-head-fr: 30px; }
   .tm-head-stats:is([data-fade-l], [data-fade-r]),
-  .tm-head-rest:is([data-fade-l], [data-fade-r]) {
+  .tm-head-rest:is([data-fade-l], [data-fade-r]),
+  .tm-head-pop-tabs:is([data-fade-l], [data-fade-r]),
+  .tm-head-pop-sub:is([data-fade-l], [data-fade-r]) {
     -webkit-mask: linear-gradient(90deg, transparent, #000 var(--tm-head-fl), #000 calc(100% - var(--tm-head-fr)), transparent);
     mask: linear-gradient(90deg, transparent, #000 var(--tm-head-fl), #000 calc(100% - var(--tm-head-fr)), transparent);
   }
 
   /* a row that overflows can be grabbed with a mouse; touch gets gentle snapping */
   .tm-head-stats[data-scrollable],
-  .tm-head-rest[data-scrollable] { cursor: grab; }
+  .tm-head-rest[data-scrollable],
+  .tm-head-pop-tabs[data-scrollable],
+  .tm-head-pop-sub[data-scrollable] { cursor: grab; }
   .tm-head-stats[data-dragging],
-  .tm-head-rest[data-dragging] { cursor: grabbing; user-select: none; }
+  .tm-head-rest[data-dragging],
+  .tm-head-pop-tabs[data-dragging],
+  .tm-head-pop-sub[data-dragging] { cursor: grabbing; user-select: none; }
   @media (pointer: coarse) {
     .tm-head-stats,
     .tm-head-rest { scroll-snap-type: x proximity; scroll-padding-inline: 12px; }
@@ -91,16 +108,16 @@
 
   /* mid: identity and the hero share the first row, the other chips fill the second */
   @container tm-head (min-width: 520px) {
-    :where(.tm-head:not([data-fit="stack"])) .tm-head-grid {
+    :where(.tm-head:not([data-fit="stack"], [data-kind="spot"])) .tm-head-grid {
       grid-template-columns: minmax(0, 1fr) auto;
       grid-template-areas: "id hero" "rest rest";
       gap: 10px 14px;
     }
-    :where(.tm-head:not([data-fit="stack"])) .tm-head-id { grid-area: id; }
-    :where(.tm-head:not([data-fit="stack"])) .tm-head-id .tm-head-star { margin-left: 0; }
-    :where(.tm-head:not([data-fit="stack"])) .tm-head-stats { display: contents; }
-    :where(.tm-head:not([data-fit="stack"])) .tm-head-hero { grid-area: hero; }
-    :where(.tm-head:not([data-fit="stack"])) .tm-head-rest {
+    :where(.tm-head:not([data-fit="stack"], [data-kind="spot"])) .tm-head-id { grid-area: id; }
+    :where(.tm-head:not([data-fit="stack"], [data-kind="spot"])) .tm-head-id .tm-head-star { margin-left: 0; }
+    :where(.tm-head:not([data-fit="stack"], [data-kind="spot"])) .tm-head-stats { display: contents; }
+    :where(.tm-head:not([data-fit="stack"], [data-kind="spot"])) .tm-head-hero { grid-area: hero; }
+    :where(.tm-head:not([data-fit="stack"], [data-kind="spot"])) .tm-head-rest {
       grid-area: rest;
       min-width: 0;
       overflow-x: auto;
@@ -109,7 +126,7 @@
       overscroll-behavior-x: contain;
     }
     /* equal boxes that never squeeze their content; past that, the row scrolls */
-    :where(.tm-head:not([data-fit="stack"])) .tm-head-rest > .tm-head-chip { flex: 1 0 0; min-width: max-content; }
+    :where(.tm-head:not([data-fit="stack"], [data-kind="spot"])) .tm-head-rest > .tm-head-chip { flex: 1 0 0; min-width: max-content; }
   }
 
   /* wide: one row, chips gathered to the right like the mock; the identity never gives up its width */
@@ -129,6 +146,31 @@
     .tm-head[data-fit="tight"] .tm-head-change { min-width: 84px; }
     .tm-head[data-fit="tight"] .tm-head-abs { display: none; }
     .tm-head[data-fit="tight"] .tm-head-pct {
+      height: auto;
+      padding: 0;
+      font-size: 13px;
+      background: none;
+      box-shadow: none;
+      text-shadow: 0 0 14px rgb(var(--tm-head-dir) / calc(0.45 * var(--glow)));
+    }
+  }
+
+  /* spot shows three numbers: they join the identity's row as soon as they fit beside it, else the phone layout */
+  @container tm-head (min-width: 600px) {
+    :where(.tm-head[data-kind="spot"]:not([data-fit="rows"], [data-fit="stack"])) .tm-head-grid { display: flex; align-items: center; gap: 16px; }
+    :where(.tm-head[data-kind="spot"]:not([data-fit="rows"], [data-fit="stack"])) .tm-head-id { flex: none; }
+    :where(.tm-head[data-kind="spot"]:not([data-fit="rows"], [data-fit="stack"])) .tm-head-id .tm-head-star { margin-left: 0; }
+    :where(.tm-head[data-kind="spot"]:not([data-fit="rows"], [data-fit="stack"])) .tm-head-stats {
+      display: flex;
+      flex: 0 1 auto;
+      margin: -10px 0 -10px auto;
+      padding: 10px 0 10px 12px;
+    }
+    :where(.tm-head[data-kind="spot"]:not([data-fit="rows"], [data-fit="stack"])) .tm-head-rest { overflow: visible; }
+    :where(.tm-head[data-kind="spot"]:not([data-fit="rows"], [data-fit="stack"])) .tm-head-rest > .tm-head-chip { flex: none; min-width: 84px; }
+    .tm-head[data-kind="spot"][data-fit="tight"] .tm-head-change { min-width: 84px; }
+    .tm-head[data-kind="spot"][data-fit="tight"] .tm-head-abs { display: none; }
+    .tm-head[data-kind="spot"][data-fit="tight"] .tm-head-pct {
       height: auto;
       padding: 0;
       font-size: 13px;
@@ -180,7 +222,27 @@
   .tm-head-sel:hover .tm-head-chev { color: var(--color-fg); }
   .tm-head-sel[aria-expanded="true"] .tm-head-chev { transform: rotate(180deg); color: var(--color-brand-2); }
   [data-theme="light"] .tm-head-sel[aria-expanded="true"] .tm-head-chev { color: var(--color-brand); }
+  /* max leverage (mint), or "Spot"; a builder-dex market also names its dex */
+  .tm-head-tags { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+  .tm-head-tags:empty { display: none; }
   .tm-head-lev { flex: none; height: 22px; padding-inline: 8px; font-size: 11.5px; }
+  .tm-head-spot { letter-spacing: 0.01em; }
+  .tm-head-dexpill { flex: none; height: 22px; padding-inline: 7px; font-size: 10.5px; font-weight: 500; letter-spacing: 0.04em; }
+  .tm-head-coin-skel { flex: none; width: 30px; height: 30px; border-radius: 50%; }
+  /* a builder-dex market's tradfi group: beside its dex while the row has room (no fit step taken),
+     else a tag in the deployed-by chip (see .tm-head-dex-cat) */
+  .tm-head-catpill {
+    display: none;
+    align-items: center;
+    flex: none;
+    gap: 7px;
+    margin-left: 3px;
+    color: var(--color-muted);
+  }
+  .tm-head-catpill::before { content: ""; width: 1px; height: 12px; background: var(--hair-2); }
+  @container tm-head (min-width: 520px) {
+    :where(.tm-head:not([data-fit])) .tm-head-catpill { display: inline-flex; }
+  }
 
   /* the coin as a lit orb: its own colour as a soft ring and halo, a glass highlight on top */
   .tm-head-coin {
@@ -204,6 +266,16 @@
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4), inset 0 -2px 4px rgb(0 0 0 / 0.22), inset 0 0 0 1px rgb(255 255 255 / 0.13);
   }
   [data-theme="light"] .tm-head-coin::after { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), inset 0 -2px 4px rgb(0 0 0 / 0.12); }
+  /* an icon the cdn does not have (builder-dex bases) is broken until hydration hands it to CoinIcon's own
+     fallback: a plain glass disc covers the browser's broken-image glyph meanwhile (only broken images draw ::after) */
+  .tm-head-coin img { position: relative; }
+  .tm-head-coin img::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--inset-top), var(--recess));
+  }
   [data-theme="light"] .tm-head-coin {
     box-shadow:
       0 0 0 1px rgb(28 29 33 / 0.1),
@@ -414,6 +486,29 @@
   .tm-head-ls-seg-none { flex-grow: 1; background: var(--hair-2); }
   .tm-head-ls[data-empty] :is(.tm-head-ls-l, .tm-head-ls-s) { color: var(--color-dim); }
 
+  /* deployed by (builder-dex markets): the deployer, then its tradfi group as a small etched tag */
+  .tm-head-dex-row { gap: 7px; }
+  .tm-head-dex-name { color: var(--color-fg-2); font-weight: 550; }
+  .tm-head-dex-cat {
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    padding-inline: 5px;
+    border-radius: 5px;
+    font-family: var(--font-label);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    background: linear-gradient(180deg, rgb(var(--tm-head-mint) / 0.07), rgb(var(--tm-head-mint) / 0.02));
+    box-shadow: inset 0 0 0 1px var(--hair-2);
+  }
+  /* the group is beside the name while the identity row has room for it (see .tm-head-catpill) */
+  @container tm-head (min-width: 520px) {
+    :where(.tm-head:not([data-fit])) .tm-head-dex-cat { display: none; }
+  }
+
   /* ---------- chip tooltip ---------- */
   .tm-head-tip {
     position: absolute;
@@ -446,7 +541,8 @@
     color: var(--color-brand-2);
   }
   [data-theme="light"] .tm-head-tip b { color: var(--color-brand); }
-  .tm-head-tip .kbd { height: 17px; padding-inline: 5px; margin-left: auto; letter-spacing: 0; text-transform: none; }
+  .tm-head-tip-keys { display: inline-flex; gap: 4px; margin-left: auto; }
+  .tm-head-tip .kbd { height: 17px; padding-inline: 5px; letter-spacing: 0; text-transform: none; }
   .tm-head-tip::before {
     content: "";
     position: absolute;
@@ -461,13 +557,19 @@
     transform: rotate(45deg);
   }
 
-  /* ---------- the symbol search ---------- */
+  /* ---------- the symbol search: every market, production's tabs, groups and sorts ---------- */
   .tm-head-pop {
+    /* columns: market, last price, 24h, funding, volume, open interest (they fold away as the panel narrows) */
+    --tm-head-cols: minmax(0, 1fr) 92px 80px 88px 72px 80px;
+    --tm-head-star-w: 22px;
+    --tm-head-row-h: 46px;
     position: absolute;
     z-index: 25;
     top: 52px;
     left: -6px;
-    width: min(560px, calc(100cqw + 12px));
+    width: min(760px, calc(100cqw + 12px));
+    /* a fixed height (the room below it, measured on open): typing, tabs and groups never resize the panel */
+    height: min(588px, var(--tm-head-pop-room, calc(100dvh - 150px)));
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -476,6 +578,7 @@
     animation: tm-head-pop-in 0.22s var(--ease-out);
   }
   .tm-head-pop-top {
+    flex: none;
     display: flex;
     flex-direction: column;
     gap: 9px;
@@ -497,7 +600,8 @@
   .tm-head-pop-glass { flex: none; color: var(--color-dim); transition: color 0.2s; }
   .tm-head-pop-field:focus-within .tm-head-pop-glass { color: var(--color-brand-2); }
   [data-theme="light"] .tm-head-pop-field:focus-within .tm-head-pop-glass { color: var(--color-brand); }
-  .tm-head-pop-clear {
+  .tm-head-pop-clear,
+  .tm-head-pop-order-reset {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -507,19 +611,67 @@
     border-radius: 6px;
     color: var(--color-muted);
   }
-  .tm-head-pop-clear:hover { color: var(--color-fg); background: var(--row-hover); }
-  .tm-head-pop-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .tm-head-pop-bar .seg-item { display: inline-flex; align-items: center; gap: 6px; }
+  .tm-head-pop-clear:hover,
+  .tm-head-pop-order-reset:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-head-pop-order-reset { width: 18px; height: 18px; border-radius: 5px; }
+  .tm-head-pop-order-reset svg { width: 12px; height: 12px; }
+  .tm-head-pop-clear:focus-visible,
+  .tm-head-pop-order-reset:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+
+  /* the kinds: one recessed segmented strip that scrolls (with fades) when the panel is narrow */
+  .tm-head-pop-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+  .tm-head-pop-tabs {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    margin: -3px;
+    padding: 3px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .tm-head-pop-tabs .seg { flex: none; }
+  .tm-head-pop-bar .seg-item { display: inline-flex; align-items: center; gap: 6px; flex: none; }
   .tm-head-pop-bar .seg-item:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
   .tm-head-pop-n { font-size: 10.5px; font-weight: 500; color: var(--color-dim); }
+  .tm-head-pop-bar .seg-active .tm-head-pop-n { color: var(--color-muted); }
   .tm-head-pop-favtab svg { color: rgb(var(--tm-head-gold)); }
-  .tm-head-pop-sort { white-space: nowrap; }
+  .tm-head-pop-order { display: inline-flex; align-items: center; gap: 4px; flex: none; white-space: nowrap; }
 
-  .tm-head-pop {
-    --tm-head-cols: minmax(0, 1fr) 96px 72px 64px;
-    --tm-head-star-w: 22px;
+  /* tradfi's groups: small lit capsules under the kinds */
+  .tm-head-pop-sub {
+    display: flex;
+    gap: 5px;
+    margin: -2px -3px;
+    padding: 2px 3px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
   }
+  .tm-head-pop-subtab {
+    flex: none;
+    height: 24px;
+    padding-inline: 10px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--color-muted);
+    box-shadow: inset 0 0 0 1px var(--hair);
+    transition: color 0.2s, background-color 0.2s, box-shadow 0.25s;
+  }
+  .tm-head-pop-subtab:hover { color: var(--color-fg); box-shadow: inset 0 0 0 1px var(--hair-2); }
+  .tm-head-pop-subtab[aria-pressed="true"] {
+    color: var(--color-brand-2);
+    background: linear-gradient(180deg, rgb(var(--tm-head-mint) / 0.17), rgb(var(--tm-head-mint) / 0.05));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-head-mint) / 0.32), 0 0 12px -5px rgb(var(--tm-head-mint) / calc(0.6 * var(--glow)));
+  }
+  [data-theme="light"] .tm-head-pop-subtab[aria-pressed="true"] { color: var(--color-brand); }
+  .tm-head-pop-subtab:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+
+  /* the column heads sort, as on hyperliquid: the column in use is lit, its arrow says which way */
   .tm-head-pop-cols {
+    flex: none;
     display: grid;
     grid-template-columns: var(--tm-head-star-w) var(--tm-head-cols);
     align-items: center;
@@ -528,21 +680,46 @@
     padding-inline: 12px 14px;
     border-bottom: 1px solid var(--hair);
   }
-  .tm-head-pop-cols > span:first-child { grid-column: 1 / 3; padding-left: calc(var(--tm-head-star-w) + 10px); }
-  .tm-head-pop-cols > span:nth-child(n + 2) { text-align: right; }
+  .tm-head-pop-col-mkt { grid-column: 1 / 3; padding-left: calc(var(--tm-head-star-w) + 10px); }
+  .tm-head-pop-th {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    justify-self: end;
+    gap: 4px;
+    height: 22px;
+    margin-right: -5px;
+    padding-inline: 5px;
+    border-radius: 6px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+  }
+  .tm-head-pop-th:hover { color: var(--color-fg-2); background: var(--row-hover); }
+  .tm-head-pop-th[aria-pressed="true"] { color: var(--color-brand-2); text-shadow: 0 0 10px rgb(var(--tm-head-mint) / calc(0.45 * var(--glow))); }
+  [data-theme="light"] .tm-head-pop-th[aria-pressed="true"] { color: var(--color-brand); text-shadow: none; }
+  .tm-head-pop-th:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 0; }
+  .tm-head-pop-th-dir { flex: none; transition: transform 0.25s var(--ease-out); }
+  .tm-head-pop-th[data-dir="up"] .tm-head-pop-th-dir { transform: rotate(180deg); }
+  .tm-head-pop-th-short { display: none; }
 
+  /* the list fills the panel; an empty result sits in the middle of it */
+  .tm-head-pop-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .tm-head-pop-list {
     position: relative;
+    flex: 1;
+    min-height: 0;
     margin: 0;
     padding: 5px 6px;
     list-style: none;
-    max-height: min(408px, calc(100dvh - 310px));
-    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--hair-2) transparent;
   }
   .tm-head-pop-skel { padding: 4px 0; }
   .tm-head-pop-skel .skeleton { display: block; height: 38px; }
+  .tm-head-pop-spacer { pointer-events: none; }
 
   .tm-head-row {
     position: relative;
@@ -550,7 +727,7 @@
     grid-template-columns: var(--tm-head-star-w) minmax(0, 1fr);
     align-items: center;
     gap: 10px;
-    height: 46px;
+    height: var(--tm-head-row-h);
     padding-inline: 6px 8px;
     border-radius: 10px;
     cursor: pointer;
@@ -616,14 +793,36 @@
     box-shadow: 0 0 0 1px var(--hair-2), 0 0 14px -2px rgb(var(--tm-head-coin) / calc(0.75 * var(--glow)));
   }
   .tm-head-row-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.1; }
-  .tm-head-row-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
-  .tm-head-row-name small { font-size: 10px; letter-spacing: 0.02em; color: var(--color-dim); white-space: nowrap; }
+  .tm-head-row-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .tm-head-row-title b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+  /* the quote recedes: the base is what the eye scans for */
+  .tm-head-row-q,
+  .tm-head-row-qs { font-weight: 500; color: var(--color-dim); }
+  .tm-head-row-dex {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    height: 15px;
+    padding-inline: 5px;
+    border-radius: 5px;
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--color-fg-2);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 0 0 1px var(--hair-2);
+  }
+  .tm-head-row-name small { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 10px; letter-spacing: 0.02em; color: var(--color-dim); white-space: nowrap; }
+  .tm-head-row-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* the dex sits by the name on wide panels, at the head of this line on narrow ones */
+  .tm-head-row-mdex { display: none; color: var(--color-muted); }
+  /* the market you are on: under its name, so a long name never gives way to it */
   .tm-head-row-here {
     flex: none;
-    margin-left: 2px;
-    padding: 2px 6px;
+    padding: 1px 5px;
     border-radius: 999px;
-    font-size: 9px;
+    font-size: 8.5px;
+    line-height: 11px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--color-brand-2);
@@ -634,14 +833,22 @@
   .tm-head-row-px { text-align: right; font-size: 13px; font-weight: 500; }
   .tm-head-row-chg { display: flex; justify-content: flex-end; }
   .tm-head-row-chg .pill { height: 20px; padding-inline: 6px; font-size: 11px; }
+  .tm-head-row-fund { text-align: right; font-size: 12px; color: var(--color-dim); }
+  /* as in the header's funding chip: positive in the brand's mint, negative in red */
+  .tm-head-row-fund[data-dir="up"] { color: var(--color-brand-2); }
+  [data-theme="light"] .tm-head-row-fund[data-dir="up"] { color: var(--color-brand); }
+  .tm-head-row-fund[data-dir="down"] { color: var(--tm-head-down-text); }
   .tm-head-row-vol { text-align: right; font-size: 12px; color: var(--color-muted); }
 
   .tm-head-pop-empty {
+    position: absolute;
+    inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 4px;
-    padding: 26px 24px 30px;
+    padding: 24px;
     text-align: center;
     font-size: 12px;
     color: var(--color-dim);
@@ -659,8 +866,23 @@
     background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
     box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair-2);
   }
+  .tm-head-pop-empty-btn {
+    margin-top: 10px;
+    height: 28px;
+    padding-inline: 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-fg-2);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair-2);
+    transition: color 0.2s, box-shadow 0.25s;
+  }
+  .tm-head-pop-empty-btn:hover { color: var(--color-fg); box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--color-line-2); }
+  .tm-head-pop-empty-btn:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 
   .tm-head-pop-foot {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 14px;
@@ -676,18 +898,36 @@
   .tm-head-pop-foot .kbd { justify-content: center; min-width: 18px; height: 18px; padding-inline: 4px; }
   .tm-head-pop-foot-n { margin-left: auto; }
 
-  @container tm-head-pop (max-width: 470px) {
-    .tm-head-pop-vol, .tm-head-row-here { display: none; }
+  /* narrower panels fold columns away: open interest, then funding, then volume */
+  @container tm-head-pop (max-width: 700px) {
+    .tm-head-c-oi { display: none; }
     .tm-head-pop-cols,
-    .tm-head-row { --tm-head-cols: minmax(0, 1fr) 84px 68px; }
-    .tm-head-pop-sort, .tm-head-pop-foot-tabs { display: none; }
+    .tm-head-row-link { --tm-head-cols: minmax(0, 1fr) 92px 80px 88px 72px; }
+  }
+  @container tm-head-pop (max-width: 610px) {
+    .tm-head-c-fund, .tm-head-pop-foot-k { display: none; }
+    .tm-head-pop-cols,
+    .tm-head-row-link { --tm-head-cols: minmax(0, 1fr) 92px 80px 72px; }
+  }
+  @container tm-head-pop (max-width: 470px) {
+    .tm-head-c-vol, .tm-head-row-here, .tm-head-row-dex { display: none; }
+    .tm-head-row-mdex { display: inline; }
+    .tm-head-row-mcat { display: none; }
+    .tm-head-pop-cols,
+    .tm-head-row-link { --tm-head-cols: minmax(0, 1fr) 84px 68px; }
+    .tm-head-pop-order, .tm-head-pop-foot-tabs { display: none; }
+    .tm-head-pop-th-full { display: none; }
+    .tm-head-pop-th-short { display: inline; }
+    /* the perp's "-USDC" is implied; a spot pair keeps "/USDC", it is the pair's name */
+    .tm-head-row-q { display: none; }
+    .tm-head-pop-favword { display: none; }
   }
   @container tm-head-pop (max-width: 380px) {
     .tm-head-pop-foot > span:not(.tm-head-pop-foot-n) { display: none; }
   }
   @media (pointer: coarse) {
-    .tm-head-pop { --tm-head-star-w: 30px; }
-    .tm-head-row { height: 50px; padding-left: 2px; }
+    .tm-head-pop { --tm-head-star-w: 30px; --tm-head-row-h: 50px; }
+    .tm-head-row { padding-left: 2px; }
     .tm-head-row-star { opacity: 1; }
     .tm-head-pop-field .kbd,
     .tm-head-pop-foot > span:not(.tm-head-pop-foot-n) { display: none; }
@@ -722,6 +962,6 @@
   @media (prefers-reduced-motion: reduce) {
     .tm-head-pop, .tm-head-tip, .tm-head-cd, .tm-head-tick, .tm-head-live, .tm-head-live::after, .tm-head-mark::before { animation: none !important; }
     .tm-head-flash { display: none; }
-    .tm-head-chev, .tm-head-sel, .tm-head-star, .tm-head-chip, .tm-head-row-ico { transition: none; }
+    .tm-head-chev, .tm-head-sel, .tm-head-star, .tm-head-chip, .tm-head-row-ico, .tm-head-row-star, .tm-head-pop-th, .tm-head-pop-th-dir, .tm-head-pop-subtab, .tm-head-pop-empty-btn { transition: none; }
   }
 }
