@@ -228,6 +228,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
         </ol>
       )}
       {err && <p className="text-down text-xs mt-2 leading-snug" role="alert" data-testid="enable-error">Hyperliquid said: {err}</p>}
+      <p className="text-[11px] text-dim mt-2">Stuck? <a className="text-brand hover:underline" href="/api/me/trading-check" target="_blank" rel="noreferrer">Open the trading check</a> and send us what it says.</p>
       <Steps current={4} />
     </Step>
   );
