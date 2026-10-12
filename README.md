@@ -72,6 +72,10 @@ the app talks to hyperliquid mainnet. `NEXT_PUBLIC_HL_NETWORK=testnet` points it
 
 the server caches order book and trade reads for half a second so every viewer shares one upstream call.
 
+## landing
+
+the hero is the whole first screen: the school-of-fish image (`public/landing/hero.webp`, with a 960px cut for phones) under a top-to-bottom shade, copy top-left, the lead fish kept clear bottom-right. the still gets a slow drift, light rays and rising motes; all of it is transform-only so it costs nothing on the main thread. to make the fish actually swim, drop a seamless loop at `public/landing/hero.mp4` (and optionally `hero.webm`): the page detects the file at startup and plays it muted, looped, inline, with the still as poster. sections below fade and rise into view on scroll (`Reveal`), and the product shot uses real screenshots in `public/landing/terminal.webp` and `phone.webp`.
+
 ## profiles and following
 
 connecting a wallet reads the address; signing the nonce claims it. a claimed account with no handle is forced through profile setup before anything else (name, @handle with live availability, bio, X and telegram usernames, avatar and banner). images are resized in the browser (avatar 320², banner 1500×500, jpeg) and stored as data urls on the user row, so there is no object storage to run. `/api/me/profile` saves it, the same dialog edits it later from the profile page. any hyperliquid address can be followed, claimed or not; profiles show mutuals, following and followers like fomo.

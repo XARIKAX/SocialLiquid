@@ -3,10 +3,12 @@ import Link from "next/link";
 import type { FeedItem } from "@/lib/queries";
 import { fmtPx, fmtUsd, shortAddr, timeAgo } from "@/lib/format";
 import { Icon } from "../icons";
+import { Reveal } from "./reveal";
 
 type BoardRow = { rank: number; address: string; name: string | null; pnl30d: number; accountValue: number };
 
 type Props = {
+  heroVideo?: boolean;
   stats: { markets: number; volume24h: number; traders: number };
   btc: { markPx: number; change24h: number; volume24h: number; openInterestUsd: number; funding: number; maxLeverage: number } | null;
   candles: number[];
@@ -19,11 +21,11 @@ export function Landing(p: Props) {
   return (
     <div className="theme-dark bg-bg text-fg">
       <Nav />
-      <Hero items={p.items} />
+      <Hero video={!!p.heroVideo} />
       <Product stats={p.stats} />
       <Bento items={p.items} board={p.board} />
-      <Receipts />
-      <HowItWorks />
+      <Reveal><Receipts /></Reveal>
+      <Reveal><HowItWorks /></Reveal>
       <Orbit traders={p.traders} count={p.stats.traders} />
       <Footer />
     </div>
@@ -48,34 +50,50 @@ function Nav() {
   );
 }
 
-/* ---------- hero ---------- */
-function Hero({ items }: { items: FeedItem[] }) {
-  void items;
+/* ---------- hero: the whole first screen ---------- */
+function Hero({ video }: { video: boolean }) {
   return (
-    <section className="relative overflow-hidden bg-[#03090b]">
-      {/* a school following one glowing fish: the whole product in one frame. webp, eager, high priority: it is above the fold */}
-      <picture className="absolute inset-0 pointer-events-none select-none" aria-hidden>
-        <source media="(max-width: 640px)" srcSet="/landing/hero-sm.webp" type="image/webp" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/landing/hero.webp" alt="" width={1376} height={768} loading="eager" fetchPriority="high" decoding="async" className="hero-img" />
-      </picture>
+    <section className="hero relative min-h-[100svh] overflow-hidden bg-[#03090b] flex flex-col">
+      {/* the school following one glowing fish. a video loop when one is present, otherwise the still with a slow drift */}
+      <div className="hero-media" aria-hidden>
+        {video ? (
+          <video className="hero-img" autoPlay muted loop playsInline preload="auto" poster="/landing/hero.webp">
+            <source src="/landing/hero.webm" type="video/webm" />
+            <source src="/landing/hero.mp4" type="video/mp4" />
+          </video>
+        ) : (
+          <picture>
+            <source media="(max-width: 640px)" srcSet="/landing/hero-sm.webp" type="image/webp" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/landing/hero.webp" alt="" width={1376} height={768} loading="eager" fetchPriority="high" decoding="async" className="hero-img hero-drift" />
+          </picture>
+        )}
+      </div>
+      <div className="hero-rays" aria-hidden />
+      <div className="hero-motes" aria-hidden />
       <div className="hero-shade" aria-hidden />
-      <div className="relative z-10 max-w-[1180px] mx-auto px-5 md:px-8 pt-28 md:pt-36 pb-64 md:pb-64 lg:pb-72">
+
+      <div className="relative z-10 flex-1 w-full max-w-[1180px] mx-auto px-5 md:px-8 pt-28 md:pt-36 pb-32">
         <div className="max-w-[640px]">
-          <div className="mono-label text-brand">Live on Hyperliquid mainnet</div>
-          <h1 className="wordmark wordmark-left mt-4">
+          <div className="mono-label text-brand hero-in" style={{ ["--i" as string]: 0 }}>Live on Hyperliquid mainnet</div>
+          <h1 className="wordmark wordmark-left mt-4 hero-in" style={{ ["--i" as string]: 1 }}>
             social<span className="wordmark-liquid">Liquid</span>
           </h1>
-          <p className="mt-4 text-[clamp(22px,2.6vw,34px)] font-medium tracking-[-0.03em] text-fg">the social layer for Hyperliquid.</p>
-          <p className="mt-3 max-w-[520px] text-[clamp(15px,1.3vw,18px)] text-fg-2/90 leading-snug">
+          <p className="mt-4 text-[clamp(22px,2.6vw,34px)] font-medium tracking-[-0.03em] text-fg hero-in" style={{ ["--i" as string]: 2 }}>the social layer for Hyperliquid.</p>
+          <p className="mt-3 max-w-[520px] text-[clamp(15px,1.3vw,18px)] text-fg-2/90 leading-snug hero-in" style={{ ["--i" as string]: 3 }}>
             Follow the best traders on Hyperliquid, see every position the second it opens, and trade alongside them.
           </p>
-          <div className="mt-8 flex items-center gap-3 flex-wrap">
+          <div className="mt-8 flex items-center gap-3 flex-wrap hero-in" style={{ ["--i" as string]: 4 }}>
             <Link href="/trade" className="btn btn-primary h-12 px-7 text-[15px] rounded-xl shadow-[0_0_50px_-10px_rgb(77_227_193/0.7)]">Start trading</Link>
             <Link href="/leaderboard" className="btn h-12 px-7 text-[15px] rounded-xl glass">See the leaderboard</Link>
           </div>
         </div>
       </div>
+
+      <a href="#product" className="scroll-cue" aria-label="scroll to the product">
+        <span className="text-[10px] tracking-[0.22em] uppercase text-fg-2/70">the terminal</span>
+        <span className="scroll-cue-chevron" />
+      </a>
     </section>
   );
 }
@@ -112,16 +130,24 @@ function FloatCard({ it, className, tilt, dur, delay }: { it: FeedItem; classNam
 /* ---------- product shot ---------- */
 function Product({ stats }: { stats: Props["stats"] }) {
   return (
-    <section className="relative px-4 md:px-8 -mt-6 pb-20 overflow-hidden">
+    <section id="product" className="relative px-4 md:px-8 pt-20 md:pt-28 pb-20 overflow-hidden section-seam">
       <div className="absolute inset-x-0 top-[20%] h-[70%] bg-[radial-gradient(55%_55%_at_50%_45%,rgb(77_227_193/0.12),transparent_70%)] pointer-events-none" />
+      <Reveal className="relative mx-auto max-w-[1180px] text-center mb-10 md:mb-14">
+        <h2 className="h-display">the terminal</h2>
+        <p className="mt-3 text-[clamp(16px,1.5vw,20px)] text-muted">Hyperliquid&apos;s full order book and leverage, with the feed, theses and the leaderboard beside the chart.</p>
+      </Reveal>
       <div className="relative mx-auto max-w-[1180px]">
-        <div className="monitor">
-          <Image src="/landing/terminal.webp" width={1440} height={900} alt="the socialLiquid terminal: live feed, chart, order book and ticket" sizes="(max-width: 1240px) 100vw, 1180px" unoptimized />
-        </div>
-        <div className="monitor-stand hidden md:block" />
-        <div className="phone hidden md:block">
-          <Image src="/landing/phone.webp" width={390} height={844} alt="socialLiquid on mobile" sizes="230px" unoptimized />
-        </div>
+        <Reveal className="monitor-wrap">
+          <div className="monitor">
+            <Image src="/landing/terminal.webp" width={1440} height={900} alt="the socialLiquid terminal: live feed, chart, order book and ticket" sizes="(max-width: 1240px) 100vw, 1180px" unoptimized />
+          </div>
+          <div className="monitor-stand hidden md:block" />
+        </Reveal>
+        <Reveal className="phone-wrap hidden md:block" delay={220}>
+          <div className="phone">
+            <Image src="/landing/phone.webp" width={390} height={844} alt="socialLiquid on mobile" sizes="230px" unoptimized />
+          </div>
+        </Reveal>
       </div>
       <dl className="relative mt-14 md:mt-20 flex items-center gap-x-10 gap-y-3 flex-wrap justify-center text-sm text-muted num">
         <Stat v={String(stats.markets)} k="perp markets" />
@@ -148,10 +174,12 @@ function Bento({ items, board }: { items: FeedItem[]; board: BoardRow[] }) {
   const opens = items.filter((i) => i.type === "LONG" || i.type === "SHORT").slice(0, 2);
   return (
     <section id="features" className="px-5 md:px-8 py-24 max-w-[1180px] mx-auto">
-      <h2 className="h-display">never miss a move</h2>
-      <p className="mt-3 text-[clamp(17px,1.6vw,22px)] text-muted">the social layer every Hyperliquid trader needed</p>
+      <Reveal>
+        <h2 className="h-display">never miss a move</h2>
+        <p className="mt-3 text-[clamp(17px,1.6vw,22px)] text-muted">the social layer every Hyperliquid trader needed</p>
+      </Reveal>
       <div className="grid md:grid-cols-3 gap-4 mt-12">
-        <Feature label="Leaderboard" title="follow the traders who actually win" body="Hyperliquid's own top 10 by 30-day PnL, mirrored to the cent, plus our rankings from on-chain fills.">
+        <Reveal delay={0}><Feature label="Leaderboard" title="follow the traders who actually win" body="Hyperliquid's own top 10 by 30-day PnL, mirrored to the cent, plus our rankings from on-chain fills.">
           <div className="bento-visual mt-6">
             {(board.length ? board : []).slice(0, 4).map((r) => (
               <div key={r.rank} className="flex items-center gap-2.5 px-3 h-11 border-b border-line/60 last:border-0 text-[13px]">
@@ -163,16 +191,16 @@ function Bento({ items, board }: { items: FeedItem[]; board: BoardRow[] }) {
             ))}
             {board.length === 0 && <div className="p-4 text-dim text-xs">Hyperliquid&apos;s top traders land here.</div>}
           </div>
-        </Feature>
-        <Feature label="Feed" title="every long, short and liquidation, live" body="Positions are mirrored straight from chain for every tracked trader. Nothing is self-reported.">
+        </Feature></Reveal>
+        <Reveal delay={120}><Feature label="Feed" title="every long, short and liquidation, live" body="Positions are mirrored straight from chain for every tracked trader. Nothing is self-reported.">
           <div className="bento-visual mt-6 text-[12px]">
             {opens.map((it) => (
               <MiniCard key={it.id} it={it} />
             ))}
             {opens.length === 0 && <div className="p-4 text-dim text-xs">Live positions from tracked traders land here.</div>}
           </div>
-        </Feature>
-        <Feature label="Alerts" title="know the moment the best are buying" body="Follow a trader and their opens, closes and liquidations reach you the second they hit chain.">
+        </Feature></Reveal>
+        <Reveal delay={240}><Feature label="Alerts" title="know the moment the best are buying" body="Follow a trader and their opens, closes and liquidations reach you the second they hit chain.">
           <div className="mt-6 space-y-2">
             {items.filter((i) => i.position).slice(0, 2).map((it, i) => {
               const p = it.payload as { side?: string; sizeUsd?: number; leverage?: number };
@@ -190,7 +218,7 @@ function Bento({ items, board }: { items: FeedItem[]; board: BoardRow[] }) {
             })}
             {items.length === 0 && <div className="bento-visual p-4 text-dim text-xs">Alerts show up here.</div>}
           </div>
-        </Feature>
+        </Feature></Reveal>
       </div>
     </section>
   );
@@ -198,7 +226,7 @@ function Bento({ items, board }: { items: FeedItem[]; board: BoardRow[] }) {
 
 function Feature({ label, title, body, children }: { label: string; title: string; body: string; children?: React.ReactNode }) {
   return (
-    <div className="card p-6 md:p-7 flex flex-col">
+    <div className="card p-6 md:p-7 flex flex-col h-full">
       <div className="feature-label">{label}</div>
       <h3 className="text-[clamp(22px,2.2vw,28px)] font-medium tracking-[-0.03em] leading-tight mt-3 text-balance">{title}</h3>
       <p className="text-muted mt-3 leading-snug">{body}</p>

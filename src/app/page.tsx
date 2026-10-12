@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { Landing } from "@/components/landing/landing";
 import { prisma } from "@/lib/db";
 import * as HL from "@/lib/hl";
@@ -12,6 +14,9 @@ export const metadata: Metadata = {
   openGraph: { title: "socialLiquid", description: "the social layer for Hyperliquid. follow the best traders, see every position live, trade alongside them." },
 };
 
+/** drop hero.mp4 (and optionally hero.webm) into public/landing and the hero plays it; otherwise the still gets a slow cinematic drift */
+const heroVideo = existsSync(join(process.cwd(), "public", "landing", "hero.mp4"));
+
 export default async function Home() {
   const [markets, items, traders, tracked, candles, board] = await Promise.all([
     HL.markets().catch(() => []),
@@ -24,6 +29,7 @@ export default async function Home() {
   const btc = markets.find((m) => m.coin === "BTC");
   return (
     <Landing
+      heroVideo={heroVideo}
       stats={{
         markets: markets.length,
         volume24h: markets.reduce((a, m) => a + m.volume24h, 0),
