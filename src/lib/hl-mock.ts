@@ -40,9 +40,17 @@ const UNIVERSE: { name: string; base: number; szDecimals: number; maxLeverage: n
   { name: "ARB", base: 0.45, szDecimals: 1, maxLeverage: 10, vol: 0.05 },
 ];
 
-export const MOCK_TRADERS: `0x${string}`[] = Array.from({ length: 12 }, (_, i) =>
-  (`0x${(i + 1).toString(16).padStart(2, "0")}${"ab".repeat(19)}`.slice(0, 42)) as `0x${string}`,
-);
+/** deterministic but realistic-looking synthetic trader addresses */
+export const MOCK_TRADERS: `0x${string}`[] = Array.from({ length: 12 }, (_, i) => {
+  let h = 0x9e3779b9 ^ (i + 1);
+  let out = "";
+  for (let k = 0; k < 40; k++) {
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+    out += ((h >>> 28) & 15).toString(16);
+  }
+  return `0x${out}` as `0x${string}`;
+});
 
 // ---------- deterministic prices ----------
 

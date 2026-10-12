@@ -336,3 +336,129 @@ input[type="range"].slider::-moz-range-thumb {
 .chart-nav button { @apply w-7 h-7 rounded-md text-muted hover:text-fg hover:bg-panel-3 inline-flex items-center justify-center; }
 .rail-btn { @apply w-8 h-8 rounded-lg inline-flex items-center justify-center text-muted hover:text-fg hover:bg-panel-2 transition-colors; }
 .rail-btn-active { @apply text-brand bg-brand/10; }
+
+/* ---------- landing v3: planet hero, product shot, bento ---------- */
+.planet {
+  position: absolute;
+  width: 170vmax;
+  height: 170vmax;
+  right: -62vmax;
+  top: -112vmax;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 42% 70%, rgb(19 61 56) 0%, rgb(10 32 31) 22%, rgb(6 16 17) 46%, rgb(4 8 10) 68%);
+  box-shadow:
+    inset 0 0 0 1.5px rgb(151 252 228 / 0.55),
+    inset 0 0 40px rgb(77 227 193 / 0.32),
+    0 0 70px 6px rgb(77 227 193 / 0.22);
+  pointer-events: none;
+  contain: strict;
+}
+.planet::after {
+  /* terminator: night side */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(200deg, transparent 38%, rgb(2 4 6 / 0.85) 70%);
+}
+.planet-haze {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(55% 45% at 78% 22%, rgb(77 227 193 / 0.22), transparent 70%),
+    radial-gradient(40% 30% at 20% 85%, rgb(107 147 255 / 0.1), transparent 70%);
+}
+@media (max-width: 768px) {
+  .planet { width: 230vmax; height: 230vmax; right: -118vmax; top: -168vmax; }
+}
+@keyframes float-y {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--tilt, 0deg)); }
+  50% { transform: translate3d(0, -12px, 0) rotate(var(--tilt, 0deg)); }
+}
+.float-card {
+  position: absolute;
+  z-index: 5;
+  width: 260px;
+  animation: float-y var(--dur, 7s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+  background: rgb(11 11 14 / 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgb(255 255 255 / 0.09);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.8), 0 0 0 1px rgb(0 0 0 / 0.4), 0 0 60px -20px rgb(77 227 193 / 0.35);
+}
+.monitor {
+  border-radius: 20px;
+  padding: 10px;
+  background: linear-gradient(180deg, #1b1b22, #0c0c10);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.08),
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 60px 140px -30px rgb(0 0 0 / 0.9),
+    0 0 200px -40px rgb(77 227 193 / 0.35);
+  transform: perspective(2000px) rotateX(4deg);
+  transform-origin: 50% 100%;
+}
+.monitor img { display: block; width: 100%; height: auto; border-radius: 12px; }
+.monitor-stand {
+  width: 160px;
+  height: 90px;
+  margin: 0 auto;
+  background: linear-gradient(180deg, #121217, #08080b);
+  clip-path: polygon(22% 0, 78% 0, 100% 100%, 0 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+.phone {
+  position: absolute;
+  right: -1%;
+  bottom: -6%;
+  width: clamp(150px, 19%, 230px);
+  border-radius: 36px;
+  padding: 7px;
+  background: linear-gradient(180deg, #2a2a32, #0c0c10);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.12),
+    0 50px 110px -20px rgb(0 0 0 / 0.9),
+    0 0 80px -20px rgb(77 227 193 / 0.3);
+  transform: rotate(-7deg);
+  z-index: 3;
+}
+.phone img { display: block; width: 100%; height: auto; border-radius: 30px; }
+.phone::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  width: 34%;
+  height: 16px;
+  transform: translateX(-50%);
+  border-radius: 10px;
+  background: #050507;
+  z-index: 2;
+}
+.bento-visual {
+  border-radius: 12px;
+  background: rgb(5 5 7 / 0.5);
+  border: 1px solid rgb(255 255 255 / 0.06);
+  overflow: hidden;
+}
+.toast-in { animation: toast-in 0.6s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--delay, 0s); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+.mono-label { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; }
+.crowd {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(28% 40% at 12% 70%, rgb(77 227 193 / 0.1), transparent 70%),
+    radial-gradient(30% 45% at 88% 60%, rgb(107 147 255 / 0.12), transparent 70%),
+    radial-gradient(20% 30% at 50% 100%, rgb(151 252 228 / 0.08), transparent 70%);
+  filter: blur(30px);
+  contain: strict;
+}
+@media (prefers-reduced-motion: reduce) {
+  .float-card, .toast-in { animation: none; }
+}
