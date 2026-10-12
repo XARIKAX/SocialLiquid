@@ -34,9 +34,10 @@ export async function GET() {
         builder.accountValue = value;
         builder.eligible = value >= 100;
         if (value < 100) {
-          ok = false;
-          builder.problem = `builder account holds $${value.toFixed(2)}; hyperliquid requires at least 100 USDC in the perps account before users can approve the builder fee`;
-        }
+          // not a failure: the app drops the builder field and trades on, it just earns nothing until funded
+          builder.collecting = false;
+          builder.problem = `builder account holds $${value.toFixed(2)}; hyperliquid requires at least 100 USDC in the perps account before users can approve the builder fee, so no fee is being charged`;
+        } else builder.collecting = true;
       } catch (e) {
         builder.eligible = null;
         builder.problem = `could not read the builder account: ${(e as Error).message}`;

@@ -253,7 +253,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
         if (!mockMode) await withTimeout(approveBuilderFeeWithWallet(needWallet(wallet), chainId, prep.builder, prep.maxFeeRate), "the wallet did not answer the builder-fee approval");
         builderSigned = true;
         push("Builder fee approved");
-      } else push(prep.builderEnabled ? "Builder fee already approved" : "No builder fee on this deployment");
+      } else push(prep.builderEnabled ? "Builder fee already approved" : "No builder fee on this deployment, nothing to approve");
       push("Confirming on chain…");
       const c = await api<{ agentApproved: boolean; builderApproved: boolean }>("/api/agent/confirm", { method: "POST", json: { agentSigned, builderSigned } });
       if (!c.agentApproved || !c.builderApproved) throw new Error(`Approval not visible on chain yet (agent ${c.agentApproved ? "ok" : "missing"}, builder fee ${c.builderApproved ? "ok" : "missing"}). Wait a few seconds and press again.`);
@@ -267,10 +267,10 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <Step n={4} title="Enable trading" hint="Two signatures from your main wallet, once. No gas, nothing leaves Hyperliquid; your wallet may label them 'Ethereum' or your current network, that is only the signing network. We never hold your main key.">
+    <Step n={4} title="Enable trading" hint="A signature from your main wallet, once. No gas, nothing leaves Hyperliquid; your wallet may label it 'Ethereum' or your current network, that is only the signing network. We never hold your main key.">
       <ul className="text-xs text-fg-2 space-y-2 mb-3">
         <li className="flex gap-2"><span className="text-brand">1.</span><span><b>Approve an API wallet</b> so you don't sign every click. <span className="text-dim">approveAgent</span></span></li>
-        <li className="flex gap-2"><span className="text-brand">2.</span><span><b>Approve the builder fee</b>, max 0.1%, so our code goes on your fills. <span className="text-dim">approveBuilderFee</span></span></li>
+        <li className="flex gap-2"><span className="text-brand">2.</span><span><b>Approve the builder fee</b>, max 0.1%, so our code goes on your fills. <span className="text-dim">approveBuilderFee</span> — skipped while this deployment charges no fee.</span></li>
       </ul>
       <button className="btn btn-primary w-full h-11 text-[15px]" onClick={run} disabled={busy} data-testid="enable-run">{busy ? "Working… check your wallet" : err ? "Try again" : "Approve both"}</button>
       {log.length > 0 && (
