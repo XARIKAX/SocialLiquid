@@ -28,7 +28,8 @@ import {
   routeById,
   swapUsdtToUsdc,
 } from "@/lib/funds";
-import { UNIT_APP_URL, UNIT_ASSETS } from "@/lib/unit";
+import { UNIT_APP_URL, UNIT_ASSETS, fetchUnitAddress, unitDepositable, type UnitAddress } from "@/lib/unit";
+import QRCode from "qrcode";
 import type { wagmiConfig } from "@/lib/wagmi";
 import { Icon } from "../ui";
 
@@ -72,6 +73,7 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   const startBal = useRef<number | null>(null);
   const amt = Number(amount);
   const isUsdc = asset === USDC;
+  const unitInfo = UNIT_ASSETS.find((a) => a.symbol === asset);
 
   // the wallet's balance of the token the chosen route spends, on the route's chain
   const tokenBal = useReadContract({
@@ -93,8 +95,8 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   const fastBps = fast && fee.data !== undefined && fee.data !== null ? fee.data : null;
   const unit = useQuery({
     queryKey: ["unit-address", asset, address],
-    queryFn: () => api<{ address: string; chainLabel: string; signatures: number; min: string | null; confirmations: string | null; mock?: boolean }>(`/api/funds/unit?asset=${asset}`),
-    enabled: mode === "deposit" && !isUsdc,
+    queryFn: () => fetchUnitAddress(asset, address, api),
+    enabled: mode === "deposit" && !isUsdc && !!unitInfo && unitDepositable(unitInfo),
     staleTime: 10 * 60_000,
     retry: 1,
   });
@@ -186,8 +188,6 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
     }
   };
 
-  const unitInfo = UNIT_ASSETS.find((a) => a.symbol === asset);
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label={mode}>
       <div className="card w-full max-w-md p-4 shadow-2xl max-h-[calc(100vh-24px)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -227,7 +227,7 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
         )}
 
         {mode === "deposit" && !isUsdc ? (
-          <UnitPanel asset={asset} q={unit} copied={copied} onCopy={copy} />
+          unitInfo && !unitDepositable(unitInfo) ? <UnitLinkPanel asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} /> : <UnitPanel asset={asset} q={unit} copied={copied} onCopy={copy} />
         ) : (
           <>
             <div className="card-2 p-3 text-xs space-y-1.5">
@@ -310,36 +310,81 @@ function RouteNote({ kind }: { kind: string }) {
   }
 }
 
-type UnitQ = { data?: { address: string; chainLabel: string; signatures: number; min: string | null; confirmations: string | null; mock?: boolean }; isLoading: boolean; error: Error | null; refetch: () => void };
+type UnitQ = { data?: UnitAddress; isLoading: boolean; error: Error | null; refetch: () => void };
 
-/** native-asset deposit: the user's Unit address on the source chain */
+/** what to send from where, per chain */
+function sendHint(asset: string, chain: string) {
+  switch (chain) {
+    case "solana":
+      return <>From Phantom, Solflare, Backpack or an exchange: send <b className="text-fg">{asset}</b> on Solana mainnet to this address. {asset === "SOL" ? "Plain SOL only, not wrapped SOL or an SPL token." : `The ${asset} SPL token only.`}</>;
+    case "bitcoin":
+      return <>Send BTC on the Bitcoin network to this address. Not Lightning, not wrapped BTC on another chain.</>;
+    case "ethereum":
+      return <>Send ETH on Ethereum mainnet to this address. Not from an L2, not WETH.</>;
+    default:
+      return <>Send only <b className="text-fg">{asset}</b> on its native chain to this address.</>;
+  }
+}
+
+/** an asset whose minimum deposit we could not verify: no address in-app, Unit's own dialog instead */
+function UnitLinkPanel({ asset, chainLabel }: { asset: string; chainLabel: string }) {
+  return (
+    <div className="card-2 p-3 text-xs space-y-2" data-testid="unit-link">
+      <div className="leading-snug">Unit sets a minimum deposit for {asset} on {chainLabel} and anything below it is lost. We do not have that minimum verified yet, so for {asset} use Unit&apos;s own dialog, which shows it next to the address. It still lands in your Hyperliquid spot balance.</div>
+      <a className="btn btn-primary h-10 w-full" href={`${UNIT_APP_URL}/?asset=${asset.toLowerCase()}`} target="_blank" rel="noreferrer">Deposit {asset} on Unit</a>
+    </div>
+  );
+}
+
+/** native-asset deposit: the user's Unit address on the source chain, with a QR for mobile wallets */
 function UnitPanel({ asset, q, copied, onCopy }: { asset: string; q: UnitQ; copied: boolean; onCopy: (t: string) => void }) {
+  const [qr, setQr] = useState<string | null>(null);
+  const addr = q.data?.address;
+  useEffect(() => {
+    if (!addr) return setQr(null);
+    let live = true;
+    QRCode.toDataURL(addr, { margin: 1, width: 192, errorCorrectionLevel: "M" }).then((u) => live && setQr(u)).catch(() => live && setQr(null));
+    return () => {
+      live = false;
+    };
+  }, [addr]);
   return (
     <>
       <div className="card-2 p-3 text-xs space-y-2">
         {q.isLoading && <div className="text-dim animate-pulse">Asking Unit&apos;s guardians for your {asset} address…</div>}
         {q.error && (
-          <div className="text-down">
+          <div className="text-down leading-snug">
             {q.error.message}
             <button className="btn btn-ghost h-7 px-2 ml-2 text-[11px]" onClick={() => q.refetch()}>Retry</button>
           </div>
         )}
         {q.data && (
           <>
-            <div className="text-muted">Send only <b className="text-fg">{asset}</b> on <b className="text-fg">{q.data.chainLabel}</b> to this address. It is yours: Unit derived it for your Hyperliquid account.</div>
-            <div className="flex items-center gap-2">
-              <code className="input h-auto py-2 flex-1 text-[11px] break-all num leading-snug" data-testid="unit-address">{q.data.address}</code>
-              <button className="btn h-9 px-3 shrink-0" onClick={() => onCopy(q.data!.address)}>{copied ? "Copied" : <><Icon.copy /> Copy</>}</button>
+            <div className="text-muted leading-snug">{sendHint(asset, q.data.chain)} It is yours: Unit derived it for your Hyperliquid account.</div>
+            <div className="flex items-start gap-3">
+              {qr && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={qr} alt={`QR code of your ${asset} deposit address`} width={96} height={96} className="rounded-md bg-white p-1 shrink-0" data-testid="unit-qr" />
+              )}
+              <div className="min-w-0 flex-1 space-y-2">
+                <code className="input h-auto py-2 block text-[11px] break-all num leading-snug" data-testid="unit-address">{q.data.address}</code>
+                <button className="btn h-9 px-3 w-full" onClick={() => onCopy(q.data!.address)} data-testid="unit-copy">{copied ? "Copied" : <><Icon.copy /> Copy address</>}</button>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
               <span className="text-muted">Minimum</span><span className="num text-right">{q.data.min ?? "see Unit"}</span>
               <span className="text-muted">Credited after</span><span className="num text-right">{q.data.confirmations ?? "chain finality"}</span>
-              <span className="text-muted">Fee</span><span className="num text-right">network gas only</span>
+              <span className="text-muted">Fee</span><span className="num text-right">{q.data.fee ?? "network fee, set by Unit"}</span>
               <span className="text-muted">Guardian signatures</span><span className="num text-right">{q.data.signatures} of 3{q.data.mock ? " · mock" : ""}</span>
             </div>
           </>
         )}
       </div>
+      {q.data && (
+        <div className="mt-3 rounded-md border border-down/60 bg-down/10 p-3 text-[12px] leading-snug text-down" role="alert" data-testid="unit-important">
+          <b>IMPORTANT:</b> There is a minimum deposit of <b>{q.data.min}</b>. This address can only receive <b>{asset}</b> on the <b>{q.data.chainLabel}</b> network. Any other asset sent to it will be lost. Deposits below {q.data.min} will result in a loss of funds.
+        </div>
+      )}
       <p className="text-[11px] text-dim mt-3 leading-snug">
         Native deposits run on Unit, the same rails as Hyperliquid&apos;s own dialog, and land in your Hyperliquid <b>spot</b> balance. Sell for USDC on Hyperliquid spot to use it as perps margin. Below the minimum is not credited. Verify the address any time at <a className="text-brand hover:underline" href={`${UNIT_APP_URL}/?asset=${asset.toLowerCase()}`} target="_blank" rel="noreferrer">app.hyperunit.xyz</a>.
       </p>

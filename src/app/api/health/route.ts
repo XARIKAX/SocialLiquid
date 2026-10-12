@@ -2,6 +2,7 @@ import { json } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import * as HL from "@/lib/hl";
 import { BUILDER_ADDRESS, BUILDER_FEE_TENTHS_BP, HL_API_URL, HL_MOCK, IS_TESTNET } from "@/lib/env";
+import { unitHealth } from "@/lib/unit-server";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,11 @@ export async function GET() {
   } catch (e) {
     ok = false;
     out.hyperliquid = `error: ${(e as Error).message}`;
+  }
+  // native-asset deposits (BTC, ETH, SOL…) ask Unit for addresses; the browser asks first, the server is the fallback
+  {
+    const u = await unitHealth();
+    out.unit = u.ok ? u.detail : `${u.detail} (the browser still asks Unit directly; this only affects the server fallback)`;
   }
   return json({ ok, ...out }, { status: ok ? 200 : 503 });
 }
