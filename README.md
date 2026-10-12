@@ -100,6 +100,10 @@ the market picker (⌘K) mirrors hyperliquid's: tabs for All · Perps · Spot ·
 
 the chart's ƒx menu is a searchable catalogue (`src/lib/indicators.ts`): overlays (SMA 9/20/50/100/200, EMA 9/21/50/200, WMA, Bollinger, VWAP, SuperTrend, Parabolic SAR, Donchian, Ichimoku) draw on the price pane, oscillators (RSI, MACD, Stochastic, Stochastic RSI, ATR, OBV, CCI, Williams %R, MFI) each get their own pane under the price with reference levels. the choice persists in localStorage. under the ticket, the account summary mirrors hyperliquid's: portfolio value (perps + spot), unrealized pnl, perps maintenance margin, margin ratio and account leverage, from `clearinghouseState` (`crossMaintenanceMarginUsed`, `totalNtlPos`). on a builder-dex market with no margin there, the ticket offers hyperliquid's unified margin (`userDexAbstraction`, one main-wallet signature) so the main account USDC backs trades on every builder dex.
 
+## bottom panel
+
+the tabs under the chart carry live counts (Balances, Positions, Open Orders, TWAP, Chase) and the history tabs have hyperliquid's Type / Side / Market filters next to the "Only this market" toggle.
+
 ## chase orders
 
 hyperliquid's "Chase" is in the ticket's Pro menu: a post-only limit that sits at the best bid (buys) or best ask (sells) and follows it. `src/lib/chase.ts` runs the loop in the browser every 2.5 s: read the book, cancel and re-place the ALO limit when the best price moved, step one level deeper after a post-only reject, stop at the time limit. the orders are ordinary hyperliquid limits through the agent, so a closed tab just leaves the last one resting. the Chase tab under the chart lists them with remaining size, resting price, re-price count and a Stop button; state persists in localStorage.
