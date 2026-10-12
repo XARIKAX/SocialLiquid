@@ -1,14 +1,17 @@
 "use client";
 import "./bottom-panel.css";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import Link from "next/link";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SetStateAction } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
-import { livePnl, useMids } from "@/hooks/use-market";
-import { useAccountFills, useFundingPayments, useOpenOrders, useOrderHistory, useTwaps, type OpenOrder } from "@/hooks/use-account";
+import { livePnl, useMarketIdentity, useMids } from "@/hooks/use-market";
+import { useAccountFills, useFundingPayments, useMyTheses, useOpenOrders, useOrderHistory, useTwaps, type OpenOrder } from "@/hooks/use-account";
+import { clearFinishedChases, stopChase, useChases, type Chase } from "@/lib/chase";
 import { api } from "@/lib/client";
-import { fmtDuration, fmtUsd, timeAgo } from "@/lib/format";
+import { fmtUsd, timeAgo } from "@/lib/format";
 import type { FeedItem } from "@/lib/queries";
+import { fmtQty, spotRows } from "@/lib/spot";
 import { CoinIcon, Empty, Toggle } from "../ui";
 import {
   BpConnect,
@@ -29,9 +32,10 @@ import {
   type MarketTrade,
   type TradersView,
 } from "../market/positions-table";
+import { openConvert } from "./convert";
 import { openFunds } from "./funds";
 
-type Tab = "traders" | "thesis" | "balances" | "positions" | "orders" | "twap" | "trades" | "funding" | "history";
+type Tab = "traders" | "thesis" | "balances" | "positions" | "orders" | "twap" | "chase" | "trades" | "funding" | "history";
 type AccountTab = Exclude<Tab, "traders" | "thesis">;
 const TABS: [Tab, string][] = [
   ["traders", "Traders"],
@@ -40,12 +44,15 @@ const TABS: [Tab, string][] = [
   ["positions", "Positions"],
   ["orders", "Open Orders"],
   ["twap", "TWAP"],
+  ["chase", "Chase"],
   ["trades", "Trade History"],
   ["funding", "Funding History"],
   ["history", "Order History"],
 ];
 const IDS = TABS.map(([t]) => t);
 const isMarket = (t: Tab) => t === "traders" || t === "thesis";
+/** your own live things: their counts stay tinted while another tab is open */
+const LIVE = new Set<Tab>(["positions", "orders", "twap", "chase"]);
 
 /* ui preferences (never anything that reaches hyperliquid) */
 const TAB_KEY = "sl:bp-tab";
@@ -61,19 +68,44 @@ const store = (k: string, v: string | null) => {
   } catch {}
 };
 
+/* ---------- market identity: every row shows its market's own name and icon, never "@107" or "xyz:GOLD" ---------- */
+type MkOf = ReturnType<typeof useMarketIdentity>;
+type Mk = ReturnType<MkOf>;
+/** a market's own units ("0.5 SOL", "2 GOLD") */
+const unit = (m: Mk) => (m.base ? ` ${m.base}` : "");
+/** spot books buy and sell; perps go long and short */
+const sideWord = (buy: boolean, m: Mk) => (m.market?.kind === "spot" ? (buy ? "Buy" : "Sell") : buy ? "Long" : "Short");
+/** another market's rows link to its page (`/m/${encodeURIComponent(slug)}`); the market on screen does not */
+const marketLink = (m: Mk, coin: string, current: string) => (m.market && coin !== current ? m.href : null);
+
+/* ---------- hyperliquid's Type / Side / Market filters (open orders, trade history, order history) ---------- */
+type RowFilter = { type: "all" | "limit" | "market" | "trigger"; side: "all" | "B" | "A"; market: string };
+const NO_FILTER: RowFilter = { type: "all", side: "all", market: "all" };
+const typeMatch = (f: RowFilter, o: { type: string; isTrigger?: boolean }) => f.type === "all" || (f.type === "trigger" ? !!o.isTrigger || /stop|take profit/i.test(o.type) : f.type === "market" ? /market/i.test(o.type) && !/stop|take profit/i.test(o.type) : /limit/i.test(o.type) && !/stop|take profit/i.test(o.type));
+const rowMatch = (f: RowFilter, r: { coin: string; side: "B" | "A" }) => (f.side === "all" || r.side === f.side) && (f.market === "all" || r.coin === f.market);
+/** does the filter narrow this tab (trade history has no type filter) */
+const narrows = (f: RowFilter, withType: boolean) => (withType && f.type !== "all") || f.side !== "all" || f.market !== "all";
+/** what a filterable view gets from the panel: the shared filter, its controls for the bar, and a reset */
+type Filtering = { filter: RowFilter; controls: ReactNode; clear: () => void };
+
 /* what each account tab says when you are signed out, and when it is empty */
-const ACCOUNT: Record<AccountTab, { icon: BpIconName; out: [string, string]; none: [string, string] }> = {
-  balances: { icon: "wallet", out: ["Connect to see your balances", "USDC, available margin and unrealised PnL on Hyperliquid, updated live."], none: ["", ""] },
-  positions: { icon: "layers", out: ["Connect to see your positions", "Live PnL, liquidation price, TP/SL and a one-click close for everything you hold."], none: ["No open positions", "Open one from the order ticket. It shows up here with live PnL and a one-click close."] },
-  orders: { icon: "list", out: ["Connect to see your open orders", "Resting limit, stop and take-profit orders, each cancellable from here."], none: ["No open orders", "Limit, stop and take-profit orders rest here until they fill or you cancel them."] },
-  twap: { icon: "bars", out: ["Connect to see your TWAP orders", "Progress, average fill and time left for every running TWAP."], none: ["No TWAP orders", "Split a large order over time with TWAP, under Pro in the order ticket."] },
-  trades: { icon: "receipt", out: ["Connect to see your trade history", "Every fill with its fees and closed PnL, exportable to CSV."], none: ["No fills yet", "Your executions land here with their fees and closed PnL."] },
-  funding: { icon: "percent", out: ["Connect to see your funding", "Funding paid and received on your positions, settled every hour."], none: ["No funding payments yet", "Funding settles every hour on open positions."] },
-  history: { icon: "history", out: ["Connect to see your order history", "Every order you placed and how it ended: filled, canceled or rejected."], none: ["No orders yet", "Orders you place show up here with their final status."] },
+type AcctIcon = BpIconName | "chase";
+const ACCOUNT: Record<AccountTab, { icon: AcctIcon; noun: string; out: [string, string]; none: [string, string] }> = {
+  balances: { icon: "wallet", noun: "balances", out: ["Connect to see your balances", "USDC, spot coins, available margin and unrealised PnL on Hyperliquid, updated live."], none: ["", ""] },
+  positions: { icon: "layers", noun: "positions", out: ["Connect to see your positions", "Live PnL, liquidation price, TP/SL and a one-click close for everything you hold."], none: ["No open positions", "Open one from the order ticket. It shows up here with live PnL and a one-click close."] },
+  orders: { icon: "list", noun: "open orders", out: ["Connect to see your open orders", "Resting limit, stop and take-profit orders, each cancellable from here."], none: ["No open orders", "Limit, stop and take-profit orders rest here until they fill or you cancel them."] },
+  twap: { icon: "bars", noun: "TWAP orders", out: ["Connect to see your TWAP orders", "Progress, average fill and time left for every running TWAP."], none: ["No TWAP orders", "Split a large order over time with TWAP, under Pro in the order ticket."] },
+  chase: { icon: "chase", noun: "chase orders", out: ["Connect to see your chase orders", "Post-only limits that follow the best bid or ask until they fill, each stoppable from here."], none: ["No chase orders", "Chase, under Pro in the order ticket, rests a post-only limit at the best price and follows it until it fills."] },
+  trades: { icon: "receipt", noun: "fills", out: ["Connect to see your trade history", "Every fill with its fees and closed PnL, exportable to CSV."], none: ["No fills yet", "Your executions land here with their fees and closed PnL."] },
+  funding: { icon: "percent", noun: "funding payments", out: ["Connect to see your funding", "Funding paid and received on your positions, settled every hour."], none: ["No funding payments yet", "Funding settles every hour on open positions."] },
+  history: { icon: "history", noun: "orders", out: ["Connect to see your order history", "Every order you placed and how it ended: filled, canceled or rejected."], none: ["No orders yet", "Orders you place show up here with their final status."] },
 };
+const acctIcon = (i: AcctIcon) => (i === "chase" ? <ChaseGlyph /> : <BpIcon n={i} />);
 
 export function BottomPanel(props: {
   coin: string;
+  /** the market's base symbol (the market view passes it): how "this market" reads to a human */
+  label?: string;
   positions?: MarketPosition[];
   trades?: MarketTrade[];
   theses?: FeedItem[];
@@ -87,16 +119,27 @@ export function BottomPanel(props: {
   const [tab, setTabState] = useState<Tab>("traders");
   const [view, setView] = useState<"positions" | "trades">("positions");
   const [onlyCoin, setOnlyCoin] = useState(false);
+  // hyperliquid's Type / Side / Market filters on the open orders and history tabs: one set, shared by the three
+  const [filter, setFilter] = useState<RowFilter>(NO_FILTER);
   const [h, setH] = useState<number | null>(null);
+  /* the chase list lives in this browser's storage: what reads it joins after hydration */
+  const [mounted, setMounted] = useState(false);
   const { signedIn, address } = useAuth();
   const openOrders = useOpenOrders();
-  // same query keys the market view already polls: no new requests
+  // the live tab counts and the market filter's list read these at the panel level (as production does)
+  const fills = useAccountFills();
+  const hist = useOrderHistory();
+  const twaps = useTwaps();
+  // same query key the market view already polls: no new request
   const bal = useBalance(signedIn ? address : null);
   const mids = useMids();
+  const mk = useMarketIdentity();
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const gripRef = useRef<HTMLDivElement>(null);
   const { wrap, strip, nudge } = useStrip();
+  /* what a human reads for this market: the base symbol the market view passes, else its name (never "@107") */
+  const here = props.label ?? mk(props.coin).name;
 
   /* the grip reports the deck's real height (its default follows the viewport). written straight onto the
      separator: a drag resizes the deck every frame, and none of that should re-render the tables */
@@ -128,6 +171,7 @@ export function BottomPanel(props: {
       const hh = Number(localStorage.getItem(H_KEY));
       if (hh >= H_MIN && hh <= 4000) setH(hh);
     } catch {}
+    setMounted(true);
   }, []);
   const setTab = useCallback((t: Tab) => {
     setTabState(t);
@@ -150,11 +194,15 @@ export function BottomPanel(props: {
   const own = useMemo(() => (bal.data?.positions ?? []).filter((p) => p.szi !== 0), [bal.data]);
   /* "following" needs a wallet: until then the traders view asks to connect, so the head shows no traders figures */
   const marketShown = !(props.following && !signedIn);
-  const counts: Partial<Record<Tab, number>> = {
-    traders: marketShown ? props.positions?.length ?? 0 : 0,
-    thesis: props.theses?.length ?? 0,
-    positions: signedIn ? own.length : 0,
-    orders: signedIn ? openOrders.data?.length ?? 0 : 0,
+  /* live counts, the way hyperliquid's tabs carry them. undefined until the figures land, so arriving data never
+     reads as a change (the chase count reads this browser's storage and joins after hydration, below) */
+  const counts: Partial<Record<Tab, number | undefined>> = {
+    traders: marketShown ? props.positions?.length : 0,
+    thesis: props.theses?.length,
+    balances: !signedIn ? 0 : bal.data ? 1 + (bal.data.spot?.filter((b) => b.total > 0 && b.coin !== "USDC").length ?? 0) : undefined,
+    positions: !signedIn ? 0 : bal.data ? own.length : undefined,
+    orders: signedIn ? openOrders.data?.length : 0,
+    twap: signedIn ? twaps.data?.filter((t) => t.status === "activated").length : 0,
   };
 
   /* the number that matters for the open view: the market's traders, or your own book */
@@ -168,7 +216,7 @@ export function BottomPanel(props: {
   }, [own, mids.data]);
   const sum = isMarket(tab)
     ? tradersUpnl !== null && marketShown
-      ? { label: "uPnL", v: tradersUpnl, title: `Unrealised PnL across the ${props.positions?.length} open ${props.coin} positions of tracked traders` }
+      ? { label: "uPnL", v: tradersUpnl, title: `Unrealised PnL across the ${props.positions?.length} open ${here} positions of tracked traders` }
       : null
     : signedIn && ownUpnl !== null
       ? { label: "uPnL", own: true, v: ownUpnl, title: "Unrealised PnL across your open positions" }
@@ -221,8 +269,34 @@ export function BottomPanel(props: {
     e.preventDefault();
   };
 
-  const only = props.coin ? <Toggle on={onlyCoin} onChange={setOnlyCoin} label={`Only ${props.coin}`} /> : null;
+  /* "only this market" and a picked market answer the same question: turning one on clears the other */
+  const onOnly = (v: boolean) => {
+    setOnlyCoin(v);
+    if (v) setFilter((f) => (f.market === "all" ? f : { ...f, market: "all" }));
+  };
+  const only = props.coin ? <Toggle on={onlyCoin} onChange={onOnly} label={`Only ${here}`} /> : null;
   const acct = isMarket(tab) ? null : ACCOUNT[tab as AccountTab];
+
+  const filterable = tab === "orders" || tab === "trades" || tab === "history";
+  const coinsInView = [...new Set((tab === "orders" ? openOrders.data : tab === "trades" ? fills.data : hist.data)?.map((r) => r.coin) ?? [])];
+  const filtering: Filtering = {
+    filter,
+    clear: () => setFilter(NO_FILTER),
+    controls: filterable ? (
+      <Filters
+        filter={filter}
+        setFilter={setFilter}
+        withType={tab !== "trades"}
+        coins={coinsInView}
+        mk={mk}
+        onMarket={(m) => {
+          setFilter((f) => ({ ...f, market: m }));
+          if (m !== "all") setOnlyCoin(false);
+        }}
+      />
+    ) : null,
+  };
+  const vp: ViewProps = { coin: props.coin, here, mk, onlyCoin, only };
 
   return (
     <div className="tm-bp" ref={rootRef} style={h ? ({ "--tm-bp-h": `${h}px` } as CSSProperties) : undefined}>
@@ -232,25 +306,28 @@ export function BottomPanel(props: {
             <BpIcon n="chevL" size={12} sw={2.4} />
           </button>
           <div className="tm-bp-tabs" ref={strip} role="tablist" aria-label="Terminal panels" onKeyDown={(e) => roveTabs(e, IDS, tab, setTab)}>
-            {TABS.map(([t, label]) => (
-              <Fragment key={t}>
-                {t === "balances" && <span className="tm-bp-vsep" aria-hidden />}
-                <button
-                  type="button"
-                  role="tab"
-                  data-id={t}
-                  id={`tm-bp-tab-${t}`}
-                  aria-selected={tab === t}
-                  aria-controls="tm-bp-panel"
-                  tabIndex={tab === t ? 0 : -1}
-                  className="tm-bp-tab"
-                  onClick={() => setTab(t)}
-                >
-                  {label}
-                  {!!counts[t] && <i className={`num ${tab === t ? "count" : t === "positions" || t === "orders" ? "tm-bp-q tm-bp-q-live" : "tm-bp-q"}`}>{counts[t]}</i>}
-                </button>
-              </Fragment>
-            ))}
+            {TABS.map(([t, label]) => {
+              const cls = tab === t ? "count" : LIVE.has(t) ? "tm-bp-q tm-bp-q-live" : "tm-bp-q";
+              return (
+                <Fragment key={t}>
+                  {t === "balances" && <span className="tm-bp-vsep" aria-hidden />}
+                  <button
+                    type="button"
+                    role="tab"
+                    data-id={t}
+                    id={`tm-bp-tab-${t}`}
+                    aria-selected={tab === t}
+                    aria-controls="tm-bp-panel"
+                    tabIndex={tab === t ? 0 : -1}
+                    className="tm-bp-tab"
+                    onClick={() => setTab(t)}
+                  >
+                    {label}
+                    {t === "chase" ? mounted && <ChaseCount cls={cls} /> : <TabCount n={counts[t]} cls={cls} />}
+                  </button>
+                </Fragment>
+              );
+            })}
           </div>
           <button type="button" className="tm-bp-nudge tm-bp-nudge-r" tabIndex={-1} aria-hidden onClick={() => nudge(1)}>
             <BpIcon n="chevR" size={12} sw={2.4} />
@@ -272,6 +349,7 @@ export function BottomPanel(props: {
         {isMarket(tab) ? (
           <PositionsTable
             coin={props.coin}
+            label={props.label}
             positions={props.positions}
             trades={props.trades}
             theses={props.theses}
@@ -286,22 +364,24 @@ export function BottomPanel(props: {
           />
         ) : !signedIn && acct ? (
           <div className="tm-bp-view">
-            <BpEmpty icon={<BpIcon n={acct.icon} />} title={acct.out[0]} hint={acct.out[1]} action={<BpConnect />} />
+            <BpEmpty icon={acctIcon(acct.icon)} title={acct.out[0]} hint={acct.out[1]} action={<BpConnect />} />
           </div>
         ) : tab === "balances" ? (
           <Balances upnl={ownUpnl} />
         ) : tab === "positions" ? (
-          <OwnPositions coin={props.coin} onlyCoin={onlyCoin} only={only} />
+          <OwnPositions {...vp} />
         ) : tab === "orders" ? (
-          <OpenOrders coin={props.coin} onlyCoin={onlyCoin} only={only} />
+          <OpenOrders {...vp} filtering={filtering} />
         ) : tab === "twap" ? (
-          <Twaps coin={props.coin} onlyCoin={onlyCoin} only={only} />
+          <Twaps {...vp} />
+        ) : tab === "chase" ? (
+          <Chases {...vp} />
         ) : tab === "trades" ? (
-          <TradeHistory coin={props.coin} onlyCoin={onlyCoin} only={only} />
+          <TradeHistory {...vp} filtering={filtering} />
         ) : tab === "funding" ? (
-          <FundingHistory coin={props.coin} onlyCoin={onlyCoin} only={only} />
+          <FundingHistory {...vp} />
         ) : (
-          <OrderHistory coin={props.coin} onlyCoin={onlyCoin} only={only} />
+          <OrderHistory {...vp} filtering={filtering} />
         )}
       </div>
 
@@ -320,6 +400,32 @@ export function BottomPanel(props: {
       />
     </div>
   );
+}
+
+/** what every account view gets: the market on screen (its id and how it reads), the name lookup, the only toggle */
+type ViewProps = { coin: string; here: string; mk: MkOf; onlyCoin: boolean; only: ReactNode };
+
+/* ---------- tab counts ---------- */
+
+/**
+ * a tab's count: the bright lozenge on the open tab, quiet (tinted for your live things) on the rest. once the
+ * figures have landed, a change (an order placed, a fill, a chase finishing) lifts the badge for a moment
+ */
+function TabCount({ n, cls }: { n: number | undefined; cls: string }) {
+  const [seen, setSeen] = useState({ n, k: 0 });
+  if (seen.n !== n) setSeen({ n, k: seen.n !== undefined && n !== undefined && n > 0 ? seen.k + 1 : seen.k });
+  if (!n) return null;
+  return (
+    <i key={seen.k} className={`num ${cls}`} data-bump={seen.k > 0 || undefined}>
+      {n}
+    </i>
+  );
+}
+
+/** running chases (they live in this browser's storage, so this mounts after hydration) */
+function ChaseCount({ cls }: { cls: string }) {
+  const n = useChases().filter((c) => c.status === "running").length;
+  return <TabCount n={n} cls={cls} />;
 }
 
 /* ---------- the tab strip: fades on the edges that still scroll, wheel and drag to scroll ---------- */
@@ -467,31 +573,109 @@ function CsvButton({ rows, name }: { rows: object[]; name: string }) {
   );
 }
 
+/* ---------- filters: select pills in the rail's language, lit while they narrow the list ---------- */
+
+function Sel({ label, value, on, icon, onChange, children }: { label: string; value: string; on?: boolean; icon?: ReactNode; onChange: (v: string) => void; children: ReactNode }) {
+  return (
+    <span className="tm-bp-sel" data-on={on || undefined} data-icon={icon ? "" : undefined}>
+      {icon}
+      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+        {children}
+      </select>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="m7 10 5 5 5-5" />
+      </svg>
+    </span>
+  );
+}
+
+function Filters({
+  filter,
+  setFilter,
+  withType,
+  coins,
+  mk,
+  onMarket,
+}: {
+  filter: RowFilter;
+  setFilter: Dispatch<SetStateAction<RowFilter>>;
+  withType: boolean;
+  coins: string[];
+  mk: MkOf;
+  onMarket: (coin: string) => void;
+}) {
+  // a market picked on another tab stays listed, so the select never holds a value it has no option for
+  const opts = (filter.market !== "all" && !coins.includes(filter.market) ? [...coins, filter.market] : coins).map((c) => ({ c, m: mk(c) }));
+  // two builder dexes can list the same name: their dex tells them apart
+  const label = ({ m }: { m: Mk }) => (m.market?.dex && opts.filter((o) => o.m.name === m.name).length > 1 ? `${m.name} · ${m.market.dex}` : m.name);
+  const pick = filter.market !== "all" ? mk(filter.market) : null;
+  return (
+    <span className="tm-bp-filters" role="group" aria-label="Filter the rows">
+      {withType && (
+        <Sel label="type filter" value={filter.type} on={filter.type !== "all"} onChange={(v) => setFilter((f) => ({ ...f, type: v as RowFilter["type"] }))}>
+          <option value="all">Type</option>
+          <option value="limit">Limit</option>
+          <option value="market">Market</option>
+          <option value="trigger">Stop / TP</option>
+        </Sel>
+      )}
+      <Sel label="side filter" value={filter.side} on={filter.side !== "all"} onChange={(v) => setFilter((f) => ({ ...f, side: v as RowFilter["side"] }))}>
+        <option value="all">Side</option>
+        <option value="B">Buy / Long</option>
+        <option value="A">Sell / Short</option>
+      </Sel>
+      <Sel label="market filter" value={filter.market} on={!!pick} icon={pick ? <CoinIcon coin={pick.base || pick.name} size={14} /> : null} onChange={onMarket}>
+        <option value="all">Market</option>
+        {opts.map((o) => (
+          <option key={o.c} value={o.c}>
+            {label(o)}
+          </option>
+        ))}
+      </Sel>
+      {narrows(filter, withType) && (
+        <button type="button" className="tm-bp-reset" onClick={() => setFilter(NO_FILTER)} aria-label="Clear the filters">
+          Clear
+        </button>
+      )}
+    </span>
+  );
+}
+
 /**
- * the coin with its side pill on one line and an optional mono sub line (a size) under it.
- * on a narrow deck the columns that drop out fold into the sub line (`nsub`), and `fold` moves the pill there too.
+ * a market with its side pill on one line and an optional mono sub line (a size) under it. the name and icon are
+ * the market's own (SOL/USDC, GOLD); another market's name links to its page. on a narrow deck the columns that
+ * drop out fold into the sub line (`nsub`), and `fold` moves the pill there too; `subFold` keeps `sub` for wide
+ * decks only (the folded line has no room for it). `extra` sits after the name (the phone's thesis pen).
  */
-function CoinCell({ coin, pill, sub, nsub, fold }: { coin: string; pill?: ReactNode; sub?: ReactNode; nsub?: ReactNode; fold?: boolean }) {
+function CoinCell({ m, href, pill, sub, nsub, fold, subFold, extra }: { m: Mk; href?: string | null; pill?: ReactNode; sub?: ReactNode; nsub?: ReactNode; fold?: boolean; subFold?: boolean; extra?: ReactNode }) {
   const hasSub = sub !== undefined && sub !== null && sub !== false && sub !== "";
+  const joined = hasSub && !subFold;
   return (
     <span className="tm-bp-coin">
       <span className="tm-bp-coin-ic">
-        <CoinIcon coin={coin} size={20} />
+        <CoinIcon coin={m.base || m.name} size={20} />
       </span>
       <span className="tm-bp-2">
         <span className="tm-bp-coin-row">
-          {coin}
+          {href ? (
+            <Link href={href} className="tm-bp-mlink" title={`Open ${m.name}`}>
+              {m.name}
+            </Link>
+          ) : (
+            m.name
+          )}
           {pill && (fold ? <span className="tm-bp-fold">{pill}</span> : pill)}
+          {extra}
         </span>
         {(hasSub || nsub) && (
           <span className={`tm-bp-sub num ${hasSub ? "" : "tm-bp-nsub-line"}`}>
             {nsub && (
               <span className="tm-bp-nsub">
                 {nsub}
-                {hasSub ? " · " : ""}
+                {joined ? " · " : ""}
               </span>
             )}
-            {hasSub && sub}
+            {hasSub && (subFold ? <span className="tm-bp-fold">{sub}</span> : sub)}
           </span>
         )}
       </span>
@@ -609,9 +793,45 @@ function ConfirmButton({
   );
 }
 
-function AcctEmpty({ tab, onlyCoin, coin }: { tab: AccountTab; onlyCoin: boolean; coin: string }) {
+function AcctEmpty({ tab, onlyCoin, here }: { tab: AccountTab; onlyCoin: boolean; here: string }) {
   const a = ACCOUNT[tab];
-  return <BpEmpty icon={<BpIcon n={a.icon} />} tone="neutral" title={`${a.none[0]}${onlyCoin ? ` on ${coin}` : ""}`} hint={a.none[1]} />;
+  return <BpEmpty icon={acctIcon(a.icon)} tone="neutral" title={`${a.none[0]}${onlyCoin ? ` on ${here}` : ""}`} hint={a.none[1]} />;
+}
+
+/** the filters hid every row: say so, and offer the way back */
+function FilteredEmpty({ tab, hidden, onClear }: { tab: AccountTab; hidden: number; onClear: () => void }) {
+  return (
+    <BpEmpty
+      icon={<FunnelGlyph />}
+      tone="neutral"
+      title={`No ${ACCOUNT[tab].noun} match these filters`}
+      hint={`${hidden} ${hidden === 1 ? "is" : "are"} hidden by the ${tab === "trades" ? "Side or Market" : "Type, Side or Market"} filter above.`}
+      action={
+        <button type="button" className="btn btn-sm" onClick={onClear}>
+          Clear filters
+        </button>
+      }
+    />
+  );
+}
+
+/* local glyphs (24 grid, stroke 1.8, rounded, like BpIcon) */
+/** a crosshair: the chase keeps its order trained on the best price */
+function ChaseGlyph() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="7" />
+      <circle cx="12" cy="12" r="1.6" />
+      <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" />
+    </svg>
+  );
+}
+function FunnelGlyph() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 5h16l-6.2 7.6v5.9l-3.6 1.8v-7.7z" />
+    </svg>
+  );
 }
 
 /* ---------- balances ---------- */
@@ -619,9 +839,15 @@ function AcctEmpty({ tab, onlyCoin, coin }: { tab: AccountTab; onlyCoin: boolean
 function Balances({ upnl: live }: { upnl: number | null }) {
   const { address } = useAuth();
   const bal = useBalance(address);
+  const mids = useMids();
   const b = bal.data;
   const upnl = live ?? b?.positions.reduce((a, p) => a + p.unrealizedPnl, 0) ?? 0;
   const usage = b && b.accountValue > 0 ? Math.min(1, b.marginUsed / b.accountValue) : 0;
+  /* spot holdings (native deposits through Unit land here) as the asset people deposited: SOL rather than USOL */
+  const spot = spotRows(b?.spot, mids.data);
+  const spotUsd = spot.reduce((a, r) => a + (r.usd ?? 0), 0);
+  /* an action column only once there is a coin to sell or withdraw */
+  const acts = spot.some((r) => r.name !== "USDC");
   return (
     <div className="tm-bp-view">
       <Bar
@@ -636,8 +862,13 @@ function Balances({ upnl: live }: { upnl: number | null }) {
           </>
         }
       >
-        <Stat label="Account">{b ? fmtUsd(b.accountValue) : "…"}</Stat>
-        <span className="tm-bp-stat tm-bp-stat-meter" title="Margin in use as a share of account value">
+        <Stat label={spot.length ? "Perps" : "Account"}>{b ? fmtUsd(b.accountValue) : "…"}</Stat>
+        {spot.length > 0 && (
+          <Stat label="Spot" title="Spot holdings at the perps mid of the same asset (USDC at 1:1)">
+            ≈ {fmtUsd(spotUsd)}
+          </Stat>
+        )}
+        <span className="tm-bp-stat tm-bp-stat-meter" title={b ? `Margin in use as a share of account value: ${fmtUsd(b.marginUsed)} of ${fmtUsd(b.accountValue)}` : "Margin in use as a share of account value"}>
           <span className="label-caps">Margin use</span>
           <Track v={usage} tone={usage >= 0.8 ? "down" : usage >= 0.5 ? "warn" : undefined} />
           <b className="num">{b ? `${(usage * 100).toFixed(1)}%` : "…"}</b>
@@ -652,33 +883,106 @@ function Balances({ upnl: live }: { upnl: number | null }) {
               <th className="r">Available</th>
               <th className="r tm-bp-h540">Margin used</th>
               <th className="r">
-                <span className="tm-bp-fold">Unrealised PnL</span>
-                <span className="tm-bp-nsub">uPnL</span>
+                <span className="tm-bp-h1000">Unrealised PnL</span>
+                <span className="tm-bp-s1000">uPnL</span>
               </th>
-              <th className="r tm-bp-h640">Contract</th>
+              {/* the contract folds into the asset's sub line on a narrower deck */}
+              <th className="r tm-bp-h1000">Contract</th>
+              {acts && (
+                <th className="r tm-bp-c-act">
+                  <span className="sr-only">Actions</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {bal.isLoading ? (
-              <BpSkelRows cells={["", "r tm-bp-h540", "r", "r tm-bp-h540", "r", "r tm-bp-h640"]} rows={1} />
+              <BpSkelRows cells={["", "r tm-bp-h540", "r", "r tm-bp-h540", "r", "r tm-bp-h1000"]} rows={1} />
             ) : (
-              <tr className="row-hover">
-                <td>
-                  <span className="tm-bp-coin">
-                    <span className="tm-bp-coin-ic">
-                      <span className="tm-bp-usdc">$</span>
+              <>
+                <tr className="row-hover">
+                  <td>
+                    <span className="tm-bp-coin">
+                      <span className="tm-bp-coin-ic">
+                        <span className="tm-bp-usdc">$</span>
+                      </span>
+                      <span className="tm-bp-2">
+                        <span className="tm-bp-coin-row">USDC</span>
+                        <span className="tm-bp-sub tm-bp-s1000">Perps</span>
+                      </span>
                     </span>
-                    USDC
-                  </span>
-                </td>
-                <td className="r num tm-bp-strong tm-bp-h540">{b ? fmtUsd(b.accountValue) : "–"}</td>
-                <td className="r num">{b ? fmtUsd(b.withdrawable) : "–"}</td>
-                <td className="r num tm-bp-fg2 tm-bp-h540">{b ? fmtUsd(b.marginUsed) : "–"}</td>
-                <td className="r">
-                  <BpMoney v={b ? upnl : null} glow dash={false} />
-                </td>
-                <td className="r tm-bp-dim tm-bp-h640">Perps</td>
-              </tr>
+                  </td>
+                  <td className="r num tm-bp-strong tm-bp-h540">{b ? fmtUsd(b.accountValue) : "–"}</td>
+                  <td className="r num">{b ? fmtUsd(b.withdrawable) : "–"}</td>
+                  <td className="r num tm-bp-fg2 tm-bp-h540">{b ? fmtUsd(b.marginUsed) : "–"}</td>
+                  <td className="r">
+                    <BpMoney v={b ? upnl : null} glow dash={false} />
+                  </td>
+                  <td className="r tm-bp-dim tm-bp-h1000">Perps</td>
+                  {acts && <td className="r tm-bp-c-act" />}
+                </tr>
+                {spot.map((r) => (
+                  <tr key={r.coin} className="row-hover" data-testid={`spot-row-${r.name}`}>
+                    <td>
+                      <span className="tm-bp-coin">
+                        <span className="tm-bp-coin-ic">
+                          <CoinIcon coin={r.name} size={20} />
+                        </span>
+                        <span className="tm-bp-2">
+                          <span className="tm-bp-coin-row">{r.name}</span>
+                          {/* hyperliquid's own name for the token (USOL), next to the asset people deposited */}
+                          {r.name !== r.coin ? (
+                            <span className="tm-bp-sub">
+                              {r.coin}
+                              <span className="tm-bp-s1000"> · Spot</span>
+                            </span>
+                          ) : (
+                            <span className="tm-bp-sub tm-bp-s1000">Spot</span>
+                          )}
+                        </span>
+                      </span>
+                    </td>
+                    <td className="r tm-bp-h540">
+                      <Two main={`${fmtQty(r.total)} ${r.name}`} mainClass="tm-bp-strong" sub={r.usd !== null ? `≈ ${fmtUsd(r.usd)}` : null} />
+                    </td>
+                    <td className="r">
+                      {/* on a narrow deck the total column folds away: its usd estimate rides here instead */}
+                      <Two main={`${fmtQty(r.available)} ${r.name}`} sub={r.usd !== null ? <span className="tm-bp-nsub">≈ {fmtUsd(r.usd)}</span> : null} />
+                    </td>
+                    <td className="r tm-bp-dim tm-bp-h540">–</td>
+                    <td className="r tm-bp-dim">–</td>
+                    <td className="r tm-bp-dim tm-bp-h1000">Spot</td>
+                    {acts && (
+                      <td className="r tm-bp-c-act">
+                        {r.name !== "USDC" && (
+                          <span className="tm-bp-acts">
+                            <button
+                              type="button"
+                              className="tm-bp-act tm-bp-act-mint"
+                              onClick={() => openConvert(r.coin)}
+                              aria-label={`Sell ${r.name} for USDC`}
+                              title={`Sell ${r.name} on Hyperliquid spot and move the USDC to perps`}
+                            >
+                              Sell<span className="tm-bp-h1000"> for USDC</span>
+                            </button>
+                            {/* on a phone the bar's withdraw (the same panel) stands in for the row's */}
+                            <span className="tm-bp-fold">
+                              <button type="button" className="tm-bp-act" onClick={() => openFunds("withdraw")}>
+                                Withdraw<span className="sr-only">, {r.name}</span>
+                              </button>
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {b && b.spot && spot.length === 0 && (
+                  <tr className="tm-bp-note">
+                    <td colSpan={7}>No spot balances. Native deposits (SOL, BTC, ETH) land here; USDC deposits land in perps above.</td>
+                  </tr>
+                )}
+              </>
             )}
           </tbody>
         </table>
@@ -689,11 +993,12 @@ function Balances({ upnl: live }: { upnl: number | null }) {
 
 /* ---------- own positions ---------- */
 type Edit = { coin: string; tp: string; sl: string; long: boolean; entry: number; mark?: number };
+type Compose = { coin: string; text: string; err: string | null; long: boolean };
 
 /** how close the mark is to liquidation: under 3% the price lights up and a red dot breathes beside it */
 const LIQ_NEAR = 0.03;
 
-function OwnPositions({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only: ReactNode }) {
+function OwnPositions({ coin, here, mk, onlyCoin, only }: ViewProps) {
   const { address } = useAuth();
   const bal = useBalance(address);
   const mids = useMids();
@@ -702,13 +1007,24 @@ function OwnPositions({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
   const [busy, setBusy] = useState<string | null>(null);
   const [armed, setArmed] = useArmed();
   const [edit, setEdit] = useState<Edit | null>(null);
-  /* the tp / sl button that opened the editor gets the focus back when it closes */
-  const editFrom = useRef<HTMLElement | null>(null);
-  const closeEditor = useCallback(() => {
-    setEdit(null);
-    const el = editFrom.current;
+  // a thesis can be posted on a position that is already open, not only with the order that opened it
+  const theses = useMyTheses(!!address);
+  const [compose, setCompose] = useState<Compose | null>(null);
+  const latestThesis = (c: string) => (theses.data ?? []).find((t) => t.coin === c) ?? null;
+  /* one footer at a time (tp / sl or thesis); the button that opened it gets the focus back when it closes */
+  const opener = useRef<HTMLElement | null>(null);
+  const refocus = useCallback(() => {
+    const el = opener.current;
     if (el?.isConnected) el.focus({ preventScroll: true });
   }, []);
+  const closeEditor = useCallback(() => {
+    setEdit(null);
+    refocus();
+  }, [refocus]);
+  const closeComposer = useCallback(() => {
+    setCompose(null);
+    refocus();
+  }, [refocus]);
   const list = (bal.data?.positions ?? []).filter((p) => p.szi !== 0 && (!onlyCoin || p.coin === coin));
   const close = async (c: string) => {
     setBusy(c);
@@ -728,6 +1044,22 @@ function OwnPositions({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
       await api("/api/trade/tpsl", { method: "POST", json: { coin: edit.coin, tp: Number(edit.tp) || undefined, sl: Number(edit.sl) || undefined } });
       qc.invalidateQueries({ queryKey: ["account"] });
       closeEditor();
+    } finally {
+      setBusy(null);
+    }
+  };
+  const postThesis = async () => {
+    if (!compose || !compose.text.trim()) return;
+    setBusy(`thesis:${compose.coin}`);
+    try {
+      await api("/api/thesis", { method: "POST", json: { coin: compose.coin, text: compose.text.trim() } });
+      qc.invalidateQueries({ queryKey: ["my-theses"] });
+      qc.invalidateQueries({ queryKey: ["feed"] });
+      qc.invalidateQueries({ queryKey: ["market"] });
+      closeComposer();
+    } catch (e) {
+      const err = (e as Error).message;
+      setCompose((c) => (c ? { ...c, err } : c));
     } finally {
       setBusy(null);
     }
@@ -757,7 +1089,7 @@ function OwnPositions({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
       </Bar>
       <div className="tm-bp-scroll">
         {empty ? (
-          <AcctEmpty tab="positions" onlyCoin={onlyCoin} coin={coin} />
+          <AcctEmpty tab="positions" onlyCoin={onlyCoin} here={here} />
         ) : (
           <table className="tm-bp-table tm-bp-w-pos">
             <thead>
@@ -770,6 +1102,7 @@ function OwnPositions({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
                 </th>
                 <th className="r tm-bp-h540">Liq. price</th>
                 <th className="r tm-bp-h1000">Margin</th>
+                <th className="tm-bp-h640 tm-bp-c-pth">Thesis</th>
                 <th className="r tm-bp-c-act">
                   <span className="tm-bp-fold">TP / SL · Close</span>
                   <span className="tm-bp-nsub sr-only">Actions</span>
@@ -778,25 +1111,51 @@ function OwnPositions({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
             </thead>
             <tbody>
               {bal.isLoading ? (
-                <BpSkelRows cells={["", "r tm-bp-h900", "r tm-bp-h540", "r", "r tm-bp-h540", "r tm-bp-h1000", "r tm-bp-c-act"]} rows={3} />
+                <BpSkelRows cells={["", "r tm-bp-h900", "r tm-bp-h540", "r", "r tm-bp-h540", "r tm-bp-h1000", "tm-bp-h640 tm-bp-c-pth", "r tm-bp-c-act"]} rows={3} />
               ) : (
                 rows.map(({ p, mid, pnl, roe, tp, sl }) => {
+                  const m = mk(p.coin);
                   const long = p.szi > 0;
                   const dist = mid && p.liquidationPx ? Math.abs(mid - p.liquidationPx) / mid : null;
                   const near = dist !== null && dist < LIQ_NEAR;
+                  const t = latestThesis(p.coin);
+                  const composing = compose?.coin === p.coin;
+                  const openThesis = (e: { currentTarget: HTMLElement }) => {
+                    if (composing) return closeComposer();
+                    opener.current = e.currentTarget;
+                    setEdit(null);
+                    setCompose({ coin: p.coin, text: "", err: null, long });
+                  };
+                  const thesisLabel = t ? `Add a thesis on your ${m.name} position` : `Post a thesis on your ${m.name} position`;
                   return (
-                    <tr key={p.coin} className="row-hover" data-side={long ? "long" : "short"} data-editing={edit?.coin === p.coin || undefined}>
+                    <tr key={p.coin} className="row-hover" data-side={long ? "long" : "short"} data-editing={edit?.coin === p.coin || undefined} data-composing={composing || undefined}>
                       <td>
                         <CoinCell
-                          coin={p.coin}
+                          m={m}
+                          href={marketLink(m, p.coin, coin)}
                           pill={<SidePill buy={long} label={`${long ? "Long" : "Short"} ${p.leverage}x`} />}
                           fold
                           nsub={<span className={long ? "tm-bp-up" : "tm-bp-down"}>{`${long ? "Long" : "Short"} ${p.leverage}x`}</span>}
                           sub={
                             <>
                               {sz(p.szi)}
-                              <span className="tm-bp-fold"> {p.coin}</span>
+                              <span className="tm-bp-fold">{unit(m)}</span>
                             </>
+                          }
+                          extra={
+                            /* on a phone the thesis column folds into this pen beside the name */
+                            <button
+                              type="button"
+                              className="tm-bp-pth-mini tm-bp-s640"
+                              data-has={t ? "" : undefined}
+                              data-on={composing || undefined}
+                              aria-expanded={composing}
+                              aria-label={thesisLabel}
+                              title={t ? `Latest: ${t.text}` : "Post a thesis"}
+                              onClick={openThesis}
+                            >
+                              <BpIcon n="pen" size={11} sw={2.2} />
+                            </button>
                           }
                         />
                       </td>
@@ -818,17 +1177,50 @@ function OwnPositions({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
                         )}
                       </td>
                       <td className="r num tm-bp-fg2 tm-bp-h1000">{fmtUsd(p.positionValue / p.leverage)}</td>
+                      <td className="tm-bp-h640 tm-bp-c-pth">
+                        {/* your latest thesis on this position, and a composer for another (or the first) */}
+                        <span className="tm-bp-pth" data-testid={`thesis-cell-${p.coin}`}>
+                          {t ? (
+                            <span className="tm-bp-thesis tm-bp-pth-q" title={t.text}>
+                              <span className="tm-bp-thesis-text">{t.text}</span>
+                            </span>
+                          ) : (
+                            <span className="tm-bp-pth-none">No thesis yet</span>
+                          )}
+                          <button
+                            type="button"
+                            className="tm-bp-pth-btn"
+                            data-has={t ? "" : undefined}
+                            data-on={composing || undefined}
+                            aria-expanded={composing}
+                            aria-label={thesisLabel}
+                            title={t ? `Latest: ${t.text}` : "Why are you in this trade?"}
+                            onClick={openThesis}
+                            data-testid={`thesis-add-${p.coin}`}
+                          >
+                            <BpIcon n="pen" size={11} sw={2.2} />
+                            {t ? (
+                              "Add"
+                            ) : (
+                              <>
+                                Post<span className="tm-bp-pth-long"> thesis</span>
+                              </>
+                            )}
+                          </button>
+                        </span>
+                      </td>
                       <td className="r tm-bp-c-act">
                         <span className="tm-bp-acts">
                           <button
                             type="button"
                             className="tm-bp-tpsl"
                             data-on={edit?.coin === p.coin || undefined}
-                            aria-label={`Edit take profit and stop loss for ${p.coin}`}
+                            aria-label={`Edit take profit and stop loss for ${m.name}`}
                             aria-expanded={edit?.coin === p.coin}
                             title="Edit TP / SL"
                             onClick={(e) => {
-                              editFrom.current = e.currentTarget;
+                              opener.current = e.currentTarget;
+                              setCompose(null);
                               setEdit({ coin: p.coin, tp: tp ? String(tp.triggerPx) : "", sl: sl ? String(sl.triggerPx) : "", long, entry: p.entryPx, mark: mid });
                             }}
                           >
@@ -857,8 +1249,8 @@ function OwnPositions({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
                             }}
                             label="Close"
                             busyLabel="Closing…"
-                            ariaLabel={`Close the ${p.coin} position at market`}
-                            armedLabel={`Confirm: close the ${p.coin} position at market`}
+                            ariaLabel={`Close the ${m.name} position at market`}
+                            armedLabel={`Confirm: close the ${m.name} position at market`}
                           />
                         </span>
                       </td>
@@ -870,7 +1262,8 @@ function OwnPositions({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
           </table>
         )}
       </div>
-      {edit && <TpslEditor edit={{ ...edit, mark: editMark }} setEdit={setEdit} onClose={closeEditor} onSave={saveTpsl} busy={busy === edit.coin} />}
+      {edit && <TpslEditor edit={{ ...edit, mark: editMark }} m={mk(edit.coin)} setEdit={setEdit} onClose={closeEditor} onSave={saveTpsl} busy={busy === edit.coin} />}
+      {compose && <ThesisComposer c={compose} m={mk(compose.coin)} setCompose={setCompose} onClose={closeComposer} onPost={postThesis} busy={busy === `thesis:${compose.coin}`} />}
     </div>
   );
 }
@@ -885,7 +1278,7 @@ function TriggerPct({ v, mark, warn }: { v: number; mark?: number; warn?: boolea
   );
 }
 
-function TpslEditor({ edit, setEdit, onClose, onSave, busy }: { edit: Edit; setEdit: (e: Edit | null) => void; onClose: () => void; onSave: () => void; busy: boolean }) {
+function TpslEditor({ edit, m: mkt, setEdit, onClose, onSave, busy }: { edit: Edit; m: Mk; setEdit: (e: Edit | null) => void; onClose: () => void; onSave: () => void; busy: boolean }) {
   const tpRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     tpRef.current?.focus({ preventScroll: true });
@@ -904,7 +1297,7 @@ function TpslEditor({ edit, setEdit, onClose, onSave, busy }: { edit: Edit; setE
   return (
     <form
       className="tm-bp-editor"
-      aria-label={`Take profit and stop loss for ${edit.coin}`}
+      aria-label={`Take profit and stop loss for ${mkt.name}`}
       onSubmit={(e) => {
         e.preventDefault();
         if (!busy && (edit.tp || edit.sl)) onSave();
@@ -919,9 +1312,9 @@ function TpslEditor({ edit, setEdit, onClose, onSave, busy }: { edit: Edit; setE
       <div className="tm-bp-editor-head">
         <span className="tm-bp-editor-id">
           <span className="tm-bp-coin-ic">
-            <CoinIcon coin={edit.coin} size={18} />
+            <CoinIcon coin={mkt.base || mkt.name} size={18} />
           </span>
-          TP / SL · {edit.coin}
+          TP / SL · {mkt.name}
           <SidePill buy={edit.long} />
         </span>
         <span className="tm-bp-editor-ref num">
@@ -961,13 +1354,95 @@ function TpslEditor({ edit, setEdit, onClose, onSave, busy }: { edit: Edit; setE
   );
 }
 
+/** the thesis composer: the tp / sl editor's footer in the thesis colour. it binds to the open position through
+    POST /api/thesis, lands in the feed with the position attached, and settles when the position closes */
+const THESIS_MAX = 280;
+function ThesisComposer({ c, m, setCompose, onClose, onPost, busy }: { c: Compose; m: Mk; setCompose: (c: Compose | null) => void; onClose: () => void; onPost: () => void; busy: boolean }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    ref.current?.focus({ preventScroll: true });
+  }, [c.coin]);
+  const can = !busy && !!c.text.trim();
+  const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  return (
+    <form
+      className="tm-bp-editor"
+      data-tone="thesis"
+      data-testid="thesis-compose"
+      aria-label={`Thesis on your open ${m.name} position`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (can) onPost();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onClose();
+        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          if (can) onPost();
+        }
+      }}
+    >
+      <div className="tm-bp-editor-head">
+        <span className="tm-bp-editor-id">
+          <span className="tm-bp-coin-ic">
+            <CoinIcon coin={m.base || m.name} size={18} />
+          </span>
+          <span>
+            <span className="tm-bp-thesis-word">Thesis</span> on your open {m.name} position
+          </span>
+          <SidePill buy={c.long} />
+        </span>
+        <span className="tm-bp-editor-ref num" data-warn={THESIS_MAX - c.text.length <= 20 || undefined}>
+          {c.text.length}/{THESIS_MAX}
+        </span>
+      </div>
+      <label className="tm-bp-compose">
+        <textarea
+          ref={ref}
+          maxLength={THESIS_MAX}
+          rows={2}
+          value={c.text}
+          onChange={(e) => setCompose({ ...c, text: e.target.value, err: null })}
+          placeholder="Why are you in this trade? Posted to the feed, bound to this position, settled when it closes."
+          aria-label="thesis text"
+        />
+      </label>
+      <div className="tm-bp-editor-foot">
+        <span className="tm-bp-editor-acts">
+          <button type="submit" className="btn btn-primary btn-sm" disabled={!can} data-testid="thesis-post">
+            {busy ? "Posting…" : "Post thesis"}
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+            Cancel
+          </button>
+        </span>
+        <p className="tm-bp-editor-note" data-err={c.err ? "" : undefined} aria-live="polite">
+          {c.err ?? ""}
+        </p>
+        <span className="tm-bp-editor-keys" aria-hidden>
+          <kbd className="kbd">{mac ? "⌘" : "Ctrl"} Enter</kbd> post
+          <kbd className="kbd">Esc</kbd> close
+        </span>
+      </div>
+    </form>
+  );
+}
+
 /* ---------- open orders ---------- */
-function OpenOrders({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only: ReactNode }) {
+function OpenOrders({ coin, here, mk, onlyCoin, only, filtering }: ViewProps & { filtering: Filtering }) {
   const q = useOpenOrders();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [armed, setArmed] = useArmed();
-  const list = (q.data ?? []).filter((o) => !onlyCoin || o.coin === coin);
+  /* the resting order a running chase keeps re-pricing gets marked (cancelling it by hand ends the chase) */
+  const chases = useChases();
+  const chasing = useMemo(() => new Set(chases.flatMap((c) => (c.status === "running" && c.oid !== null ? [c.oid] : []))), [chases]);
+  const { filter } = filtering;
+  const mine = (q.data ?? []).filter((o) => !onlyCoin || o.coin === coin);
+  const list = mine.filter((o) => rowMatch(filter, o) && typeMatch(filter, o));
+  const narrowed = narrows(filter, true);
   const cancel = async (items: OpenOrder[]) => {
     if (!items.length) return;
     setBusy(true);
@@ -981,13 +1456,16 @@ function OpenOrders({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean;
   const value = (o: OpenOrder) => o.sz * (o.isTrigger && o.type.endsWith("Market") ? o.triggerPx : o.limitPx);
   const notional = list.reduce((a, o) => a + value(o), 0);
   const empty = !q.isLoading && list.length === 0;
-  const n = `${list.length} open order${list.length === 1 ? "" : "s"}${onlyCoin ? ` on ${coin}` : ""}`;
+  /* cancel-all takes exactly the rows on screen: when the filters or the toggle hide some, the button says how many */
+  const partial = (q.data?.length ?? 0) > list.length;
+  const n = `${list.length} open order${list.length === 1 ? "" : "s"}${narrowed ? " matching the filters" : ""}${onlyCoin ? ` on ${here}` : ""}`;
   return (
     <div className="tm-bp-view">
       <Bar
         empty={!list.length}
         end={
           <>
+            {((q.data?.length ?? 0) > 0 || narrowed) && filtering.controls}
             {only}
             {/* every resting order at once (tp / sl included) takes a second click */}
             {list.length > 0 && (
@@ -1001,7 +1479,7 @@ function OpenOrders({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean;
                   void cancel(list);
                 }}
                 icon={<BpIcon n="close" size={11} sw={2.4} />}
-                label="Cancel all"
+                label={partial ? `Cancel ${list.length}` : "Cancel all"}
                 busyLabel="Canceling…"
                 ariaLabel={`Cancel all ${n}`}
                 armedLabel={`Confirm: cancel all ${n}`}
@@ -1015,7 +1493,11 @@ function OpenOrders({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean;
       </Bar>
       <div className="tm-bp-scroll">
         {empty ? (
-          <AcctEmpty tab="orders" onlyCoin={onlyCoin} coin={coin} />
+          narrowed && mine.length > 0 ? (
+            <FilteredEmpty tab="orders" hidden={mine.length} onClear={filtering.clear} />
+          ) : (
+            <AcctEmpty tab="orders" onlyCoin={onlyCoin} here={here} />
+          )
         ) : (
           <table className="tm-bp-table tm-bp-w-orders">
             <thead>
@@ -1035,38 +1517,42 @@ function OpenOrders({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean;
               {q.isLoading ? (
                 <BpSkelRows cells={["tm-bp-h640", "", "tm-bp-h540", "r tm-bp-h540", "r tm-bp-h900", "r", "r tm-bp-c-act"]} rows={3} />
               ) : (
-                list.map((o) => (
-                  <tr key={o.oid} className="row-hover">
-                    <td className="tm-bp-h640">
-                      <BpStamp ms={o.time} />
-                    </td>
-                    <td>
-                      <CoinCell coin={o.coin} pill={<SidePill buy={o.side === "B"} />} nsub={`${shortType(o.type)} · ${sz(o.sz)}`} />
-                    </td>
-                    <td className="tm-bp-h540">
-                      <span className="tm-bp-2">
-                        <span className="tm-bp-fg2">{o.type}</span>
-                        <span className="tm-bp-sub">{flags(o.isPositionTpsl ? "TP/SL" : o.tif?.toUpperCase(), o.reduceOnly && "reduce only") || "–"}</span>
-                      </span>
-                    </td>
-                    <td className="r tm-bp-h540">
-                      <Two main={`${sz(o.sz)} ${o.coin}`} sub={o.origSz !== o.sz ? `of ${sz(o.origSz)}` : null} />
-                    </td>
-                    <td className="r num tm-bp-h900">{fmtUsd(value(o))}</td>
-                    <td className="r">
-                      <Two
-                        main={o.isTrigger && o.type.endsWith("Market") ? "Market" : bpPx(o.limitPx)}
-                        mainClass="tm-bp-strong"
-                        sub={o.isTrigger && o.triggerCondition && o.triggerCondition !== "N/A" ? o.triggerCondition.replace(/^price\s+/i, "") : null}
-                      />
-                    </td>
-                    <td className="r tm-bp-c-act">
-                      <button type="button" className="tm-bp-act" onClick={() => cancel([o])} disabled={busy} aria-label={`Cancel the ${o.coin} ${o.type.toLowerCase()} order`}>
-                        Cancel
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                list.map((o) => {
+                  const m = mk(o.coin);
+                  const buy = o.side === "B";
+                  return (
+                    <tr key={o.oid} className="row-hover">
+                      <td className="tm-bp-h640">
+                        <BpStamp ms={o.time} />
+                      </td>
+                      <td>
+                        <CoinCell m={m} href={marketLink(m, o.coin, coin)} pill={<SidePill buy={buy} label={sideWord(buy, m)} />} nsub={`${shortType(o.type)} · ${sz(o.sz)}`} />
+                      </td>
+                      <td className="tm-bp-h540">
+                        <span className="tm-bp-2">
+                          <span className="tm-bp-fg2">{o.type}</span>
+                          <span className="tm-bp-sub">{flags(o.isPositionTpsl ? "TP/SL" : o.tif?.toUpperCase(), chasing.has(o.oid) && "chase", o.reduceOnly && "reduce only") || "–"}</span>
+                        </span>
+                      </td>
+                      <td className="r tm-bp-h540">
+                        <Two main={`${sz(o.sz)}${unit(m)}`} sub={o.origSz !== o.sz ? `of ${sz(o.origSz)}` : null} />
+                      </td>
+                      <td className="r num tm-bp-h900">{fmtUsd(value(o))}</td>
+                      <td className="r">
+                        <Two
+                          main={o.isTrigger && o.type.endsWith("Market") ? "Market" : bpPx(o.limitPx)}
+                          mainClass="tm-bp-strong"
+                          sub={o.isTrigger && o.triggerCondition && o.triggerCondition !== "N/A" ? o.triggerCondition.replace(/^price\s+/i, "") : null}
+                        />
+                      </td>
+                      <td className="r tm-bp-c-act">
+                        <button type="button" className="tm-bp-act" onClick={() => cancel([o])} disabled={busy} aria-label={`Cancel the ${m.name} ${o.type.toLowerCase()} order`}>
+                          Cancel
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -1077,7 +1563,7 @@ function OpenOrders({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean;
 }
 
 /* ---------- twap ---------- */
-function Twaps({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only: ReactNode }) {
+function Twaps({ coin, here, mk, onlyCoin, only }: ViewProps) {
   const q = useTwaps();
   const qc = useQueryClient();
   const [ending, setEnding] = useState<number | null>(null);
@@ -1101,7 +1587,7 @@ function Twaps({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only
       </Bar>
       <div className="tm-bp-scroll">
         {empty ? (
-          <AcctEmpty tab="twap" onlyCoin={onlyCoin} coin={coin} />
+          <AcctEmpty tab="twap" onlyCoin={onlyCoin} here={here} />
         ) : (
           <table className="tm-bp-table tm-bp-w-twap">
             <thead>
@@ -1122,6 +1608,8 @@ function Twaps({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only
                 <BpSkelRows cells={["", "r tm-bp-h540", "tm-bp-h540", "r tm-bp-h900", "tm-bp-h540", "tm-bp-h540", "r tm-bp-c-act"]} rows={2} />
               ) : (
                 list.map((t, i) => {
+                  const m = mk(t.coin);
+                  const buy = t.side === "B";
                   const done = t.sz ? t.executedSz / t.sz : 0;
                   const total = t.minutes * 60_000;
                   const ran = Math.min(Date.now() - t.time, total);
@@ -1137,15 +1625,15 @@ function Twaps({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only
                     <tr key={`${t.twapId}-${i}`} className="row-hover">
                       <td>
                         {/* on a phone the progress folds into the sub line and the status into the action column */}
-                        <CoinCell coin={t.coin} pill={<SidePill buy={t.side === "B"} />} nsub={`${sz(t.executedSz)} / ${sz(t.sz)} ${t.coin} · ${Math.round(done * 100)}%`} />
+                        <CoinCell m={m} href={marketLink(m, t.coin, coin)} pill={<SidePill buy={buy} label={sideWord(buy, m)} />} nsub={`${sz(t.executedSz)} / ${sz(t.sz)}${unit(m)} · ${Math.round(done * 100)}%`} />
                       </td>
                       <td className="r tm-bp-h540">
-                        <Two main={`${sz(t.sz)} ${t.coin}`} sub={flags(t.reduceOnly && "reduce only", t.randomize && "randomized") || null} />
+                        <Two main={`${sz(t.sz)}${unit(m)}`} sub={flags(t.reduceOnly && "reduce only", t.randomize && "randomized") || null} />
                       </td>
                       <td className="tm-bp-h540">
                         <span className="tm-bp-prog">
                           <Track v={done} />
-                          <Two main={`${sz(t.executedSz)} ${t.coin}`} mainClass="tm-bp-fg2" sub={`${Math.round(done * 100)}%`} />
+                          <Two main={`${sz(t.executedSz)}${unit(m)}`} mainClass="tm-bp-fg2" sub={`${Math.round(done * 100)}%`} />
                         </span>
                       </td>
                       <td className="r num tm-bp-h900">{t.executedSz ? bpPx(t.executedNtl / t.executedSz) : "–"}</td>
@@ -1176,7 +1664,7 @@ function Twaps({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only
                             type="button"
                             className="tm-bp-act tm-bp-act-down"
                             disabled={ending === t.twapId}
-                            aria-label={`Terminate the ${t.coin} TWAP`}
+                            aria-label={`Terminate the ${m.name} TWAP`}
                             onClick={() => terminate(t.coin, t.twapId!)}
                           >
                             <span className="tm-bp-stack" aria-hidden>
@@ -1203,10 +1691,167 @@ function Twaps({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only
   );
 }
 
+/* ---------- chase orders ---------- */
+const CHASE_PILL: Record<Chase["status"], { label: string; cls: string }> = {
+  running: { label: "Running", cls: "pill-brand" },
+  filled: { label: "Filled", cls: "pill-up" },
+  stopped: { label: "Stopped", cls: "pill-neutral" },
+  expired: { label: "Expired", cls: "pill-warn" },
+  error: { label: "Error", cls: "pill-down" },
+};
+/** a running chase's clock: seconds while it is young (it re-prices every few), then minutes like the limit */
+const age = (ms: number) => (ms < 60_000 ? `${Math.max(0, Math.floor(ms / 1000))}s` : mins(ms));
+
+function Chases({ coin, here, mk, onlyCoin, only }: ViewProps) {
+  const all = useChases();
+  const list = all.filter((c) => !onlyCoin || c.coin === coin);
+  const [stopping, setStopping] = useState<string | null>(null);
+  const stop = async (id: string) => {
+    setStopping(id);
+    try {
+      await stopChase(id);
+    } finally {
+      setStopping(null);
+    }
+  };
+  const running = list.filter((c) => c.status === "running").length;
+  return (
+    <div className="tm-bp-view">
+      <Bar
+        empty={!list.length}
+        end={
+          <>
+            {only}
+            {list.some((c) => c.status !== "running") && (
+              <button type="button" className="tm-bp-icon-btn" onClick={clearFinishedChases} title="Remove the chases that are no longer running">
+                <BpIcon n="close" size={11} sw={2.4} />
+                Clear finished
+              </button>
+            )}
+          </>
+        }
+      >
+        <Stat label="Running">{running}</Stat>
+        <Stat label="Total">{list.length}</Stat>
+      </Bar>
+      <div className="tm-bp-scroll">
+        {list.length === 0 ? (
+          <AcctEmpty tab="chase" onlyCoin={onlyCoin} here={here} />
+        ) : (
+          <table className="tm-bp-table tm-bp-w-twap">
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th className="tm-bp-h540">Remaining</th>
+                <th className="r tm-bp-h540">Resting at</th>
+                <th className="tm-bp-h900">Running / Limit</th>
+                <th className="tm-bp-h540">Status</th>
+                <th className="r tm-bp-c-act">
+                  <span className="sr-only">Stop</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((c) => {
+                // a stored chase from before the market list loaded may carry a raw id as its label: prefer the market's name
+                const id = mk(c.coin);
+                const m = id.market ? id : { ...id, name: c.label };
+                const buy = c.side === "LONG";
+                const live = c.status === "running";
+                const remaining = c.status === "running" ? c.remaining : c.status === "filled" ? 0 : c.remaining;
+                const done = c.sz ? Math.max(0, Math.min(1, (c.sz - remaining) / c.sz)) : 0;
+                const ran = Math.min(Date.now() - c.startedAt, c.maxMs);
+                const clock = `${age(ran)} / ${mins(c.maxMs)}`;
+                const st = CHASE_PILL[c.status] ?? statusPill(c.status);
+                const pill = (
+                  <span className={`pill ${st.cls}`}>
+                    {live && <span className="tm-bp-dot live-dot" />}
+                    {st.label}
+                  </span>
+                );
+                return (
+                  <tr key={c.id} className="row-hover" data-testid={`chase-${c.id}`}>
+                    <td>
+                      {/* the size rides under "remaining"; on a phone the progress and the resting price fold into
+                          the sub line, and the status into the action column */}
+                      <CoinCell
+                        m={m}
+                        href={marketLink(id, c.coin, coin)}
+                        pill={<SidePill buy={buy} label={sideWord(buy, id)} />}
+                        sub={c.reduceOnly ? "reduce only" : null}
+                        subFold
+                        nsub={`${sz(remaining)} / ${sz(c.sz)}${unit(m)}${c.px !== null ? ` @ ${bpPx(c.px)}` : ""}`}
+                      />
+                    </td>
+                    <td className="tm-bp-h540">
+                      <span className="tm-bp-prog">
+                        <Track v={done} />
+                        <Two main={`${sz(remaining)}${unit(m)}`} mainClass="tm-bp-fg2" sub={`of ${sz(c.sz)} · ${Math.round(done * 100)}% filled`} />
+                      </span>
+                    </td>
+                    <td className="r tm-bp-h540">
+                      <Two main={c.px !== null ? bpPx(c.px) : "–"} mainClass="tm-bp-strong" sub={`${c.reprices} re-price${c.reprices === 1 ? "" : "s"}`} />
+                    </td>
+                    <td className="tm-bp-h900">
+                      {live ? (
+                        <span className="tm-bp-prog">
+                          <Track v={c.maxMs ? ran / c.maxMs : 0} />
+                          <span className="num tm-bp-fg2" suppressHydrationWarning>
+                            {clock}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="num tm-bp-fg2">
+                          {mins(c.maxMs)} <span className="tm-bp-sub">limit</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="tm-bp-h540">
+                      <span className="tm-bp-2">
+                        {pill}
+                        {c.error ? (
+                          <span className="tm-bp-sub tm-bp-down tm-bp-err" title={c.error}>
+                            {c.error}
+                          </span>
+                        ) : (
+                          // the running / limit column folds in here on a narrower deck
+                          <span className="tm-bp-sub tm-bp-s900 num">{live ? clock : `${mins(c.maxMs)} limit`}</span>
+                        )}
+                      </span>
+                    </td>
+                    <td className="r tm-bp-c-act">
+                      {live ? (
+                        <button type="button" className="tm-bp-act tm-bp-act-down" disabled={stopping === c.id} aria-label={`Stop the ${m.name} chase`} onClick={() => void stop(c.id)}>
+                          <span className="tm-bp-stack" aria-hidden>
+                            <span data-on={stopping !== c.id || undefined}>Stop</span>
+                            <span data-on={stopping === c.id || undefined}>Stopping…</span>
+                          </span>
+                        </button>
+                      ) : (
+                        <>
+                          <span className="tm-bp-dim tm-bp-fold">–</span>
+                          <span className="tm-bp-nsub">{pill}</span>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- trade history ---------- */
-function TradeHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only: ReactNode }) {
+function TradeHistory({ coin, here, mk, onlyCoin, only, filtering }: ViewProps & { filtering: Filtering }) {
   const q = useAccountFills();
-  const list = (q.data ?? []).filter((f) => !onlyCoin || f.coin === coin);
+  const { filter } = filtering;
+  const mine = (q.data ?? []).filter((f) => !onlyCoin || f.coin === coin);
+  const list = mine.filter((f) => rowMatch(filter, f));
+  const narrowed = narrows(filter, false);
   const fees = list.reduce((a, f) => a + f.fee + f.builderFee, 0);
   const pnl = list.reduce((a, f) => a + f.closedPnl, 0);
   const empty = !q.isLoading && list.length === 0;
@@ -1216,6 +1861,7 @@ function TradeHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
         empty={!list.length}
         end={
           <>
+            {((q.data?.length ?? 0) > 0 || narrowed) && filtering.controls}
             {only}
             {list.length > 0 && <CsvButton rows={list} name="trade-history" />}
           </>
@@ -1229,7 +1875,11 @@ function TradeHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
       </Bar>
       <div className="tm-bp-scroll">
         {empty ? (
-          <AcctEmpty tab="trades" onlyCoin={onlyCoin} coin={coin} />
+          narrowed && mine.length > 0 ? (
+            <FilteredEmpty tab="trades" hidden={mine.length} onClear={filtering.clear} />
+          ) : (
+            <AcctEmpty tab="trades" onlyCoin={onlyCoin} here={here} />
+          )
         ) : (
           <table className="tm-bp-table tm-bp-w-fills">
             <thead>
@@ -1248,6 +1898,7 @@ function TradeHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
                 <BpSkelRows cells={["tm-bp-h640", "", "r", "r tm-bp-h540", "r tm-bp-h900", "r tm-bp-h540", "r"]} rows={4} />
               ) : (
                 list.map((f) => {
+                  const m = mk(f.coin);
                   const pill = fillPill(f.dir, f.liquidation);
                   return (
                     <tr key={f.tid} className="row-hover">
@@ -1255,11 +1906,12 @@ function TradeHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
                         <BpStamp ms={f.time} />
                       </td>
                       <td>
-                        <CoinCell coin={f.coin} pill={<span className={`pill ${pill.cls}`}>{pill.label}</span>} nsub={`${hhmm(f.time)} · ${sz(f.sz)}`} />
+                        <CoinCell m={m} href={marketLink(m, f.coin, coin)} pill={<span className={`pill ${pill.cls}`}>{pill.label}</span>} nsub={`${hhmm(f.time)} · ${sz(f.sz)}`} />
                       </td>
                       <td className="r num">{bpPx(f.px)}</td>
                       <td className="r num tm-bp-fg2 tm-bp-h540">
-                        {sz(f.sz)} {f.coin}
+                        {sz(f.sz)}
+                        {unit(m)}
                       </td>
                       <td className="r num tm-bp-strong tm-bp-h900">{fmtUsd(f.px * f.sz)}</td>
                       <td className="r tm-bp-h540">
@@ -1281,7 +1933,7 @@ function TradeHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
 }
 
 /* ---------- funding history ---------- */
-function FundingHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only: ReactNode }) {
+function FundingHistory({ coin, here, mk, onlyCoin, only }: ViewProps) {
   const q = useFundingPayments();
   const list = (q.data ?? []).filter((f) => !onlyCoin || f.coin === coin);
   const net = list.reduce((a, f) => a + f.usdc, 0);
@@ -1304,7 +1956,7 @@ function FundingHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: bool
       </Bar>
       <div className="tm-bp-scroll">
         {empty ? (
-          <AcctEmpty tab="funding" onlyCoin={onlyCoin} coin={coin} />
+          <AcctEmpty tab="funding" onlyCoin={onlyCoin} here={here} />
         ) : (
           <table className="tm-bp-table tm-bp-w-fund">
             <thead>
@@ -1320,23 +1972,27 @@ function FundingHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: bool
               {q.isLoading ? (
                 <BpSkelRows cells={["tm-bp-h540", "", "r tm-bp-h540", "r", "r"]} rows={4} />
               ) : (
-                list.map((f, i) => (
-                  <tr key={i} className="row-hover">
-                    <td className="tm-bp-h540">
-                      <BpStamp ms={f.time} />
-                    </td>
-                    <td>
-                      <CoinCell coin={f.coin} pill={<SidePill buy={f.szi > 0} />} nsub={`${hhmm(f.time)} · ${sz(f.szi)}`} />
-                    </td>
-                    <td className="r num tm-bp-fg2 tm-bp-h540">
-                      {sz(f.szi)} {f.coin}
-                    </td>
-                    <td className="r">
-                      <BpMoney v={f.usdc} glow dash={false} />
-                    </td>
-                    <td className="r num tm-bp-sub">{(f.rate * 100).toFixed(4)}%</td>
-                  </tr>
-                ))
+                list.map((f, i) => {
+                  const m = mk(f.coin);
+                  return (
+                    <tr key={i} className="row-hover">
+                      <td className="tm-bp-h540">
+                        <BpStamp ms={f.time} />
+                      </td>
+                      <td>
+                        <CoinCell m={m} href={marketLink(m, f.coin, coin)} pill={<SidePill buy={f.szi > 0} />} nsub={`${hhmm(f.time)} · ${sz(f.szi)}`} />
+                      </td>
+                      <td className="r num tm-bp-fg2 tm-bp-h540">
+                        {sz(f.szi)}
+                        {unit(m)}
+                      </td>
+                      <td className="r">
+                        <BpMoney v={f.usdc} glow dash={false} />
+                      </td>
+                      <td className="r num tm-bp-sub">{(f.rate * 100).toFixed(4)}%</td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -1347,9 +2003,12 @@ function FundingHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: bool
 }
 
 /* ---------- order history ---------- */
-function OrderHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolean; only: ReactNode }) {
+function OrderHistory({ coin, here, mk, onlyCoin, only, filtering }: ViewProps & { filtering: Filtering }) {
   const q = useOrderHistory();
-  const list = (q.data ?? []).filter((o) => !onlyCoin || o.coin === coin);
+  const { filter } = filtering;
+  const mine = (q.data ?? []).filter((o) => !onlyCoin || o.coin === coin);
+  const list = mine.filter((o) => rowMatch(filter, o) && typeMatch(filter, o));
+  const narrowed = narrows(filter, true);
   const filled = list.filter((o) => o.status === "filled").length;
   const empty = !q.isLoading && list.length === 0;
   return (
@@ -1358,6 +2017,7 @@ function OrderHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
         empty={!list.length}
         end={
           <>
+            {((q.data?.length ?? 0) > 0 || narrowed) && filtering.controls}
             {only}
             {list.length > 0 && <CsvButton rows={list} name="order-history" />}
           </>
@@ -1368,7 +2028,11 @@ function OrderHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
       </Bar>
       <div className="tm-bp-scroll">
         {empty ? (
-          <AcctEmpty tab="history" onlyCoin={onlyCoin} coin={coin} />
+          narrowed && mine.length > 0 ? (
+            <FilteredEmpty tab="history" hidden={mine.length} onClear={filtering.clear} />
+          ) : (
+            <AcctEmpty tab="history" onlyCoin={onlyCoin} here={here} />
+          )
         ) : (
           <table className="tm-bp-table tm-bp-w-hist">
             <thead>
@@ -1388,6 +2052,8 @@ function OrderHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
                 <BpSkelRows cells={["tm-bp-h640", "", "tm-bp-h540", "r tm-bp-h540", "r tm-bp-h900", "r", "", "r tm-bp-h1000"]} rows={4} />
               ) : (
                 list.map((o, i) => {
+                  const m = mk(o.coin);
+                  const buy = o.side === "B";
                   const st = statusPill(o.status);
                   const filledSz = Number((o.origSz - o.sz).toFixed(8));
                   return (
@@ -1396,7 +2062,7 @@ function OrderHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
                         <BpStamp ms={o.time} />
                       </td>
                       <td>
-                        <CoinCell coin={o.coin} pill={<SidePill buy={o.side === "B"} />} nsub={`${shortType(o.type)} · ${sz(o.origSz)}`} />
+                        <CoinCell m={m} href={marketLink(m, o.coin, coin)} pill={<SidePill buy={buy} label={sideWord(buy, m)} />} nsub={`${shortType(o.type)} · ${sz(o.origSz)}`} />
                       </td>
                       <td className="tm-bp-h540">
                         <span className="tm-bp-2">
@@ -1405,7 +2071,7 @@ function OrderHistory({ coin, onlyCoin, only }: { coin: string; onlyCoin: boolea
                         </span>
                       </td>
                       <td className="r tm-bp-h540">
-                        <Two main={`${sz(o.origSz)} ${o.coin}`} sub={`filled ${sz(filledSz)}`} />
+                        <Two main={`${sz(o.origSz)}${unit(m)}`} sub={`filled ${sz(filledSz)}`} />
                       </td>
                       <td className="r num tm-bp-h900">{fmtUsd(o.origSz * (o.isTrigger ? o.triggerPx : o.limitPx))}</td>
                       <td className="r">

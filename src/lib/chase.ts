@@ -50,6 +50,8 @@ function load() {
     if (Array.isArray(v)) chases = v;
   } catch {}
 }
+/** the server has no chases; one shared empty list, so react sees the same snapshot every render */
+const NONE: Chase[] = [];
 export function useChases(): Chase[] {
   return useSyncExternalStore(
     (cb) => {
@@ -58,7 +60,7 @@ export function useChases(): Chase[] {
       return () => subs.delete(cb);
     },
     () => chases,
-    () => [],
+    () => NONE,
   );
 }
 const patch = (id: string, p: Partial<Chase>) => {
