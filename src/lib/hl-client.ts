@@ -61,3 +61,16 @@ export async function spotSendWithWallet(wallet: WalletClient, chainId: number, 
 export async function setDexAbstractionWithWallet(wallet: WalletClient, chainId: number, user: string, enabled: boolean) {
   return exchange(wallet, chainId).userDexAbstraction({ user: user as `0x${string}`, enabled });
 }
+
+type OrderStatus = { filled: { totalSz: string; avgPx: string; oid: number } } | { resting: { oid: number } } | { error: string } | string;
+/**
+ * a spot market sell signed by the main wallet itself (no trading agent involved): an IOC limit on the coin's USDC
+ * pair. the quote (asset id, size, price) comes from /api/trade/spot-quote so the browser never guesses market rules.
+ */
+export async function spotSellWithWallet(wallet: WalletClient, chainId: number, q: { assetId: number; sz: string; px: string }): Promise<{ avgPx: number; totalSz: number }> {
+  const res = await exchange(wallet, chainId).order({ orders: [{ a: q.assetId, b: false, p: q.px, s: q.sz, r: false, t: { limit: { tif: "Ioc" } } }], grouping: "na" });
+  const first = (res as unknown as { response: { data: { statuses: OrderStatus[] } } }).response.data.statuses[0];
+  if (typeof first === "object" && "error" in first) throw new Error(first.error);
+  if (typeof first === "object" && "filled" in first) return { avgPx: Number(first.filled.avgPx), totalSz: Number(first.filled.totalSz) };
+  throw new Error("the spot market did not fill the order; try again");
+}
