@@ -34,8 +34,14 @@ model User {
   /// hyperliquid main wallet, lowercase
   address   String   @unique
   handle    String?  @unique
+  /// user-chosen display name (shown before @handle, like fomo)
+  displayName String?
   xHandle   String?
+  tgHandle  String?
+  bio       String?
+  /// data urls after client-side resize (avatar ≤ ~120kb, banner ≤ ~500kb)
   avatarUrl String?
+  bannerUrl String?
   /// set when the wallet signed in. a row without it is a shadow user (someone followed the address).
   claimedAt DateTime?
   createdAt DateTime @default(now())

@@ -102,10 +102,15 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
   };
   const hl = pf ? { day: win("day"), week: win("week"), month: win("month"), allTime: win("allTime") } : null;
   const following = t.user ? await prisma.follow.count({ where: { followerId: t.user.id } }) : 0;
+  // mutuals: accounts this profile follows that follow it back
+  const mutuals = t.user ? await prisma.follow.count({ where: { followerId: t.user.id, following: { following: { some: { followingId: t.user.id } } } } }) : 0;
   return json(
     plain({
       address: t.address,
-      user: t.user ? { id: t.user.id, handle: t.user.handle, xHandle: t.user.xHandle, avatarUrl: t.user.avatarUrl, createdAt: t.user.createdAt } : null,
+      user: t.user
+        ? { id: t.user.id, handle: t.user.handle, displayName: t.user.displayName, xHandle: t.user.xHandle, tgHandle: t.user.tgHandle, bio: t.user.bio, avatarUrl: t.user.avatarUrl, bannerUrl: t.user.bannerUrl, createdAt: t.user.createdAt }
+        : null,
+      mutuals,
       displayName: tracked?.displayName ?? null,
       claimed: !!t.user?.claimedAt,
       isMe: s?.address === t.address,

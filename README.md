@@ -72,6 +72,12 @@ the app talks to hyperliquid mainnet. `NEXT_PUBLIC_HL_NETWORK=testnet` points it
 
 the server caches order book and trade reads for half a second so every viewer shares one upstream call.
 
+## profiles and following
+
+connecting a wallet reads the address; signing the nonce claims it. a claimed account with no handle is forced through profile setup before anything else (name, @handle with live availability, bio, X and telegram usernames, avatar and banner). images are resized in the browser (avatar 320², banner 1500×500, jpeg) and stored as data urls on the user row, so there is no object storage to run. `/api/me/profile` saves it, the same dialog edits it later from the profile page. any hyperliquid address can be followed, claimed or not; profiles show mutuals, following and followers like fomo.
+
+wallets: every extension that announces itself over eip-6963 gets its own row (metamask, phantom's evm account, rabby, and anything else installed), with install links for the big three when they are missing, plus walletconnect (needs `NEXT_PUBLIC_WALLETCONNECT_ID`, free at cloud.reown.com, covers phantom mobile, rainbow, trust, ledger and 400+ others) and coinbase wallet. hyperliquid accounts are evm addresses, so phantom connects with its ethereum account.
+
 ## deposits and withdrawals
 
 both happen inside the app and never touch socialLiquid. a deposit is a plain USDC transfer from the connected wallet to hyperliquid's bridge contract on arbitrum (min 5 USDC, credited in about a minute; the modal switches the wallet to arbitrum, shows the wallet's USDC balance and waits for the hyperliquid balance to move). a withdrawal is hyperliquid's `withdraw3` action signed by the main wallet, never by the agent key ($1 fee, USDC on arbitrum in about five minutes). other chains go through hyperliquid's own cross-chain routes; the balance shows up here either way. `HL_MOCK` credits and debits a synthetic ledger through `/api/mock/funds`.

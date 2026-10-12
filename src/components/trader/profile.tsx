@@ -8,10 +8,12 @@ import { api } from "@/lib/client";
 import { fmtDuration, fmtPct, fmtPx, fmtUsd, shortAddr, timeAgo } from "@/lib/format";
 import type { TraderStats } from "@/lib/queries";
 import { Avatar, CoinIcon, Empty, Icon, OutcomePill, Pnl, SidePill } from "../ui";
+import { openProfileEditor } from "../profile-editor";
 
 export type Profile = {
   address: string;
-  user: { id: string; handle: string | null; xHandle: string | null; avatarUrl: string | null; createdAt: string } | null;
+  user: { id: string; handle: string | null; displayName: string | null; xHandle: string | null; tgHandle: string | null; bio: string | null; avatarUrl: string | null; bannerUrl: string | null; createdAt: string } | null;
+  mutuals: number;
   displayName: string | null;
   claimed: boolean;
   isMe: boolean;
@@ -43,7 +45,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
   const [posTab, setPosTab] = useState<"open" | "closed">("open");
   const [range, setRange] = useState<Range>("7D");
   const [busy, setBusy] = useState(false);
-  const name = p.user?.handle ?? p.displayName ?? shortAddr(p.address);
+  const name = p.user?.displayName ?? p.user?.handle ?? p.displayName ?? shortAddr(p.address);
   const hue = parseInt(p.address.slice(2, 8), 16) % 360;
 
   const follow = async () => {
@@ -79,11 +81,16 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
       <div className="min-w-0 space-y-3">
         {/* header card */}
         <section className="card overflow-hidden">
-          <div className="h-28" style={{ background: `linear-gradient(135deg, hsl(${hue} 60% 14%), hsl(${(hue + 60) % 360} 50% 9%) 60%, #0b0b0e)` }} />
-          <div className="px-5 pb-5">
-            <div className="flex items-end gap-4 -mt-10">
-              <Avatar address={p.address} url={p.user?.avatarUrl} handle={p.user?.handle ?? p.displayName} size={80} ring />
-              <div className="flex-1 min-w-0 pb-1">
+          <div className="h-36 md:h-44 relative overflow-hidden" style={{ background: `linear-gradient(135deg, hsl(${hue} 60% 14%), hsl(${(hue + 60) % 360} 50% 9%) 60%, #0b0b0e)` }}>
+            {p.user?.bannerUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.user.bannerUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+            )}
+          </div>
+          <div className="px-5 pb-5 relative">
+            <div className="flex items-start gap-4 -mt-10">
+              <Avatar address={p.address} url={p.user?.avatarUrl} handle={p.user?.handle ?? p.displayName} size={88} ring />
+              <div className="flex-1 min-w-0 pt-12">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-[22px] font-semibold tracking-tight truncate">{name}</h1>
                   {p.claimed && <span className="text-brand" title="claimed"><Icon.check /></span>}
@@ -91,18 +98,21 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                   {p.isMe && <span className="pill pill-brand">You</span>}
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted mt-0.5 flex-wrap">
-                  {p.user?.handle && <span>@{p.user.handle}</span>}
+                  {p.user?.handle && <span className="text-fg-2">@{p.user.handle}</span>}
                   {p.user?.xHandle && <a href={`https://x.com/${p.user.xHandle}`} target="_blank" rel="noreferrer" className="hover:text-fg inline-flex items-center gap-1"><Icon.x /> {p.user.xHandle}</a>}
+                  {p.user?.tgHandle && <a href={`https://t.me/${p.user.tgHandle}`} target="_blank" rel="noreferrer" className="hover:text-fg inline-flex items-center gap-1"><Icon.send /> {p.user.tgHandle}</a>}
                   <span className="num" title={p.address}>{shortAddr(p.address)}</span>
                 </div>
+                {p.user?.bio && <p className="text-[13px] text-fg-2 mt-1.5 max-w-[560px] leading-snug">{p.user.bio}</p>}
               </div>
-              <div className="hidden sm:flex items-center gap-6 pb-1 text-center">
-                <StatBig label="Theses" value={p.stats.thesisCount} />
+              <div className="hidden sm:flex items-center gap-6 pt-12 text-center">
+                <StatBig label="Mutuals" value={p.mutuals} />
                 <StatBig label="Following" value={p.following} />
                 <StatBig label="Followers" value={p.followers} />
               </div>
-              <div className="flex gap-2 pb-1">
+              <div className="flex gap-2 pt-12">
                 <button className="btn h-9 w-9 px-0" title="share" onClick={() => navigator.share?.({ url: location.href, title: name }).catch(() => navigator.clipboard?.writeText(location.href))}><Icon.share /></button>
+                {p.isMe && <button className="btn h-9 px-4" onClick={() => openProfileEditor()}>Edit profile</button>}
                 {!p.isMe && (
                   <button className={`btn h-9 px-4 ${p.isFollowing ? "" : "bg-thesis border-thesis text-white hover:brightness-110"}`} onClick={follow} disabled={busy || !signedIn} title={signedIn ? "" : "sign in to follow"}>
                     {p.isFollowing ? "Following" : "Follow"}

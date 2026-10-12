@@ -12,8 +12,12 @@ export const GET = handler(async () => {
           id: user.id,
           address: user.address,
           handle: user.handle,
+          displayName: user.displayName,
           xHandle: user.xHandle,
+          tgHandle: user.tgHandle,
+          bio: user.bio,
           avatarUrl: user.avatarUrl,
+          bannerUrl: user.bannerUrl,
           agent: user.agentKey
             ? { agentAddress: user.agentKey.agentAddress, approved: !!user.agentKey.approvedAt, builderApproved: !!user.agentKey.builderApprovedAt }
             : null,

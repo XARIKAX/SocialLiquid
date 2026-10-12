@@ -67,7 +67,7 @@ export function isAddress(s: string): boolean {
 
 /** label for a trader: claimed handle, else hyperliquid display name, else short address */
 export function userLabel(u: { handle?: string | null; address: string; displayName?: string | null }): string {
-  return u.handle ?? u.displayName ?? shortAddr(u.address);
+  return u.displayName ?? u.handle ?? shortAddr(u.address);
 }
 
 /** profile path: only a claimed handle resolves, otherwise the address */

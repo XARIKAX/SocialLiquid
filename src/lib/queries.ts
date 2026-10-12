@@ -12,12 +12,12 @@ export async function usersByAddress(addresses: string[]): Promise<Map<string, U
   if (!uniq.length) return new Map();
   const users = await prisma.user.findMany({
     where: { address: { in: uniq } },
-    select: { id: true, address: true, handle: true, xHandle: true, avatarUrl: true, claimedAt: true },
+    select: { id: true, address: true, handle: true, displayName: true, xHandle: true, avatarUrl: true, claimedAt: true },
   });
   const tracked = await prisma.trackedAddress.findMany({ where: { address: { in: uniq }, displayName: { not: null } }, select: { address: true, displayName: true } });
   const map = new Map<string, UserLite>();
   const names = new Map(tracked.map((t) => [t.address, t.displayName]));
-  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.claimedAt ? u.handle : null, displayName: names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt });
+  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.claimedAt ? u.handle : null, displayName: (u.claimedAt ? u.displayName : null) ?? names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt });
   for (const t of tracked) if (!map.has(t.address)) map.set(t.address, { id: "", address: t.address, handle: null, displayName: t.displayName, xHandle: null, avatarUrl: null, claimed: false });
   return map;
 }

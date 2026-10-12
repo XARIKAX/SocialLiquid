@@ -22,6 +22,7 @@ export const Icon = {
   menu: (p: { className?: string }) => <svg width="18" height="18" viewBox="0 0 24 24" {...P} className={p.className}><path d="M4 7h16M4 12h16M4 17h16" /></svg>,
   sun: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>,
   moon: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>,
+  send: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="M21 3 3 10.5l7.5 2.5L13 21z" /><path d="M10.5 13 21 3" /></svg>,
   camera: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.5" /></svg>,
   expand: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>,
   shrink: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>,
