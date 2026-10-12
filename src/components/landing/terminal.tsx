@@ -376,7 +376,7 @@ function Chrome() {
           <Ico n="lock" size={11} sw={2} />
         </span>
         <span>
-          socialliquid.xyz<span className="lp-term-url-path">/m/BTC</span>
+          socialliquid.fun<span className="lp-term-url-path">/m/BTC</span>
         </span>
       </span>
       <span className="lp-term-chrome-end">
@@ -391,7 +391,7 @@ function AppBar() {
   return (
     <div className="lp-term-app">
       <span className="lp-term-brand">
-        <Mark size={17} id="lp-term-mk" />
+        <Mark size={18} />
         <span>
           social<span className="lp-term-brand-liquid">Liquid</span>
         </span>

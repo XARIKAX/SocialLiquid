@@ -17,7 +17,7 @@ export function Nav() {
       <NavScrollFlag />
       <div className="lp-nav-inner">
         <Link href="/" className="lp-nav-logo" aria-label="socialLiquid home">
-          <Wordmark id="nav-mark" />
+          <Wordmark />
         </Link>
         <nav className="lp-nav-links" aria-label="Primary">
           {LINKS.map(([l, h]) =>

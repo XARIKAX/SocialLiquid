@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
 import { prisma } from "@/lib/db";
 import { fmtPx, fmtUsd, shortAddr } from "@/lib/format";
@@ -15,6 +17,12 @@ const OUTCOME: Record<string, { label: string; color: string }> = {
   DUMPED: { label: "dumped <1h", color: "#f59e0b" },
 };
 
+/** the glass "S" mark, inlined once; the card falls back to the wordmark alone if the file is missing */
+let MARK: string | null = null;
+try {
+  MARK = `data:image/png;base64,${readFileSync(join(process.cwd(), "public", "brand", "mark-128.png")).toString("base64")}`;
+} catch {}
+
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const t = await prisma.thesis.findUnique({ where: { id }, include: { user: true, position: true } });
@@ -26,6 +34,10 @@ export default async function Image({ params }: { params: Promise<{ id: string }
     (
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: "#0a0a0c", color: "#e8e8ec", padding: 64, fontFamily: "sans-serif" }}>
         <div style={{ display: "flex", alignItems: "center", fontSize: 36, fontWeight: 700 }}>
+          {MARK && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={MARK} width={40} height={49} alt="" style={{ marginRight: 14 }} />
+          )}
           <span>social</span>
           <span style={{ color: "#4cc9f0" }}>Liquid</span>
         </div>

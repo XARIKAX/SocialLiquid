@@ -29,7 +29,7 @@ export default async function ThesisPage({ params }: Props) {
   if (!t) notFound();
   const who = t.user.handle ?? shortAddr(t.user.address);
   const p = t.position;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://socialliquid.fun";
   const url = `${appUrl}/t/${t.user.handle ?? t.user.address}/thesis/${t.id}`;
   const share = `https://x.com/intent/tweet?${new URLSearchParams({ text: `${p ? `${p.side.toLowerCase()} ${t.coin} ${p.leverage}x` : t.coin}: ${t.text}`, url, hashtags: "socialLiquid,hyperliquid" })}`;
   return (

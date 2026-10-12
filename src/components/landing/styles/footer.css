@@ -270,7 +270,7 @@
 .lp-footer-risk { line-height: 1.6; color: var(--lp-muted); }
 .lp-footer-legal-end { display: inline-flex; align-items: center; gap: 16px; }
 .lp-footer-built { display: inline-flex; align-items: center; gap: 8px; color: var(--lp-muted); white-space: nowrap; }
-.lp-footer-built .lp-mark { filter: drop-shadow(0 0 6px rgb(77 227 193 / 0.6)); }
+.lp-footer-built .lp-mark { filter: drop-shadow(0 0 6px rgb(40 160 255 / 0.55)); }
 .lp-footer-up {
   position: relative;
   display: inline-flex;
