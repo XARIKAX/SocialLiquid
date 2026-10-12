@@ -10,8 +10,14 @@ import type { MarketSummary } from "@/lib/hl-types";
 import { Icon, Toggle } from "../ui";
 import { useOnboarding } from "./onboarding";
 import { openFunds } from "./funds";
+import { openConvert } from "./convert";
+import { useChainId, useWalletClient } from "wagmi";
+import { setDexAbstractionWithWallet } from "@/lib/hl-client";
+import { startChase } from "@/lib/chase";
+import { fmtQty, spotRows, usdcSpotAvail } from "@/lib/spot";
+import { useMids } from "@/hooks/use-market";
 
-type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap";
+type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap" | "chase";
 const PRO: [OrderType, string][] = [
   ["stopMarket", "Stop Market"],
   ["stopLimit", "Stop Limit"],
@@ -19,11 +25,15 @@ const PRO: [OrderType, string][] = [
   ["takeProfitLimit", "Take Profit Limit"],
   ["scale", "Scale"],
   ["twap", "TWAP"],
+  ["chase", "Chase"],
 ];
-const LABEL: Record<OrderType, string> = { market: "Market", limit: "Limit", stopMarket: "Stop Market", stopLimit: "Stop Limit", takeProfitMarket: "TP Market", takeProfitLimit: "TP Limit", scale: "Scale", twap: "TWAP" };
+const LABEL: Record<OrderType, string> = { market: "Market", limit: "Limit", stopMarket: "Stop Market", stopLimit: "Stop Limit", takeProfitMarket: "TP Market", takeProfitLimit: "TP Limit", scale: "Scale", twap: "TWAP", chase: "Chase" };
 const TAKER = 0.00045;
 const MAKER = 0.00015;
 const BUILDER = 0.0005;
+/** hyperliquid spot base tier */
+const SPOT_TAKER = 0.0007;
+const SPOT_MAKER = 0.0004;
 const MAX_SLIP = 0.03;
 
 type Book = { bids: { px: number; sz: number }[]; asks: { px: number; sz: number }[] };
@@ -34,8 +44,19 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const ob = useOnboarding();
   const ready = ob.stage === "ready";
   const qc = useQueryClient();
-  const bal = useBalance(signedIn ? address : null);
-  const maxLev = market?.maxLeverage ?? 50;
+  const isSpot = market?.kind === "spot";
+  const dex = market?.dex ?? "";
+  const { data: walletClient } = useWalletClient();
+  const walletChainId = useChainId();
+  const [dexBusy, setDexBusy] = useState(false);
+  const mainBal = useBalance(signedIn && dex ? address : null);
+  const bal = useBalance(signedIn ? address : null, dex);
+  const mids = useMids();
+  const maxLev = isSpot ? 1 : (market?.maxLeverage ?? 50);
+  const label = market?.name ?? coin;
+  // spot: buys spend spot USDC, sells spend the token
+  const spotUsdc = bal.data?.spot?.find((b) => b.coin === "USDC");
+  const spotTok = market?.token ? bal.data?.spot?.find((b) => b.coin === market.token) : undefined;
   const szDec = market?.szDecimals ?? 4;
 
   const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
@@ -56,6 +77,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const [sl, setSl] = useState("");
   const [scale, setScale] = useState({ start: "", end: "", count: "5", skew: "1" });
   const [twap, setTwap] = useState({ minutes: "30", randomize: true });
+  const [chaseMin, setChaseMin] = useState("10");
   const [thesis, setThesis] = useState("");
   const [showStep, setShowStep] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -116,8 +138,9 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const isTrig = type.startsWith("stop") || type.startsWith("takeProfit");
   const refPx = isLimit && Number(price) ? Number(price) : type === "scale" && Number(scale.start) && Number(scale.end) ? (Number(scale.start) + Number(scale.end)) / 2 : (mid ?? market?.markPx ?? 0);
   const myPos = bal.data?.positions.find((p) => p.coin === coin && p.szi !== 0);
-  const avail = bal.data?.withdrawable ?? 0;
-  const maxCoin = reduceOnly ? Math.abs(myPos?.szi ?? 0) : refPx ? (avail * lev) / refPx : 0;
+  const upnlAll = bal.data?.positions.reduce((a, p) => a + p.unrealizedPnl, 0) ?? 0;
+  const avail = isSpot ? (side === "LONG" ? Math.max(0, (spotUsdc?.total ?? 0) - (spotUsdc?.hold ?? 0)) : Math.max(0, (spotTok?.total ?? 0) - (spotTok?.hold ?? 0))) : (bal.data?.withdrawable ?? 0);
+  const maxCoin = isSpot ? (side === "LONG" ? (refPx ? avail / refPx : 0) : avail) : reduceOnly ? Math.abs(myPos?.szi ?? 0) : refPx ? (avail * lev) / refPx : 0;
   const sizeCoin = unit === "coin" ? Number(size) || 0 : refPx ? (Number(size) || 0) / refPx : 0;
   const sizeUsd = sizeCoin * refPx;
   const margin = lev ? sizeUsd / lev : 0;
@@ -167,7 +190,10 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
     if (isTrig && !Number(trigger)) return "Enter a trigger price";
     if (type === "scale" && (!Number(scale.start) || !Number(scale.end) || Number(scale.count) < 2)) return "Enter the scale range";
     if (type === "twap" && Number(twap.minutes) < 5) return "TWAP runs for at least 5 minutes";
-    if (!reduceOnly && margin > avail && avail > 0) return `Margin ${fmtUsd(margin)} exceeds available ${fmtUsd(avail)}`;
+    if (type === "chase" && !(Number(chaseMin) >= 1)) return "Chase needs a time limit of at least 1 minute";
+    if (isSpot && side === "LONG" && sizeUsd > avail * 1.0001) return `Costs ${fmtUsd(sizeUsd)}, you have ${fmtUsd(avail)} USDC in spot`;
+    if (isSpot && side === "SHORT" && sizeCoin > avail + 1e-9) return `You have ${avail} ${market?.base ?? coin} in spot`;
+    if (!isSpot && !reduceOnly && margin > avail && avail > 0) return `Margin ${fmtUsd(margin)} exceeds available ${fmtUsd(avail)}`;
     return null;
   })();
 
@@ -175,6 +201,13 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
     setBusy(true);
     setMsg(null);
     try {
+      if (type === "chase") {
+        const c = startChase({ coin, label: market?.name ?? coin, side, sz: Number(sizeCoin.toFixed(szDec)), szDecimals: szDec, leverage: isSpot ? 1 : lev, reduceOnly, maxMinutes: Number(chaseMin) });
+        setMsg({ ok: true, text: `Chasing ${c.sz} ${market?.base ?? coin} at the best ${side === "LONG" ? "bid" : "ask"} for up to ${chaseMin} min. Watch it in the Chase tab.` });
+        setSize("");
+        setPct(0);
+        return;
+      }
       const r = await api<OrderResponse>("/api/trade/order", {
         method: "POST",
         json: {
@@ -182,8 +215,8 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
           side,
           type,
           sz: Number(sizeCoin.toFixed(szDec)),
-          leverage: lev,
-          isCross,
+          leverage: isSpot ? 1 : lev,
+          isCross: isSpot ? true : isCross,
           limitPx: isLimit ? Number(price) : undefined,
           triggerPx: isTrig ? Number(trigger) : undefined,
           tif: isLimit ? tif : undefined,
@@ -230,7 +263,13 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
 
   return (
     <section className="card p-3 text-[13px] space-y-3">
-      {/* margin mode + leverage */}
+      {/* margin mode + leverage (perps only) */}
+      {isSpot ? (
+        <div className="flex items-center gap-2 text-[11px] text-muted px-0.5 h-9">
+          <span className="pill pill-neutral">Spot</span>
+          <span>Buy with spot USDC, sell for USDC. No leverage, no liquidation.</span>
+        </div>
+      ) : (
       <div className="grid grid-cols-3 gap-1.5">
         <span className="seg !p-0.5 col-span-2">
           <button className={`seg-item flex-1 h-8 ${isCross ? "seg-active" : ""}`} onClick={() => applyLeverage(lev, true)}>Cross</button>
@@ -253,6 +292,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
           )}
         </div>
       </div>
+      )}
 
       {/* order type */}
       <div className="flex items-center border-b border-line">
@@ -265,13 +305,13 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
           </button>
           {proOpen && (
             <div className="absolute left-0 top-10 z-30 w-48 card p-1 shadow-2xl shadow-black/70">
-              {PRO.map(([t, l]) => (
+              {PRO.filter(([t]) => !isSpot || t === "scale" || t === "twap").map(([t, l]) => (
                 <button key={t} className={`w-full text-left px-3 h-9 rounded-lg hover:bg-panel-2 ${type === t ? "text-brand" : ""}`} onClick={() => { setType(t); setProOpen(false); }}>{l}</button>
               ))}
             </div>
           )}
         </div>
-        <span className="ml-auto text-[11px] text-dim pr-1">{type === "twap" ? "slices every 30s" : type === "scale" ? "ladder of limits" : ""}</span>
+        <span className="ml-auto text-[11px] text-dim pr-1">{type === "twap" ? "slices every 30s" : type === "scale" ? "ladder of limits" : type === "chase" ? "follows the best price, maker only" : ""}</span>
       </div>
 
       {copyOf && (
@@ -285,15 +325,47 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
         </div>
       )}
 
+      {dex && ready && bal.data && bal.data.withdrawable <= 0 && bal.data.dexAbstraction !== true && (
+        <div className="card-2 px-3 py-2.5 text-[12px] leading-snug" data-testid="dex-margin">
+          <b>No USDC on {market?.dexName ?? dex} yet.</b> Hyperliquid keeps builder-dex margin separate unless unified margin is on. Turn it on once and your main account USDC{mainBal.data ? ` (${fmtUsd(mainBal.data.withdrawable)})` : ""} backs trades here and on every other builder dex.
+          <button
+            className="btn btn-primary h-9 w-full mt-2"
+            disabled={dexBusy || !walletClient}
+            onClick={async () => {
+              if (!walletClient || !address) return;
+              setDexBusy(true);
+              try {
+                await setDexAbstractionWithWallet(walletClient, walletChainId, address, true);
+                qc.invalidateQueries({ queryKey: ["balance"] });
+                setMsg({ ok: true, text: "Unified margin on: your main USDC now backs builder-dex trades." });
+              } catch (e) {
+                setMsg({ ok: false, text: (e as Error).message.slice(0, 200) });
+              } finally {
+                setDexBusy(false);
+              }
+            }}
+          >
+            {dexBusy ? "Confirm in your wallet…" : "Enable unified margin"}
+          </button>
+        </div>
+      )}
+
       {/* side */}
       <div className="grid grid-cols-2 gap-1 p-1 rounded-[12px] bg-panel-2 border border-line">
-        <button className={`h-9 rounded-[9px] font-semibold transition-colors ${side === "LONG" ? "bg-up text-black" : "text-muted hover:text-fg"}`} onClick={() => setSide("LONG")}>Buy / Long</button>
-        <button className={`h-9 rounded-[9px] font-semibold transition-colors ${side === "SHORT" ? "bg-down text-white" : "text-muted hover:text-fg"}`} onClick={() => setSide("SHORT")}>Sell / Short</button>
+        <button className={`h-9 rounded-[9px] font-semibold transition-colors ${side === "LONG" ? "bg-up text-black" : "text-muted hover:text-fg"}`} onClick={() => setSide("LONG")}>{isSpot ? "Buy" : "Buy / Long"}</button>
+        <button className={`h-9 rounded-[9px] font-semibold transition-colors ${side === "SHORT" ? "bg-down text-white" : "text-muted hover:text-fg"}`} onClick={() => setSide("SHORT")}>{isSpot ? "Sell" : "Sell / Short"}</button>
       </div>
 
       <dl className="text-xs space-y-1 px-0.5">
-        <Row k="Available to Trade" v={signedIn ? `${fmtUsd(avail)} USDC` : "–"} />
-        <Row k="Current Position" v={myPos ? <span className={myPos.szi > 0 ? "text-up" : "text-down"}>{myPos.szi} {coin}</span> : `0.00 ${coin}`} />
+        <Row k={isSpot ? (side === "LONG" ? "Available USDC · spot" : `Available ${market?.base ?? coin} · spot`) : "Available to Trade"} v={signedIn ? (isSpot && side === "SHORT" ? `${avail} ${market?.base ?? coin}` : `${fmtUsd(avail)} USDC`) : "–"} />
+        {!isSpot && usdcSpotAvail(bal.data?.spot) > 0.01 && (
+          <Row k="In spot" v={<span>{fmtUsd(usdcSpotAvail(bal.data?.spot))} · <button className="text-brand hover:underline" onClick={() => openConvert("USDC")} data-testid="ticket-move-usdc">Move to perps</button></span>} />
+        )}
+        {isSpot ? (
+          <Row k="You hold" v={`${spotTok ? spotTok.total : 0} ${market?.base ?? coin}`} />
+        ) : (
+          <Row k="Current Position" v={myPos ? <span className={myPos.szi > 0 ? "text-up" : "text-down"}>{myPos.szi} {label}</span> : `0.00 ${label}`} />
+        )}
       </dl>
 
       {/* prices */}
@@ -317,6 +389,12 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
           <Field label="Size skew"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={scale.skew} onChange={(e) => setScale({ ...scale, skew: e.target.value })} /></Field>
         </div>
       )}
+      {type === "chase" && (
+        <div className="grid grid-cols-2 gap-1.5 items-center">
+          <Field label="Time limit (min)"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="numeric" value={chaseMin} onChange={(e) => setChaseMin(e.target.value.replace(/[^0-9]/g, ""))} aria-label="chase minutes" /></Field>
+          <span className="text-[11px] text-muted leading-snug">Post-only at the best {side === "LONG" ? "bid" : "ask"}, re-priced every few seconds until filled.</span>
+        </div>
+      )}
       {type === "twap" && (
         <div className="grid grid-cols-2 gap-1.5 items-center">
           <Field label="Running time (min)"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="numeric" value={twap.minutes} onChange={(e) => setTwap({ ...twap, minutes: e.target.value })} /></Field>
@@ -329,7 +407,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
         <input className="flex-1 bg-transparent outline-none num text-right text-[15px]" inputMode="decimal" value={size} onChange={(e) => onSize(e.target.value)} placeholder="0" aria-label="size" />
         <select className="bg-transparent text-fg-2 outline-none ml-2 text-xs cursor-pointer" value={unit} onChange={(e) => switchUnit(e.target.value as "coin" | "usd")} aria-label="size unit">
           <option value="usd">USD</option>
-          <option value="coin">{coin}</option>
+          <option value="coin">{market?.base ?? coin}</option>
         </select>
       </Field>
       <div className="flex items-center gap-3 px-0.5">
@@ -358,7 +436,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
           </span>
         )}
       </div>
-      {(type === "market" || type === "limit") && (
+      {(type === "market" || type === "limit") && !isSpot && (
         <div className="px-0.5">
           <Toggle on={tpsl} onChange={setTpsl} label="Take Profit / Stop Loss" />
           {tpsl && (
@@ -384,7 +462,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
       {/* cta */}
       <button className={`btn w-full h-11 text-[15px] ${ready ? (side === "LONG" ? "btn-up" : "btn-down") : "btn-primary"}`} onClick={onCta} disabled={busy || ob.busy || !!invalid}>
         {!ready && <Icon.wallet />}
-        {ready ? (busy ? "Placing…" : `${side === "LONG" ? "Buy / Long" : "Sell / Short"} ${coin}`) : ob.cta}
+        {ready ? (busy ? "Placing…" : `${isSpot ? (side === "LONG" ? "Buy" : "Sell") : side === "LONG" ? "Buy / Long" : "Sell / Short"} ${market?.base ?? coin}`) : ob.cta}
       </button>
       {ready && invalid && sizeCoin > 0 && <p className="text-[11px] text-warn text-center -mt-1">{invalid}</p>}
       {!ready && showStep && ob.Panel && <ob.Panel />}
@@ -392,16 +470,32 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
 
       {/* summary */}
       <dl className="text-xs space-y-1.5 px-0.5 pt-1 border-t border-line">
-        <Row k="Liquidation Price" v={liq && sizeCoin ? fmtPx(liq) : "N/A"} />
+        {!isSpot && <Row k="Liquidation Price" v={liq && sizeCoin ? fmtPx(liq) : "N/A"} />}
         <Row k="Order Value" v={sizeUsd ? fmtUsd(sizeUsd) : "N/A"} />
-        <Row k="Margin Required" v={sizeUsd ? fmtUsd(margin) : "N/A"} />
+        <Row k={isSpot ? "Cost" : "Margin Required"} v={sizeUsd ? fmtUsd(isSpot ? sizeUsd : margin) : "N/A"} />
         {(type === "market" || type.endsWith("Market")) && <Row k="Slippage" v={<span>Est: <span className={slip > 0.005 ? "text-warn" : ""}>{(slip * 100).toFixed(2)}%</span> / Max: {(MAX_SLIP * 100).toFixed(2)}%</span>} />}
-        <Row k="Fees" v={<span><span className="text-brand">◆</span> {(TAKER * 100).toFixed(3)}% / {(MAKER * 100).toFixed(3)}% + {(BUILDER * 100).toFixed(2)}% builder{sizeUsd ? ` · ${fmtUsd(sizeUsd * feeRate)}` : ""}</span>} />
+        <Row k="Fees" v={isSpot ? <span><span className="text-brand">◆</span> {(SPOT_TAKER * 100).toFixed(2)}% / {(SPOT_MAKER * 100).toFixed(2)}% + {(BUILDER * 100).toFixed(2)}% builder{sizeUsd ? ` · ${fmtUsd(sizeUsd * ((type === "market" || tif === "Ioc" ? SPOT_TAKER : SPOT_MAKER) + BUILDER))}` : ""}</span> : <span><span className="text-brand">◆</span> {(TAKER * 100).toFixed(3)}% / {(MAKER * 100).toFixed(3)}% + {(BUILDER * 100).toFixed(2)}% builder{sizeUsd ? ` · ${fmtUsd(sizeUsd * feeRate)}` : ""}</span>} />
       </dl>
       <div className="grid grid-cols-2 gap-1.5">
         <button className="btn h-9" onClick={() => openFunds("deposit")}>Deposit</button>
         <button className="btn h-9" onClick={() => openFunds("withdraw")}>Withdraw</button>
       </div>
+      {/* account summary, the block hyperliquid shows under the ticket */}
+      {signedIn && bal.data && (
+        <dl className="text-xs space-y-1 px-0.5 pt-2 border-t border-line" data-testid="account-summary">
+          <dt className="text-[12px] font-semibold text-fg pb-0.5">{dex ? `${market?.dexName ?? dex} Account` : "Account Summary"}</dt>
+          <Row k="Portfolio Value" v={fmtUsd(bal.data.accountValue + spotRows(bal.data.spot, mids.data).reduce((a, r) => a + (r.usd ?? 0), 0))} />
+          <Row k="Unrealized PNL" v={<span className={upnlAll >= 0 ? "text-up" : "text-down"}>{fmtUsd(upnlAll, { sign: true })}</span>} />
+          <Row k="Perps Maintenance Margin" v={bal.data.maintenanceMargin !== null && bal.data.maintenanceMargin !== undefined ? fmtUsd(bal.data.maintenanceMargin) : "–"} />
+          <Row k="Margin Ratio" v={bal.data.accountValue > 0 && bal.data.maintenanceMargin ? `${((bal.data.maintenanceMargin / bal.data.accountValue) * 100).toFixed(2)}%` : "0.00%"} />
+          <Row k="Account Leverage" v={bal.data.accountValue > 0 ? `${((bal.data.totalNtlPos ?? 0) / bal.data.accountValue).toFixed(2)}x` : "0.00x"} />
+        </dl>
+      )}
+      {spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC").length > 0 && (
+        <p className="text-[11px] text-muted leading-snug" data-testid="ticket-spot">
+          Spot: {spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC").map((r) => `${fmtQty(r.total)} ${r.name}`).join(" · ")}. <button className="text-brand hover:underline" onClick={() => openConvert()}>Sell for USDC</button> to trade perps with it.
+        </p>
+      )}
     </section>
   );
 }

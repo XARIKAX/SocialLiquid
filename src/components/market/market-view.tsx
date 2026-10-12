@@ -61,7 +61,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
   const m = q.data?.market ?? initial?.market;
   const mine = useFeed({ address: signedIn ? address : undefined, coin, minUsd: 0, thesisOnly: false, following: false }, !!signedIn);
   const thesisEvents = useFeed({ coin, minUsd: 0, thesisOnly: true, following: false });
-  const myBal = useBalance(signedIn ? address : null);
+  const myBal = useBalance(signedIn ? address : null, m?.dex ?? "");
   const orders = useOpenOrders();
   const markers = useMemo<ChartMarker[]>(() => {
     const out: ChartMarker[] = [];
@@ -93,7 +93,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-3">
           <div className="card overflow-hidden h-[420px] lg:h-[460px] xl:h-[52vh] lg:min-h-[400px] relative">
             <div className="absolute inset-0"><ChartPlaceholder closes={initial?.closes} /></div>
-            <div className="absolute inset-0"><Chart coin={coin} markers={markers} lastPx={mid} lines={lines} /></div>
+            <div className="absolute inset-0"><Chart coin={coin} label={m ? (m.kind === "spot" ? m.name : `${m.name}-USD`) : undefined} markers={markers} lastPx={mid} lines={lines} /></div>
           </div>
           <Deferred minHeight={400} className="h-[400px] lg:h-[460px] xl:h-[52vh] lg:min-h-[400px]">
             <div className="card overflow-hidden h-full">
@@ -102,14 +102,14 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
           </Deferred>
         </div>
         <div className="card overflow-hidden">
-          <BottomPanel coin={coin} positions={q.data?.positions} trades={q.data?.trades} theses={thesisEvents.data} mid={mid} loading={q.isLoading && !initial} thesisOnly={thesisOnly} following={following} setThesisOnly={setThesisOnly} setFollowing={setFollowing} />
+          <BottomPanel coin={coin} label={m?.base} positions={q.data?.positions} trades={q.data?.trades} theses={thesisEvents.data} mid={mid} loading={q.isLoading && !initial} thesisOnly={thesisOnly} following={following} setThesisOnly={setThesisOnly} setFollowing={setFollowing} />
         </div>
       </section>
 
       <aside className="flex flex-col gap-3">
         <Ticket coin={coin} market={m} mid={mid} />
         <Deferred minHeight={140}>
-          <FlowCard coin={coin} flow={q.data?.flow24h} />
+          <FlowCard coin={coin} label={m?.base} flow={q.data?.flow24h} />
         </Deferred>
         <Deferred minHeight={260}>
           <TradersToFollow />

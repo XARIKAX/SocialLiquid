@@ -13,6 +13,7 @@ type Trade = { px: number; sz: number; side: "B" | "A"; time: number; tid: numbe
 const ROWS = 11;
 
 export function OrderBook({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
+  const sym = market?.base ?? coin;
   const [tab, setTab] = useState<"book" | "trades">("book");
   const [unit, setUnit] = useState<"coin" | "usd">("coin");
   const [group, setGroup] = useState(0); // index into tick options
@@ -68,12 +69,12 @@ export function OrderBook({ coin, market, mid }: { coin: string; market?: Market
               ))}
             </select>
             <select className="bg-transparent text-fg-2 outline-none cursor-pointer" value={unit} onChange={(e) => setUnit(e.target.value as "coin" | "usd")} aria-label="size unit">
-              <option value="coin">{coin}</option>
+              <option value="coin">{sym}</option>
               <option value="usd">USD</option>
             </select>
           </div>
           <div className="grid grid-cols-3 px-2 text-[11px] text-dim h-6 items-center">
-            <span>Price</span><span className="text-right">Size ({unit === "coin" ? coin : "USD"})</span><span className="text-right">Total</span>
+            <span>Price</span><span className="text-right">Size ({unit === "coin" ? sym : "USD"})</span><span className="text-right">Total</span>
           </div>
           <div className="flex-1 flex flex-col justify-end text-[12px] num">
             {!grouped && <div className="flex-1 skeleton m-2" />}
@@ -106,7 +107,7 @@ export function OrderBook({ coin, market, mid }: { coin: string; market?: Market
       {tab === "trades" && (
         <>
           <div className="grid grid-cols-3 px-2 text-[11px] text-dim h-7 items-center">
-            <span>Price</span><span className="text-right">Size ({coin})</span><span className="text-right">Time</span>
+            <span>Price</span><span className="text-right">Size ({sym})</span><span className="text-right">Time</span>
           </div>
           <div className="flex-1 overflow-y-auto text-[12px] num">
             {trades.data?.map((t) => (

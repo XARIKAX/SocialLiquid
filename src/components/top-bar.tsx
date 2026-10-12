@@ -4,6 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
+import { useMids } from "@/hooks/use-market";
+import { cashTotal, fmtQty, spotRows, usdcSpotAvail } from "@/lib/spot";
 import { api } from "@/lib/client";
 import { fmtPct, fmtPx, fmtUsd, shortAddr } from "@/lib/format";
 import { Avatar, CoinIcon, Icon, Logo } from "./ui";
@@ -11,6 +13,7 @@ import { useConnectModal } from "./connect-modal";
 import { useTheme } from "@/lib/theme";
 import { AlertsBell } from "./alerts";
 import { openFunds } from "./trade/funds";
+import { openConvert } from "./trade/convert";
 
 type SearchResult = { coins: { coin: string; markPx: number; change24h: number }[]; traders: { address: string; handle: string | null; avatarUrl: string | null }[] };
 
@@ -20,6 +23,10 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
   const connect = useConnectModal();
   const [theme, setTheme] = useTheme();
   const upnl = bal.data?.positions.reduce((a, p) => a + p.unrealizedPnl, 0) ?? 0;
+  const mids = useMids();
+  const spot = spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC");
+  const spotUsd = spot.reduce((a, r) => a + (r.usd ?? 0), 0);
+  const spotUsdc = usdcSpotAvail(bal.data?.spot);
   return (
     <header className="h-14 flex items-center gap-3 px-3 md:px-4 sticky top-0 z-30 bg-bg/90 backdrop-blur">
       <button className="md:hidden btn btn-ghost px-2 h-9" onClick={onToggleFeed} aria-label="toggle feed">
@@ -48,15 +55,25 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
           <>
             <div className="hidden sm:flex flex-col justify-center card px-3 h-10 rounded-[10px] leading-tight">
               <span className="num text-[13px]">
-                {bal.data ? fmtUsd(bal.data.withdrawable) : "…"} <span className="text-muted font-normal">cash</span>
+                {bal.data ? fmtUsd(cashTotal(bal.data)) : "…"} <span className="text-muted font-normal">cash</span>
               </span>
-              <button onClick={() => openFunds("deposit")} className="text-[11px] text-brand font-medium hover:underline">
-                Deposit more
-              </button>
+              {spotUsdc > 0.01 ? (
+                <button onClick={() => openConvert("USDC")} className="text-[11px] text-brand font-medium hover:underline text-left truncate max-w-[220px]" data-testid="topbar-move-usdc">
+                  {fmtUsd(spotUsdc)} in spot · Move to perps to trade
+                </button>
+              ) : spot.length > 0 ? (
+                <button onClick={() => openConvert(spot[0].coin)} className="text-[11px] text-fg-2 hover:underline num text-left truncate max-w-[200px]" title="Sell for USDC to trade perps with it" data-testid="topbar-spot">
+                  {fmtQty(spot[0].total)} {spot[0].name}{spot.length > 1 ? ` +${spot.length - 1}` : ""} <span className="text-muted">spot{spotUsd > 0 ? ` ≈ ${fmtUsd(spotUsd)}` : ""}</span> <span className="text-brand">· Sell for USDC</span>
+                </button>
+              ) : (
+                <button onClick={() => openFunds("deposit")} className="text-[11px] text-brand font-medium hover:underline">
+                  Deposit more
+                </button>
+              )}
             </div>
             <Link href={`/t/${me?.user?.handle ?? address}`} className="flex items-center gap-2.5 card pl-3 pr-1.5 h-10 rounded-[10px] hover:bg-panel-2 transition-colors">
               <span className="flex flex-col justify-center leading-tight">
-                <span className="num text-[13px]">{bal.data ? fmtUsd(bal.data.accountValue) : "…"}</span>
+                <span className="num text-[13px]" data-testid="topbar-total" title={spotUsd + spotUsdc > 0 ? `perps ${fmtUsd(bal.data?.accountValue ?? 0)} + spot ${fmtUsd(spotUsd + spotUsdc)}` : undefined}>{bal.data ? fmtUsd(bal.data.accountValue + spotUsd + spotUsdc) : "…"}</span>
                 <span className={`num text-[11px] ${upnl >= 0 ? "text-up" : "text-down"}`}>
                   {fmtUsd(upnl, { sign: true })} <span className="text-dim">open</span>
                 </span>

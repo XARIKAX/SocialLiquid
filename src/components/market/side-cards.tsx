@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Avatar, Pnl } from "../ui";
 
 /** gomo's order flow card, for perps: notional opened long vs short in the last 24h */
-export function FlowCard({ coin, flow }: { coin: string; flow?: { longUsd: number; shortUsd: number; count: number } }) {
+export function FlowCard({ coin, label, flow }: { coin: string; label?: string; flow?: { longUsd: number; shortUsd: number; count: number } }) {
   const l = flow?.longUsd ?? 0;
   const s = flow?.shortUsd ?? 0;
   const net = l - s;
@@ -18,7 +18,7 @@ export function FlowCard({ coin, flow }: { coin: string; flow?: { longUsd: numbe
     <section className="card p-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-[15px]">Position flow</h3>
-        <span className="text-[11px] text-dim">24h · {coin}</span>
+        <span className="text-[11px] text-dim">24h · {label ?? coin}</span>
       </div>
       <div className="mt-2 flex items-baseline gap-2">
         <span className={`num text-[26px] font-semibold tracking-tight ${net > 0 ? "text-up" : net < 0 ? "text-down" : "text-fg"}`}>{fmtUsd(net, { sign: true, compact: true })}</span>

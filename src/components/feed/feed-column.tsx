@@ -120,7 +120,7 @@ function Feed({ onNavigate, alerts }: { onNavigate?: () => void; alerts?: boolea
             <option value="">All markets</option>
             {markets.data?.map((m) => (
               <option key={m.coin} value={m.coin}>
-                {m.coin}
+                {m.name}
               </option>
             ))}
           </select>
@@ -155,7 +155,7 @@ export function Tokens({ onNavigate, full }: { onNavigate?: () => void; full?: b
   const markets = useMarkets();
   const mids = useMids();
   const [q, setQ] = useState("");
-  const list = useMemo(() => (markets.data ?? []).filter((m) => m.coin.toLowerCase().includes(q.toLowerCase())), [markets.data, q]);
+  const list = useMemo(() => (markets.data ?? []).filter((m) => m.name.toLowerCase().includes(q.toLowerCase()) || m.coin.toLowerCase().includes(q.toLowerCase())), [markets.data, q]);
   if (markets.isLoading) return <Skeleton rows={10} h={44} />;
   return (
     <div>
@@ -182,8 +182,8 @@ export function Tokens({ onNavigate, full }: { onNavigate?: () => void; full?: b
             return (
               <tr key={m.coin} className="row-hover">
                 <td className="px-4 py-2">
-                  <Link href={`/m/${m.coin}`} onClick={onNavigate} className="flex items-center gap-2.5">
-                    <CoinIcon coin={m.coin} size={full ? 30 : 24} />
+                  <Link href={`/m/${encodeURIComponent(m.slug)}`} onClick={onNavigate} className="flex items-center gap-2.5">
+                    <CoinIcon coin={m.base} size={full ? 30 : 24} />
                     <span className="leading-tight">
                       <span className="font-semibold block">{m.coin}</span>
                       <span className="text-[11px] text-dim">{m.maxLeverage}x · perp</span>

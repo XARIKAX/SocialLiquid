@@ -3,7 +3,11 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
-import { livePnl, useMids } from "@/hooks/use-market";
+import { livePnl, useMarkets, useMids } from "@/hooks/use-market";
+import { fmtQty, spotRows } from "@/lib/spot";
+import { openFunds } from "./funds";
+import { openConvert } from "./convert";
+import { clearFinishedChases, stopChase, useChases } from "@/lib/chase";
 import { useAccountFills, useFundingPayments, useOpenOrders, useOrderHistory, useTwaps, type OpenOrder } from "@/hooks/use-account";
 import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, timeAgo } from "@/lib/format";
@@ -12,7 +16,7 @@ import { CoinIcon, Empty, Icon, Toggle } from "../ui";
 import { PositionsTable, type MarketPosition, type MarketTrade } from "../market/positions-table";
 import { useConnectModal } from "../connect-modal";
 
-type Tab = "traders" | "thesis" | "balances" | "positions" | "orders" | "twap" | "trades" | "funding" | "history";
+type Tab = "traders" | "thesis" | "balances" | "positions" | "orders" | "twap" | "chase" | "trades" | "funding" | "history";
 const TABS: [Tab, string][] = [
   ["traders", "Traders"],
   ["thesis", "Thesis"],
@@ -20,6 +24,7 @@ const TABS: [Tab, string][] = [
   ["positions", "Positions"],
   ["orders", "Open Orders"],
   ["twap", "TWAP"],
+  ["chase", "Chase"],
   ["trades", "Trade History"],
   ["funding", "Funding History"],
   ["history", "Order History"],
@@ -27,6 +32,7 @@ const TABS: [Tab, string][] = [
 
 export function BottomPanel(props: {
   coin: string;
+  label?: string;
   positions?: MarketPosition[];
   trades?: MarketTrade[];
   theses?: FeedItem[];
@@ -39,27 +45,65 @@ export function BottomPanel(props: {
 }) {
   const [tab, setTab] = useState<Tab>("traders");
   const [onlyCoin, setOnlyCoin] = useState(false);
-  const { signedIn } = useAuth();
+  // hyperliquid's Type / Side / Market filters on the history tabs
+  const [filter, setFilter] = useState<RowFilter>({ type: "all", side: "all", market: "all" });
+  const { signedIn, address } = useAuth();
   const connect = useConnectModal();
   const openOrders = useOpenOrders();
+  const fills = useAccountFills();
+  const hist = useOrderHistory();
+  const twaps = useTwaps();
+  const chases = useChases();
+  const myBal = useBalance(signedIn ? address : null);
+  const markets = useMarkets();
   const own = !["traders", "thesis"].includes(tab);
+  const filterable = tab === "orders" || tab === "trades" || tab === "history";
+  const coinsInView = [...new Set((tab === "orders" ? openOrders.data : tab === "trades" ? fills.data : hist.data)?.map((r) => r.coin) ?? [])];
+  const counts: Partial<Record<Tab, number>> = {
+    balances: myBal.data ? 1 + (myBal.data.spot?.filter((b) => b.total > 0 && b.coin !== "USDC").length ?? 0) : 0,
+    positions: myBal.data?.positions.filter((p) => p.szi !== 0).length ?? 0,
+    orders: openOrders.data?.length ?? 0,
+    twap: twaps.data?.filter((t) => t.status === "activated").length ?? 0,
+    chase: chases.filter((c) => c.status === "running").length,
+  };
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-0.5 px-2 h-11 border-b border-line overflow-x-auto">
         {TABS.map(([t, l]) => (
           <button key={t} className={`tab h-8 px-2.5 shrink-0 ${tab === t ? "tab-active" : ""}`} onClick={() => setTab(t)}>
             {l}
-            {t === "orders" && !!openOrders.data?.length && <span className="num text-[10px] text-brand">{openOrders.data.length}</span>}
+            {!!counts[t] && <span className="num text-[10px] text-brand ml-1">({counts[t]})</span>}
           </button>
         ))}
         {own && (
-          <span className="ml-auto pr-2 shrink-0">
-            <Toggle on={onlyCoin} onChange={setOnlyCoin} label={`Only ${props.coin}`} />
+          <span className="ml-auto pr-2 shrink-0 flex items-center gap-2">
+            {filterable && (
+              <>
+                {tab !== "trades" && (
+                  <select className="input h-7 text-[11px] py-0 pr-6" value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value as RowFilter["type"] })} aria-label="type filter">
+                    <option value="all">Type</option>
+                    <option value="limit">Limit</option>
+                    <option value="market">Market</option>
+                    <option value="trigger">Stop / TP</option>
+                  </select>
+                )}
+                <select className="input h-7 text-[11px] py-0 pr-6" value={filter.side} onChange={(e) => setFilter({ ...filter, side: e.target.value as RowFilter["side"] })} aria-label="side filter">
+                  <option value="all">Side</option>
+                  <option value="B">Buy / Long</option>
+                  <option value="A">Sell / Short</option>
+                </select>
+                <select className="input h-7 text-[11px] py-0 pr-6" value={filter.market} onChange={(e) => { setFilter({ ...filter, market: e.target.value }); if (e.target.value !== "all") setOnlyCoin(false); }} aria-label="market filter">
+                  <option value="all">Market</option>
+                  {coinsInView.map((c) => <option key={c} value={c}>{markets.data?.find((m) => m.coin === c)?.name ?? c}</option>)}
+                </select>
+              </>
+            )}
+            <Toggle on={onlyCoin} onChange={setOnlyCoin} label={`Only ${props.label ?? props.coin}`} />
           </span>
         )}
       </div>
       {tab === "traders" || tab === "thesis" ? (
-        <PositionsTable coin={props.coin} positions={props.positions} trades={props.trades} theses={props.theses} mid={props.mid} loading={props.loading} thesisOnly={props.thesisOnly} following={props.following} setThesisOnly={props.setThesisOnly} setFollowing={props.setFollowing} initialTab={tab === "thesis" ? "thesis" : "positions"} key={tab} />
+        <PositionsTable coin={props.coin} label={props.label} positions={props.positions} trades={props.trades} theses={props.theses} mid={props.mid} loading={props.loading} thesisOnly={props.thesisOnly} following={props.following} setThesisOnly={props.setThesisOnly} setFollowing={props.setFollowing} initialTab={tab === "thesis" ? "thesis" : "positions"} key={tab} />
       ) : !signedIn ? (
         <div className="py-10 text-center">
           <p className="text-muted text-sm">Connect a wallet to see your {TABS.find(([t]) => t === tab)?.[1].toLowerCase()}.</p>
@@ -70,15 +114,17 @@ export function BottomPanel(props: {
       ) : tab === "positions" ? (
         <OwnPositions coin={props.coin} onlyCoin={onlyCoin} />
       ) : tab === "orders" ? (
-        <OpenOrders coin={props.coin} onlyCoin={onlyCoin} />
+        <OpenOrders coin={props.coin} onlyCoin={onlyCoin} filter={filter} />
       ) : tab === "twap" ? (
         <Twaps coin={props.coin} onlyCoin={onlyCoin} />
+      ) : tab === "chase" ? (
+        <Chases coin={props.coin} onlyCoin={onlyCoin} />
       ) : tab === "trades" ? (
-        <TradeHistory coin={props.coin} onlyCoin={onlyCoin} />
+        <TradeHistory coin={props.coin} onlyCoin={onlyCoin} filter={filter} />
       ) : tab === "funding" ? (
         <FundingHistory coin={props.coin} onlyCoin={onlyCoin} />
       ) : (
-        <OrderHistory coin={props.coin} onlyCoin={onlyCoin} />
+        <OrderHistory coin={props.coin} onlyCoin={onlyCoin} filter={filter} />
       )}
     </div>
   );
@@ -119,8 +165,10 @@ function Export({ rows, name }: { rows: Record<string, unknown>[]; name: string 
 function Balances() {
   const { address } = useAuth();
   const bal = useBalance(address);
+  const mids = useMids();
   const b = bal.data;
   const upnl = b?.positions.reduce((a, p) => a + p.unrealizedPnl, 0) ?? 0;
+  const spot = spotRows(b?.spot, mids.data);
   return (
     <Table head={<><Th>Asset</Th><Th right>Total Balance</Th><Th right>Available Balance</Th><Th right>Margin Used</Th><Th right>Unrealised PnL</Th><Th right>Contract</Th></>}>
       <tr className="border-b border-line/60">
@@ -131,6 +179,30 @@ function Balances() {
         <Td right className={upnl >= 0 ? "text-up" : "text-down"}>{b ? fmtUsd(upnl, { sign: true }) : "…"}</Td>
         <Td right className="text-muted">Perps</Td>
       </tr>
+      {spot.map((r) => (
+        <tr key={r.coin} className="border-b border-line/60" data-testid={`spot-row-${r.name}`}>
+          <Td><span className="flex items-center gap-2 font-sans font-medium"><CoinIcon coin={r.name} size={20} />{r.name}{r.name !== r.coin && <span className="text-dim font-normal text-[11px]">{r.coin}</span>}</span></Td>
+          <Td right><span className="block">{fmtQty(r.total)} {r.name}</span>{r.usd !== null && <span className="block text-[11px] text-dim">≈ {fmtUsd(r.usd)}</span>}</Td>
+          <Td right>{fmtQty(r.available)} {r.name}</Td>
+          <Td right className="text-dim">—</Td>
+          <Td right className="text-dim">—</Td>
+          <Td right className="text-muted">
+            Spot
+            {r.name !== "USDC" && (
+              <span className="block text-[11px]">
+                <button className="text-brand hover:underline" onClick={() => openConvert(r.coin)}>Sell for USDC</button>
+                {" · "}
+                <button className="text-brand hover:underline" onClick={() => openFunds("withdraw")}>Withdraw</button>
+              </span>
+            )}
+          </Td>
+        </tr>
+      ))}
+      {b && b.spot && spot.length === 0 && (
+        <tr>
+          <td className="px-4 py-2 text-dim text-xs" colSpan={6}>No spot balances. Native deposits (SOL, BTC, ETH) land here; USDC deposits land in perps above.</td>
+        </tr>
+      )}
     </Table>
   );
 }
@@ -212,11 +284,15 @@ function OwnPositions({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
 }
 
 /* ---------- open orders ---------- */
-function OpenOrders({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
+type RowFilter = { type: "all" | "limit" | "market" | "trigger"; side: "all" | "B" | "A"; market: string };
+const typeMatch = (f: RowFilter, o: { type: string; isTrigger?: boolean }) => f.type === "all" || (f.type === "trigger" ? !!o.isTrigger || /stop|take profit/i.test(o.type) : f.type === "market" ? /market/i.test(o.type) && !/stop|take profit/i.test(o.type) : /limit/i.test(o.type) && !/stop|take profit/i.test(o.type));
+const rowMatch = (f: RowFilter, r: { coin: string; side: "B" | "A" }) => (f.side === "all" || r.side === f.side) && (f.market === "all" || r.coin === f.market);
+
+function OpenOrders({ coin, onlyCoin, filter }: { coin: string; onlyCoin: boolean; filter: RowFilter }) {
   const q = useOpenOrders();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const list = (q.data ?? []).filter((o) => !onlyCoin || o.coin === coin);
+  const list = (q.data ?? []).filter((o) => (!onlyCoin || o.coin === coin) && rowMatch(filter, o) && typeMatch(filter, o));
   const cancel = async (items: OpenOrder[]) => {
     if (!items.length) return;
     setBusy(true);
@@ -278,10 +354,36 @@ function Twaps({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
   );
 }
 
+/* ---------- chase orders ---------- */
+function Chases({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
+  const all = useChases();
+  const list = all.filter((c) => !onlyCoin || c.coin === coin);
+  return (
+    <>
+      <Table head={<><Th>Coin</Th><Th>Side</Th><Th right>Size</Th><Th right>Remaining</Th><Th right>Resting At</Th><Th right>Re-prices</Th><Th right>Running / Limit</Th><Th>Status</Th><Th right>Stop</Th></>} empty={list.length === 0}>
+        {list.map((c) => (
+          <tr key={c.id} className="border-b border-line/60 row-hover" data-testid={`chase-${c.id}`}>
+            <Td><span className="flex items-center gap-1.5 font-sans font-semibold">{c.label}</span></Td>
+            <Td className={c.side === "LONG" ? "text-up" : "text-down"}>{c.side === "LONG" ? "Buy" : "Sell"}</Td>
+            <Td right>{c.sz}</Td>
+            <Td right>{c.status === "running" ? c.remaining : c.status === "filled" ? 0 : c.remaining}</Td>
+            <Td right>{c.px !== null ? fmtPx(c.px) : "–"}</Td>
+            <Td right>{c.reprices}</Td>
+            <Td right>{fmtDuration(Math.min(Date.now() - c.startedAt, c.maxMs))} / {Math.round(c.maxMs / 60_000)}m</Td>
+            <Td className="font-sans capitalize">{c.status}{c.error ? ` · ${c.error}` : ""}</Td>
+            <Td right>{c.status === "running" ? <button className="text-fg-2 hover:text-down" onClick={() => stopChase(c.id)}>Stop</button> : "–"}</Td>
+          </tr>
+        ))}
+      </Table>
+      {list.some((c) => c.status !== "running") && <button className="text-xs text-dim hover:text-fg px-4 py-2" onClick={clearFinishedChases}>Clear finished</button>}
+    </>
+  );
+}
+
 /* ---------- trade history ---------- */
-function TradeHistory({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
+function TradeHistory({ coin, onlyCoin, filter }: { coin: string; onlyCoin: boolean; filter: RowFilter }) {
   const q = useAccountFills();
-  const list = (q.data ?? []).filter((f) => !onlyCoin || f.coin === coin);
+  const list = (q.data ?? []).filter((f) => (!onlyCoin || f.coin === coin) && rowMatch(filter, f));
   return (
     <>
       <Table head={<><Th>Time</Th><Th>Coin</Th><Th>Direction</Th><Th right>Price</Th><Th right>Size</Th><Th right>Trade Value</Th><Th right>Fee</Th><Th right>Builder</Th><Th right>Closed PnL</Th></>} empty={!q.isLoading && list.length === 0}>
@@ -328,9 +430,9 @@ function FundingHistory({ coin, onlyCoin }: { coin: string; onlyCoin: boolean })
 }
 
 /* ---------- order history ---------- */
-function OrderHistory({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
+function OrderHistory({ coin, onlyCoin, filter }: { coin: string; onlyCoin: boolean; filter: RowFilter }) {
   const q = useOrderHistory();
-  const list = (q.data ?? []).filter((o) => !onlyCoin || o.coin === coin);
+  const list = (q.data ?? []).filter((o) => (!onlyCoin || o.coin === coin) && rowMatch(filter, o) && typeMatch(filter, o));
   return (
     <>
       <Table head={<><Th>Time</Th><Th>Type</Th><Th>Coin</Th><Th>Direction</Th><Th right>Size</Th><Th right>Filled Size</Th><Th right>Order Value</Th><Th right>Price</Th><Th>Reduce Only</Th><Th right>Trigger</Th><Th>Status</Th><Th right>Order ID</Th></>} empty={!q.isLoading && list.length === 0}>

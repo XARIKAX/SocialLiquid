@@ -84,19 +84,19 @@ export type OrderResult =
 type OrderStatus = { filled: { totalSz: string; avgPx: string; oid: number } } | { resting: { oid: number } } | { error: string } | string;
 
 async function marketInfo(coin: string) {
-  const m = await HL.meta();
-  const asset = m.universe.findIndex((a) => a.name === coin);
-  if (asset < 0) throw new HttpError(400, `unknown market ${coin}`);
-  const mids = await HL.allMids();
-  const mid = Number(mids[coin]);
+  const m = (await HL.markets()).find((x) => x.coin === coin);
+  if (!m) throw new HttpError(400, `unknown market ${coin}`);
+  const mids = await HL.allMidsAll();
+  const mid = Number(mids[coin]) || m.midPx;
   if (!mid) throw new HttpError(502, "no price for market");
-  return { asset, szDecimals: m.universe[asset].szDecimals, maxLeverage: m.universe[asset].maxLeverage, mid };
+  return { asset: m.assetId, szDecimals: m.szDecimals, maxLeverage: m.maxLeverage, mid, kind: m.kind, dex: m.dex, token: m.token, base: m.base };
 }
 
 export async function placeOrder(userId: string, address: string, input: OrderInput): Promise<OrderResult> {
   const agent = await agentFor(userId);
-  const { asset, szDecimals, maxLeverage, mid } = await marketInfo(input.coin);
-  const leverage = Math.max(1, Math.min(maxLeverage, Math.round(input.leverage)));
+  const { asset, szDecimals, maxLeverage, mid, kind, token, base } = await marketInfo(input.coin);
+  const isSpot = kind === "spot";
+  const leverage = isSpot ? 1 : Math.max(1, Math.min(maxLeverage, Math.round(input.leverage)));
   const isBuy = input.side === "LONG";
   const isCross = input.isCross ?? true;
 
@@ -108,8 +108,15 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
   if (Number(szStr) <= 0) throw new HttpError(400, "size too small for this market");
   if (Number(szStr) * refPx < 10 && !input.reduceOnly) throw new HttpError(400, "minimum order value is $10");
 
-  const fmt = (px: number) => HL.formatPx(px, szDecimals);
+  const fmt = (px: number) => (isSpot ? HL.formatSpotPx(px, szDecimals) : HL.formatPx(px, szDecimals));
   const marketPx = mid * (isBuy ? 1 + MAX_SLIPPAGE : 1 - MAX_SLIPPAGE);
+
+  // ---------- mock exchange: spot trades move spot balances ----------
+  if (HL_MOCK && isSpot) {
+    if (input.type !== "market" && input.type !== "limit") throw new HttpError(400, "spot supports market and limit orders");
+    const r = await mock.mockSpotTrade(address, token ?? base, base, isBuy, Number(szStr));
+    return { status: "filled", oid: Date.now() % 1_000_000, avgPx: r.avgPx, totalSz: r.totalSz, sz: szStr, px: fmt(refPx) };
+  }
 
   // ---------- mock exchange ----------
   if (HL_MOCK) {
@@ -146,9 +153,10 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
 
   // ---------- hyperliquid ----------
   const ex = exchangeFor(agent.encryptedPrivKey);
-  if (!input.reduceOnly) {
+  if (!input.reduceOnly && !isSpot) {
     await ex.updateLeverage({ asset, isCross, leverage }).catch((e: Error) => console.warn("[trade] updateLeverage:", e.message));
   }
+  if (isSpot && (input.type.startsWith("stop") || input.type.startsWith("takeProfit") || input.tp || input.sl)) throw new HttpError(400, "spot orders have no triggers; use market or limit");
   const builder = { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP };
 
   if (input.type === "twap") {
@@ -234,9 +242,14 @@ export async function cancelOrders(userId: string, address: string, cancels: { c
     await mock.mockCancel(address, cancels.map((c) => c.oid));
     return { canceled: cancels.length };
   }
-  const m = await HL.meta();
+  const all = await HL.markets();
+  const assetOf = (coin: string) => {
+    const m = all.find((x) => x.coin === coin);
+    if (!m) throw new HttpError(400, `unknown market ${coin}`);
+    return m.assetId;
+  };
   const ex = exchangeFor(agent.encryptedPrivKey);
-  const res = await ex.cancel({ cancels: cancels.map((c) => ({ a: m.universe.findIndex((u) => u.name === c.coin), o: c.oid })) });
+  const res = await ex.cancel({ cancels: cancels.map((c) => ({ a: assetOf(c.coin), o: c.oid })) });
   const statuses = (res as unknown as { response: { data: { statuses: (string | { error: string })[] } } }).response.data.statuses;
   const errors = statuses.filter((s) => typeof s === "object").map((s) => (s as { error: string }).error);
   if (errors.length === statuses.length) throw new HttpError(400, errors[0]);
@@ -246,9 +259,9 @@ export async function cancelOrders(userId: string, address: string, cancels: { c
 export async function cancelTwap(userId: string, address: string, coin: string, twapId: number) {
   const agent = await agentFor(userId);
   if (HL_MOCK) return mock.mockTwapCancel(address, twapId);
-  const m = await HL.meta();
+  const { asset } = await marketInfo(coin);
   const ex = exchangeFor(agent.encryptedPrivKey);
-  await ex.twapCancel({ a: m.universe.findIndex((u) => u.name === coin), t: twapId });
+  await ex.twapCancel({ a: asset, t: twapId });
 }
 
 export async function setLeverage(userId: string, address: string, coin: string, leverage: number, isCross: boolean) {
@@ -302,4 +315,38 @@ export async function closePosition(userId: string, address: string, coin: strin
   if (!pos) throw new HttpError(404, "no open position");
   const szi = Number(pos.position.szi);
   return placeOrder(userId, address, { coin, side: szi > 0 ? "SHORT" : "LONG", sz: Math.abs(szi), leverage: pos.position.leverage.value, type: "market", reduceOnly: true });
+}
+
+export type SpotSellResult = { avgPx: number; totalSz: number; usdc: number; sz: string };
+
+/**
+ * sell a spot coin (USOL, UBTC…) for USDC on hyperliquid spot: an IOC order on the coin's USDC pair, signed by the agent,
+ * priced off the perps mid with 2% room. the USDC lands in the spot balance; usdClassTransfer (main wallet) moves it to perps.
+ */
+export async function sellSpotForUsdc(userId: string, address: string, coin: string, size: number): Promise<SpotSellResult> {
+  const pair = await HL.spotPair(coin);
+  if (!pair) throw new HttpError(400, `${coin} has no USDC spot market on Hyperliquid`);
+  const szStr = HL.formatSz(size, pair.szDecimals, "floor");
+  const sz = Number(szStr);
+  if (!(sz > 0)) throw new HttpError(400, `amount too small: ${coin} trades in steps of ${10 ** -pair.szDecimals}`);
+  if (HL_MOCK) {
+    const r = await mock.mockSpotSell(address, coin, sz);
+    return { ...r, sz: szStr };
+  }
+  const perpName = coin.startsWith("U") ? coin.slice(1) : coin;
+  const mids = await HL.allMids();
+  const spotMid = Number(mids[pair.name] ?? mids[`@${pair.pairIndex}`] ?? mids[perpName]);
+  if (!Number.isFinite(spotMid) || spotMid <= 0) throw new HttpError(400, `no price for ${coin}`);
+  const agent = await getOrCreateAgent(userId);
+  const ex = exchangeFor(agent.encryptedPrivKey);
+  const px = HL.formatSpotPx(spotMid * 0.98, pair.szDecimals);
+  const res = await ex.order({ orders: [{ a: pair.assetId, b: false, p: px, s: szStr, r: false, t: { limit: { tif: "Ioc" } } }], grouping: "na", builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } });
+  const first = (res as unknown as { response: { data: { statuses: OrderStatus[] } } }).response.data.statuses[0];
+  if (typeof first === "object" && "error" in first) throw new HttpError(400, first.error);
+  if (typeof first === "object" && "filled" in first) {
+    const avgPx = Number(first.filled.avgPx);
+    const totalSz = Number(first.filled.totalSz);
+    return { avgPx, totalSz, usdc: avgPx * totalSz, sz: szStr };
+  }
+  throw new HttpError(400, "the spot market did not fill the order; try again");
 }

@@ -92,9 +92,48 @@ signed-in users get a bell in the top bar: the latest events from the traders th
 
 every open position on the feed and on a profile has a copy button. it opens `/m/[coin]?copy=<positionId>&from=<address>&side=&lev=` and the ticket prefills side and leverage (pushed to the exchange once trading is enabled), shows a "copying <trader>" chip and leaves the size to you. the order goes through the normal route with `copyOf`; after the fill the resulting position records `copiedFromAddress` / `copiedFromPositionId` (only when the source is someone else's position in the same coin). the feed shows "copied <trader>" on the copy and "n traders copied this" on the original.
 
+## markets: perps, spot, tradfi
+
+the market picker (⌘K) mirrors hyperliquid's: tabs for All · Perps · Spot · Tradfi · Trending · ★, search, sortable Last Price / 24h Change / 8h Funding / Volume / Open Interest columns, arrow keys and Enter. `HL.markets()` is the union of hyperliquid's main perps (`metaAndAssetCtxs`), its USDC spot pairs (`spotMetaAndAssetCtxs`, shown as SOL/USDC even though hyperliquid names Unit's token USOL) and every builder-deployed perp dex (`perpDexs` → `metaAndAssetCtxs({ dex })`), the HIP-3 "tradfi" markets like `xyz:BRENTOIL` grouped into Stocks · Indices · Commodities · FX · Pre-IPO by name. each row carries hyperliquid's id (`coin`: `BTC`, `@107`, `xyz:BRENTOIL`), a url slug (`/m/BTC`, `/m/spot:USOL`, `/m/xyz:BRENTOIL`) and the order asset id (perps index, `10000 + pair`, `100000 + dex × 10000 + index`). orders go through the same `placeOrder`; spot orders skip leverage and triggers and settle in the spot balances, builder-dex orders read their positions from `clearinghouseState({ dex })` (`/api/balance?dex=xyz`). the ticket switches to Buy / Sell with spot USDC and the held token on spot markets.
+
+## chart indicators and account summary
+
+the chart's ƒx menu is a searchable catalogue (`src/lib/indicators.ts`): overlays (SMA 9/20/50/100/200, EMA 9/21/50/200, WMA, Bollinger, VWAP, SuperTrend, Parabolic SAR, Donchian, Ichimoku) draw on the price pane, oscillators (RSI, MACD, Stochastic, Stochastic RSI, ATR, OBV, CCI, Williams %R, MFI) each get their own pane under the price with reference levels. the choice persists in localStorage. under the ticket, the account summary mirrors hyperliquid's: portfolio value (perps + spot), unrealized pnl, perps maintenance margin, margin ratio and account leverage, from `clearinghouseState` (`crossMaintenanceMarginUsed`, `totalNtlPos`). on a builder-dex market with no margin there, the ticket offers hyperliquid's unified margin (`userDexAbstraction`, one main-wallet signature) so the main account USDC backs trades on every builder dex.
+
+## bottom panel
+
+the tabs under the chart carry live counts (Balances, Positions, Open Orders, TWAP, Chase) and the history tabs have hyperliquid's Type / Side / Market filters next to the "Only this market" toggle.
+
+## chase orders
+
+hyperliquid's "Chase" is in the ticket's Pro menu: a post-only limit that sits at the best bid (buys) or best ask (sells) and follows it. `src/lib/chase.ts` runs the loop in the browser every 2.5 s: read the book, cancel and re-place the ALO limit when the best price moved, step one level deeper after a post-only reject, stop at the time limit. the orders are ordinary hyperliquid limits through the agent, so a closed tab just leaves the last one resting. the Chase tab under the chart lists them with remaining size, resting price, re-price count and a Stop button; state persists in localStorage.
+
 ## deposits and withdrawals
 
-both happen inside the app and never touch socialLiquid. a deposit is a plain USDC transfer from the connected wallet to hyperliquid's bridge contract on arbitrum (min 5 USDC, credited in about a minute; the modal switches the wallet to arbitrum, shows the wallet's USDC balance and waits for the hyperliquid balance to move). a withdrawal is hyperliquid's `withdraw3` action signed by the main wallet, never by the agent key ($1 fee, USDC on arbitrum in about five minutes). other chains go through hyperliquid's own cross-chain routes; the balance shows up here either way. `HL_MOCK` credits and debits a synthetic ledger through `/api/mock/funds`.
+both happen inside the app and never touch socialLiquid. the deposit modal mirrors hyperliquid's own dialog: pick an asset, then (for USDC) a deposit chain. every route is signed by the user's own wallet and credits the user's own hyperliquid account; `HL_MOCK` credits a synthetic ledger through `/api/mock/funds` instead.
+
+| route | what happens | fee · time |
+| --- | --- | --- |
+| **Arbitrum** (default) | Circle CCTP V2: `TokenMessengerV2.depositForBurnWithHook` burns the USDC with Circle's `CctpForwarder` on HyperEVM as mint recipient and a 56-byte hook naming the user's account and the perps dex. Circle attests and forwards straight into the perps balance. | 0.2 USDC (Circle's forwarding fee, the same one hyperliquid quotes) · seconds with fast transfer (+ a few bps, from Circle's fee api), ~15 min standard |
+| **Arbitrum (Legacy Bridge)** | plain USDC transfer to hyperliquid's Bridge2 | free · ~1 min · min 5 USDC (less is kept by the bridge) |
+| **Arbitrum (Swap USDT for USDC)** | Uniswap v3 `exactInputSingle` USDT→USDC in the user's wallet (quoted through QuoterV2, 0.5% max slippage, 0.01% / 0.05% pools), then the Arbitrum CCTP route with what was received | 0.2 USDC + pool fee · seconds |
+| **HyperEVM** | approve + `CoreDepositWallet.deposit(amount, 0)`: Circle's contract moves USDC from HyperEVM into HyperCore perps | free · seconds |
+| **Ethereum · Base · Optimism · Polygon · Avalanche** | the same CCTP route from the other chains Circle forwards into HyperCore | 0.2 USDC · seconds / ~15 min |
+| **BTC · ETH · SOL** | Unit (hyperunit.xyz), the rails hyperliquid's own dialog uses. the browser asks Unit's guardians for the user's deposit address on the native chain (our `/api/funds/unit` is the fallback, since Unit's edge sometimes refuses server-side calls); the answer is only shown with ≥2 guardian signatures and a well-formed address, with a QR and the same red minimum warning as hyperliquid: 0.0003 BTC / 0.007 ETH / 0.12 SOL, below is lost. lands in the hyperliquid **spot** balance (USOL / UBTC / UETH), which `/api/balance` now returns as `spot` and the modal watches live, marking the arrival. | Unit's network fee (≈$1.30 on Solana) |
+| **AVAX, XPL, ZEC, MON, BONK, FARTCOIN, PUMP, SPX, 2Z, ANSEM, VIRTUAL** | listed, but no address in-app until their Unit minimums are verified (a deposit under the minimum is lost): the modal links to Unit's dialog for them. add `min` to the asset in `src/lib/unit.ts` to enable one. | |
+
+addresses and the hook layout live in `src/lib/funds.ts`; `NEXT_PUBLIC_CCTP_FORWARD_FEE` overrides the forwarding fee if Circle changes it, `UNIT_API_URL` / `NEXT_PUBLIC_UNIT_API_URL` the Unit endpoint for the server and the browser. `/api/health` reports whether the server can reach Unit.
+
+withdrawals mirror hyperliquid's withdrawal dialog the same way. every action is signed by the main wallet, never by the agent key:
+
+| route | what happens | fee · time |
+| --- | --- | --- |
+| **Arbitrum** (default) | hyperliquid's `sendToEvmWithData`: hyperliquid burns the USDC through Circle CCTP and Circle mints it to the destination on Arbitrum (CCTP domain 3) | 0.2 USDC (Circle) · within 5 minutes |
+| **Arbitrum (Legacy Bridge)** | `withdraw3`, the original validator-processed withdrawal | 1 USDC (hyperliquid) · ~5 minutes |
+| **HyperEVM** | `usdClassTransfer` perps→spot, then `spotSend` of USDC to its system address `0x2000…0000`, which lands as USDC at the same address on HyperEVM | free · seconds |
+| **Ethereum · Base · Optimism · Polygon · Avalanche** | `sendToEvmWithData` with that chain's CCTP domain | 1.2 USDC to Ethereum, 0.2 elsewhere · within 5 minutes |
+| **BTC · ETH · SOL** | Unit: `/gen/hyperliquid/<chain>/<asset>/<destination>` names the hyperliquid address for that destination (browser first, server fallback, ≥2 guardian signatures, must be a 0x address), then a `spotSend` of UBTC / UETH / USOL to it (token ids from hyperliquid's `spotMeta` via `/api/funds/tokens`). destination is validated as an address on the native chain; minimums 0.002 BTC / 0.05 ETH / 0.2 SOL (the larger figures in Unit's docs, since below the floor is lost) | Unit's network fee · ~4 minutes |
+| other Unit assets | link to Unit's dialog until their minimums are verified | |
 
 ## receipts
 
@@ -118,4 +157,4 @@ positions and fills are mirrored from chain and never written by the client. `li
 
 ## not in the mvp
 
-no custom contracts, no copy trading, no solana deposits (arbitrum usdc through the native bridge only), no spot, no comments, no mobile app. x handle is free text for now; oauth is a follow up.
+no custom contracts, no spot trading (native-asset deposits land in spot; selling them for USDC happens on hyperliquid), no comments, no mobile app. x handle is free text for now; oauth is a follow up.

@@ -41,6 +41,7 @@ type Sort = "pnl" | "size";
 type Tab = "positions" | "trades" | "thesis";
 
 export function PositionsTable({
+  label,
   coin,
   positions,
   trades,
@@ -53,6 +54,7 @@ export function PositionsTable({
   setFollowing,
   initialTab = "positions",
 }: {
+  label?: string;
   coin: string;
   initialTab?: Tab;
   positions: MarketPosition[] | undefined;
@@ -107,7 +109,7 @@ export function PositionsTable({
           {loading && <Skeleton rows={6} h={48} />}
           {!loading && following && !signedIn && <Empty title="Sign in to filter by following" />}
           {!loading && rows.length === 0 && (signedIn || !following) && (
-            <Empty title={`No open ${coin} positions`} hint={thesisOnly ? "Nobody has posted a thesis on this market yet. Be the first from the trade panel." : "Tracked traders have nothing open here right now."} />
+            <Empty title={`No open ${label ?? coin} positions`} hint={thesisOnly ? "Nobody has posted a thesis on this market yet. Be the first from the trade panel." : "Tracked traders have nothing open here right now."} />
           )}
           {rows.length > 0 && (
             <div className="overflow-x-auto">
@@ -140,7 +142,7 @@ export function PositionsTable({
                           <span className="num font-semibold block">{fmtUsd(p.sizeUsd)}</span>
                           <span className="text-[11px] num">
                             <span className={p.side === "LONG" ? "text-up" : "text-down"}>{p.side === "LONG" ? "Long" : "Short"}</span>
-                            <span className="text-dim"> {p.leverage}x · {p.size} {coin}</span>
+                            <span className="text-dim"> {p.leverage}x · {p.size} {label ?? coin}</span>
                           </span>
                         </td>
                         <td className="px-3 py-2.5 leading-tight">
@@ -165,7 +167,7 @@ export function PositionsTable({
 
       {tab === "trades" && (
         <>
-          {!trades?.length && <Empty title={`No ${coin} fills indexed yet`} hint="Fills land here as tracked traders execute on Hyperliquid." />}
+          {!trades?.length && <Empty title={`No ${label ?? coin} fills indexed yet`} hint="Fills land here as tracked traders execute on Hyperliquid." />}
           {!!trades?.length && (
             <table className="w-full text-[13px]">
               <thead className="text-[11px] text-dim">
@@ -209,7 +211,7 @@ export function PositionsTable({
 
       {tab === "thesis" && (
         <>
-          {!theses?.length && <Empty title={`No ${coin} theses yet`} hint="A thesis is a trade with a reason attached. Post one from the trade panel and it shows up here with a live PnL badge." />}
+          {!theses?.length && <Empty title={`No ${label ?? coin} theses yet`} hint="A thesis is a trade with a reason attached. Post one from the trade panel and it shows up here with a live PnL badge." />}
           {theses?.map((item) => (
             <FeedCard key={item.id} item={item} mid={mid} signedIn={signedIn} />
           ))}

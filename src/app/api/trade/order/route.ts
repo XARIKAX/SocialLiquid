@@ -8,7 +8,7 @@ import { placeOrder } from "@/lib/trade";
 
 const Body = z
   .object({
-    coin: z.string().min(1).max(20),
+    coin: z.string().min(1).max(48),
     side: z.enum(["LONG", "SHORT"]),
     type: z.enum(["market", "limit", "stopMarket", "stopLimit", "takeProfitMarket", "takeProfitLimit", "scale", "twap"]).default("market"),
     usd: z.number().positive().max(50_000_000).optional(),
