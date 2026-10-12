@@ -158,7 +158,18 @@ async function main() {
   await Promise.all([pollLoop(), housekeeping()]);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+/** a failed startup (database unreachable, hyperliquid down) logs the reason and retries instead of crash-looping the service */
+async function boot() {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await main();
+      return;
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      log(`startup attempt ${attempt} failed: ${msg.split("\n").filter(Boolean).slice(-1)[0]}`);
+      if (/DATABASE_URL|Can't reach database|ECONNREFUSED|P1001/i.test(msg)) log("hint: the worker needs the same DATABASE_URL as the web service (Variables → Raw Editor on the web service, paste into the worker)");
+      await sleep(Math.min(60_000, 5_000 * attempt));
+    }
+  }
+}
+boot();
