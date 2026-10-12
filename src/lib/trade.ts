@@ -41,6 +41,44 @@ export async function approvalStatus(userAddress: string, agentAddress: string) 
   };
 }
 
+export type BuilderEligibility = { ok: boolean; accountValue: number | null; reason?: string };
+
+let builderCache: { at: number; value: BuilderEligibility } | null = null;
+
+/**
+ * hyperliquid only registers an approveBuilderFee whose builder holds at least 100 USDC in its own perps
+ * account, and a builder left at the zero address can never collect anything. in both cases the user's
+ * signature is accepted by the wallet and then never shows up on chain, so onboarding loops forever on
+ * "approval not visible yet". checked before we ask the wallet for anything. cached: it moves rarely.
+ */
+export async function builderEligibility(): Promise<BuilderEligibility> {
+  if (HL_MOCK) return { ok: true, accountValue: null };
+  if (/^0x0{40}$/i.test(BUILDER_ADDRESS))
+    return {
+      ok: false,
+      accountValue: null,
+      reason: "Trading is not configured on this deployment: BUILDER_ADDRESS is still the zero address, so Hyperliquid has no builder to register the fee approval against. Set BUILDER_ADDRESS and NEXT_PUBLIC_BUILDER_ADDRESS to a wallet you control, then redeploy.",
+    };
+  if (builderCache && Date.now() - builderCache.at < 60_000) return builderCache.value;
+  let value: BuilderEligibility;
+  try {
+    const accountValue = Number((await HL.clearinghouseState(BUILDER_ADDRESS)).marginSummary.accountValue);
+    value =
+      accountValue >= 100
+        ? { ok: true, accountValue }
+        : {
+            ok: false,
+            accountValue,
+            reason: `Trading is not configured on this deployment: the builder wallet ${BUILDER_ADDRESS} holds $${accountValue.toFixed(2)} in its perps account, and Hyperliquid requires at least 100 USDC there before anyone can approve its builder fee. Deposit into that wallet, then try again.`,
+          };
+  } catch {
+    // hyperliquid did not answer: never block onboarding on our own diagnostic, and never cache that
+    return { ok: true, accountValue: null };
+  }
+  builderCache = { at: Date.now(), value };
+  return value;
+}
+
 async function agentFor(userId: string) {
   const agent = await prisma.agentKey.findUnique({ where: { userId } });
   if (!agent?.approvedAt) throw new HttpError(409, "agent wallet not approved yet");
