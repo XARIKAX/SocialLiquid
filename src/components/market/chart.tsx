@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, createChart, createSeriesMarkers, type IChartApi, type IPriceLine, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from "lightweight-charts";
+import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, createChart, createSeriesMarkers, type IChartApi, type IPriceLine, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from "lightweight-charts";
 import { api } from "@/lib/client";
 import { fmtPx } from "@/lib/format";
 import { chartPalette, useTheme } from "@/lib/theme";
@@ -109,7 +109,8 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
       grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
       rightPriceScale: { borderColor: p.border, scaleMargins: { top: 0.08, bottom: 0.22 } },
       timeScale: { borderColor: p.border, timeVisible: true, secondsVisible: false, rightOffset: 4 },
-      crosshair: { horzLine: { color: p.brand, labelBackgroundColor: p.brand, style: 3 }, vertLine: { color: p.brand, labelBackgroundColor: p.brand, style: 3 } },
+      // free crosshair (tradingview default): the lines sit exactly under the pointer. lightweight-charts defaults to magnet, which snaps to the close
+      crosshair: { mode: CrosshairMode.Normal, horzLine: { color: p.brand, labelBackgroundColor: p.brand, style: 3 }, vertLine: { color: p.brand, labelBackgroundColor: p.brand, style: 3 } },
       localization: { locale: "en-US" },
       autoSize: true,
     });
