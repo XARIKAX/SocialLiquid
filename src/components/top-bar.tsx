@@ -6,7 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as 
 import { createPortal } from "react-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance, type Balance, type Me } from "@/hooks/use-me";
-import { useMarkets } from "@/hooks/use-market";
+import { useMarkets, useMids } from "@/hooks/use-market";
 import { api } from "@/lib/client";
 import { fmtPct, fmtPx, fmtUsd, shortAddr } from "@/lib/format";
 import { Avatar, CoinIcon, Icon, Logo } from "./ui";
@@ -14,6 +14,8 @@ import { useConnectModal, useModalFocus } from "./connect-modal";
 import { useTheme } from "@/lib/theme";
 import { AlertsBell } from "./alerts";
 import { openFunds } from "./trade/funds";
+import { openConvert } from "./trade/convert";
+import { cashTotal, fmtQty, spotRows, usdcSpotAvail } from "@/lib/spot";
 import { openProfileEditor } from "./profile-editor";
 
 /* =====================================================================
@@ -23,7 +25,12 @@ import { openProfileEditor } from "./profile-editor";
    content slides beneath it. styles: ./chrome.css (.tm-chrome-*).
    ===================================================================== */
 
-type SearchResult = { coins: { coin: string; markPx: number; change24h: number }[]; traders: { address: string; handle: string | null; avatarUrl: string | null }[] };
+type SearchResult = {
+  coins: { coin: string; slug?: string; name?: string; base?: string; kind?: "perp" | "spot" | "hip3"; category?: string | null; markPx: number; change24h: number }[];
+  traders: { address: string; handle: string | null; avatarUrl: string | null }[];
+};
+/** a market's page: its slug ("spot:USOL", "xyz:S&P500") encoded, falling back to the id */
+const marketPath = (c: { coin: string; slug?: string }) => `/m/${encodeURIComponent(c.slug ?? c.coin)}`;
 
 const ENV: Partial<Record<Me["network"], { label: string; title: string }>> = {
   mock: { label: "Mock", title: "Mock mode: synthetic Hyperliquid data, nothing reaches a real exchange" },
@@ -204,6 +211,15 @@ function AccountMenu({ address, me, bal, onSignOut }: { address: string; me: Me 
   const name = me?.user?.displayName || (handle ? `@${handle}` : shortAddr(address));
   const upnl = bal?.positions.reduce((a, p) => a + p.unrealizedPnl, 0) ?? 0;
   const hasPos = !!bal && bal.positions.some((p) => p.szi !== 0);
+  /* spot counts too: the total is perps plus spot, cash is perps withdrawable plus spot USDC. spot money that cannot
+     trade perps yet gets a door: USDC moves to perps (unless the account is unified), coins sell for USDC */
+  const mids = useMids();
+  const spot = spotRows(bal?.spot, mids.data).filter((r) => r.name !== "USDC");
+  const spotUsd = spot.reduce((a, r) => a + (r.usd ?? 0), 0);
+  const spotUsdc = usdcSpotAvail(bal?.spot);
+  const total = bal ? bal.accountValue + spotUsd + spotUsdc : null;
+  const totalTitle = bal && spotUsd + spotUsdc > 0 ? `perps ${fmtUsd(bal.accountValue)} + spot ${fmtUsd(spotUsd + spotUsdc)}` : undefined;
+  const spotNote: "move" | "unified" | "sell" | null = spotUsdc > 0.01 ? (bal?.unified ? "unified" : "move") : spot.length > 0 ? "sell" : null;
 
   useEffect(() => {
     if (!open) return;
@@ -253,10 +269,11 @@ function AccountMenu({ address, me, bal, onSignOut }: { address: string; me: Me 
           <Avatar address={address} url={me?.user?.avatarUrl} handle={handle} size={24} />
         </span>
         <span className="tm-chrome-acct-id hidden lg:inline">{handle ? `@${handle}` : shortAddr(address)}</span>
-        <span className="tm-chrome-acct-bal tm-chrome-num">
-          {bal ? fmtUsd(bal.accountValue) : <span className="skeleton tm-chrome-acct-sk" aria-hidden />}
+        <span className="tm-chrome-acct-bal tm-chrome-num" data-testid="topbar-total" title={totalTitle}>
+          {total !== null ? fmtUsd(total) : <span className="skeleton tm-chrome-acct-sk" aria-hidden />}
           {hasPos && <span className={`tm-chrome-acct-pnl hidden 2xl:inline ${upnl >= 0 ? "tm-chrome-up" : "tm-chrome-down"}`}>{fmtUsd(upnl, { sign: true })}</span>}
         </span>
+        {(spotNote === "move" || spotNote === "sell") && <i className="tm-chrome-acct-dot" aria-hidden title={spotNote === "move" ? "USDC in spot: move it to perps to trade" : "Spot coins: sell for USDC to trade perps"} />}
         {Ico.chev}
       </button>
       {open && (
@@ -272,11 +289,11 @@ function AccountMenu({ address, me, bal, onSignOut }: { address: string; me: Me 
           </div>
           <div className="tm-chrome-menu-bal">
             <div className="label-caps">Account value</div>
-            <div className="tm-chrome-menu-big tm-chrome-num">{bal ? fmtUsd(bal.accountValue) : <span className="skeleton tm-chrome-menu-sk" aria-hidden />}</div>
+            <div className="tm-chrome-menu-big tm-chrome-num" title={totalTitle}>{total !== null ? fmtUsd(total) : <span className="skeleton tm-chrome-menu-sk" aria-hidden />}</div>
             <div className="tm-chrome-menu-stats">
               <div>
-                <span className="label-caps">Withdrawable</span>
-                <b className="tm-chrome-num">{bal ? fmtUsd(bal.withdrawable) : "…"}</b>
+                <span className="label-caps">Cash</span>
+                <b className="tm-chrome-num" title="Perps withdrawable plus USDC in spot">{bal ? fmtUsd(cashTotal(bal)) : "…"}</b>
               </div>
               <div>
                 <span className="label-caps">Open PnL</span>
@@ -284,6 +301,33 @@ function AccountMenu({ address, me, bal, onSignOut }: { address: string; me: Me 
               </div>
             </div>
           </div>
+          {spotNote === "move" ? (
+            <button type="button" role="menuitem" className="tm-chrome-menu-spot" data-act="" data-testid="topbar-move-usdc" onClick={run(() => openConvert("USDC"))}>
+              <span className="min-w-0">
+                <b className="tm-chrome-num">{fmtUsd(spotUsdc)} in spot</b>
+                <small>Move to perps to trade</small>
+              </span>
+              {Ico.go}
+            </button>
+          ) : spotNote === "unified" ? (
+            <div className="tm-chrome-menu-spot" role="none">
+              <span className="min-w-0">
+                <b className="tm-chrome-num">{fmtUsd(spotUsdc)} USDC</b>
+                <small>Unified account, ready to trade</small>
+              </span>
+            </div>
+          ) : spotNote === "sell" ? (
+            <button type="button" role="menuitem" className="tm-chrome-menu-spot" data-act="" data-testid="topbar-spot" title="Sell for USDC to trade perps with it" onClick={run(() => openConvert(spot[0].coin))}>
+              <span className="min-w-0">
+                <b className="tm-chrome-num">
+                  {fmtQty(spot[0].total)} {spot[0].name}
+                  {spot.length > 1 ? ` +${spot.length - 1}` : ""}
+                </b>
+                <small>Spot{spotUsd > 0 ? ` ≈ ${fmtUsd(spotUsd)}` : ""} · Sell for USDC</small>
+              </span>
+              {Ico.go}
+            </button>
+          ) : null}
           <div className="tm-chrome-menu-actions">
             <button type="button" role="menuitem" className="btn btn-primary btn-sm" data-first onClick={run(() => openFunds("deposit"))}>
               <Icon.plus />
@@ -406,7 +450,7 @@ function Search({ sheet, onClose }: { sheet?: boolean; onClose?: () => void }) {
   const coins = res?.coins ?? [];
   const traders = res?.traders ?? [];
   const quick = query ? [] : QUICK.map((c) => markets.data?.find((m) => m.coin === c)).filter((m): m is NonNullable<typeof m> => !!m);
-  const hrefs = query ? [...coins.map((c) => `/m/${c.coin}`), ...traders.map((t) => `/t/${t.handle ?? t.address}`)] : quick.map((m) => `/m/${m.coin}`);
+  const hrefs = query ? [...coins.map(marketPath), ...traders.map((t) => `/t/${t.handle ?? t.address}`)] : quick.map(marketPath);
   // the first keystroke keeps the panel open on a quiet "searching" state instead of collapsing it until the answer lands
   const loading = !!query && !res && !failed;
   const empty = !!query && !!res && hrefs.length === 0;
@@ -533,11 +577,11 @@ function Search({ sheet, onClose }: { sheet?: boolean; onClose?: () => void }) {
             <div className="tm-chrome-quick">
               {quick.map((m) =>
                 option(
-                  `/m/${m.coin}`,
+                  marketPath(m),
                   <>
-                    <CoinIcon coin={m.coin} size={20} className="tm-chrome-coin" />
+                    <CoinIcon coin={m.base} size={20} className="tm-chrome-coin" />
                     <span className="flex flex-col leading-tight min-w-0">
-                      <b>{m.coin}</b>
+                      <b>{m.name}</b>
                       <span className="tm-chrome-num tm-chrome-quick-px">{fmtPx(m.markPx)}</span>
                     </span>
                     <span className={`tm-chrome-result-chg tm-chrome-num ${m.change24h >= 0 ? "tm-chrome-up" : "tm-chrome-down"}`}>{fmtPct(m.change24h)}</span>
@@ -557,11 +601,11 @@ function Search({ sheet, onClose }: { sheet?: boolean; onClose?: () => void }) {
             </div>
             {coins.map((c) =>
               option(
-                `/m/${c.coin}`,
+                marketPath(c),
                 <>
-                  <CoinIcon coin={c.coin} size={22} className="tm-chrome-coin" />
-                  <span className="tm-chrome-result-name">{c.coin}</span>
-                  <span className="tm-chrome-result-tag">Perp</span>
+                  <CoinIcon coin={c.base ?? c.coin} size={22} className="tm-chrome-coin" />
+                  <span className="tm-chrome-result-name">{c.name ?? c.coin}</span>
+                  <span className="tm-chrome-result-tag">{c.kind === "spot" ? "Spot" : c.kind === "hip3" ? (c.category ?? "Tradfi") : "Perp"}</span>
                   <span className="tm-chrome-result-px tm-chrome-num">{fmtPx(c.markPx)}</span>
                   <span className={`tm-chrome-result-chg tm-chrome-num ${c.change24h >= 0 ? "tm-chrome-up" : "tm-chrome-down"}`}>{fmtPct(c.change24h)}</span>
                 </>,

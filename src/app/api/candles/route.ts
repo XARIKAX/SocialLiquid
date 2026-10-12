@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 const INTERVALS: HlCandleInterval[] = ["1m", "5m", "15m", "1h", "4h", "1d", "1w"];
 const Q = z.object({
-  coin: z.string().min(1).max(20),
+  coin: z.string().min(1).max(48),
   interval: z.enum(INTERVALS as [HlCandleInterval, ...HlCandleInterval[]]).default("1h"),
   bars: z.coerce.number().min(10).max(1000).default(300),
 });

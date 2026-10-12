@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/db";
+import { marketByRef } from "@/lib/hl";
 import { fmtPx, fmtUsd, shortAddr, timeAgo } from "@/lib/format";
 import { Avatar, CoinIcon, OutcomePill, Pnl, SidePill } from "@/components/ui";
 import { Icon } from "@/components/icons";
@@ -14,12 +15,20 @@ async function load(id: string) {
   return prisma.thesis.findUnique({ where: { id }, include: { user: true, position: true, _count: { select: { likes: true, replies: true } } } });
 }
 
+/** the market as people name it ("SOL/USDC", "GOLD"), its icon symbol and its page; the id if the market is unknown */
+async function marketOf(coin: string) {
+  const m = await marketByRef(coin).catch(() => undefined);
+  const bare = coin.includes(":") ? coin.slice(coin.indexOf(":") + 1) : coin;
+  return { name: m?.name ?? bare, base: m?.base ?? bare, href: `/m/${encodeURIComponent(m?.slug ?? coin)}` };
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   const t = await load(id);
   if (!t) return {};
   const who = t.user.handle ?? shortAddr(t.user.address);
-  const title = `${who} on ${t.coin}: ${t.text.slice(0, 60)}${t.text.length > 60 ? "…" : ""}`;
+  const mk = await marketOf(t.coin);
+  const title = `${who} on ${mk.name}: ${t.text.slice(0, 60)}${t.text.length > 60 ? "…" : ""}`;
   return { title, description: t.text, openGraph: { title, description: t.text }, twitter: { card: "summary_large_image", title, description: t.text } };
 }
 
@@ -29,9 +38,10 @@ export default async function ThesisPage({ params }: Props) {
   if (!t) notFound();
   const who = t.user.handle ?? shortAddr(t.user.address);
   const p = t.position;
+  const mk = await marketOf(t.coin);
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://socialliquid.fun";
   const url = `${appUrl}/t/${t.user.handle ?? t.user.address}/thesis/${t.id}`;
-  const share = `https://x.com/intent/tweet?${new URLSearchParams({ text: `${p ? `${p.side.toLowerCase()} ${t.coin} ${p.leverage}x` : t.coin}: ${t.text}`, url, hashtags: "socialLiquid,hyperliquid" })}`;
+  const share = `https://x.com/intent/tweet?${new URLSearchParams({ text: `${p ? `${p.side.toLowerCase()} ${mk.name} ${p.leverage}x` : mk.name}: ${t.text}`, url, hashtags: "socialLiquid,hyperliquid" })}`;
   return (
     <div className="max-w-2xl mx-auto pt-4 pb-3">
       <article className="card p-5">
@@ -47,8 +57,8 @@ export default async function ThesisPage({ params }: Props) {
           <span className="pill pill-thesis ml-auto">Thesis</span>
         </div>
         <div className="flex items-center gap-2 mt-4 text-xs flex-wrap">
-          <CoinIcon coin={t.coin} size={22} />
-          <Link href={`/m/${t.coin}`} className="font-semibold text-[15px] hover:underline">{t.coin}</Link>
+          <CoinIcon coin={mk.base} size={22} />
+          <Link href={mk.href} className="font-semibold text-[15px] hover:underline">{mk.name}</Link>
           {p && <SidePill side={p.side} />}
           {p && <span className="num text-muted">{fmtUsd(Number(p.sizeUsd), { compact: true })} · {p.leverage}x · entry {fmtPx(Number(p.entryPx))}</span>}
         </div>

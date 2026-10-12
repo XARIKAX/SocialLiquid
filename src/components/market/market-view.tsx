@@ -130,7 +130,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
   const mid = mids.data?.[coin] ? Number(mids.data[coin]) : undefined;
   const q = useQuery({
     queryKey: ["market", coin, thesisOnly, following],
-    queryFn: () => api<MarketData>(`/api/market/${coin}?thesis=${thesisOnly ? 1 : 0}&following=${following ? 1 : 0}`),
+    queryFn: () => api<MarketData>(`/api/market/${encodeURIComponent(coin)}?thesis=${thesisOnly ? 1 : 0}&following=${following ? 1 : 0}`),
     refetchInterval: 5000,
     initialData: !thesisOnly && !following ? initial : undefined,
   });
@@ -143,7 +143,8 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
   const m = shown?.market ?? initial?.market;
   const mine = useFeed({ address: signedIn ? address : undefined, coin, minUsd: 0, thesisOnly: false, following: false }, !!signedIn);
   const thesisEvents = useFeed({ coin, minUsd: 0, thesisOnly: true, following: false });
-  const myBal = useBalance(signedIn ? address : null);
+  // builder-dex markets keep their own margin account: read the balance of this market's dex
+  const myBal = useBalance(signedIn ? address : null, m?.dex ?? "");
   const orders = useOpenOrders();
   const markers = useMemo<ChartMarker[]>(() => {
     const out: ChartMarker[] = [];
@@ -185,7 +186,10 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
   const [bookFolded] = useBookFold();
   const deskRef = useRef<HTMLDivElement>(null);
   const sideRef = useRef<HTMLDivElement>(null);
-  const sections = useMemo(() => ["Order ticket", "Position flow", "Traders to follow", `About ${coin}`], [coin]);
+  /* what a human reads: "SOL/USDC" for a spot pair, "BTC-USD" / "GOLD-USD" for perps; the base symbol for sizes */
+  const name = m?.name ?? coin;
+  const chartLabel = m ? (m.kind === "spot" ? m.name : `${m.name}-USD`) : undefined;
+  const sections = useMemo(() => ["Order ticket", "Position flow", "Traders to follow", `About ${name}`], [name]);
 
   return (
     <div className="tm-lay-cq">
@@ -200,7 +204,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
                 <ChartPlaceholder coin={coin} closes={initial?.closes} />
               </div>
               <div className="absolute inset-0">
-                <Chart coin={coin} markers={markers} lastPx={mid} lines={lines} />
+                <Chart coin={coin} label={chartLabel} markers={markers} lastPx={mid} lines={lines} />
               </div>
             </div>
             <div className="tm-lay-book" id="tm-lay-book" data-tm-lay-book="">
@@ -221,14 +225,14 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
         </div>
 
         {/* the ticket column. on the desk it is sticky and scrolls on its own (.tm-lay-side-in), with a map in its gutter */}
-        <aside className="tm-lay-side" aria-label={`Trade ${coin} and market details`}>
+        <aside className="tm-lay-side" aria-label={`Trade ${name} and market details`}>
           <div className="tm-lay-side-in" ref={sideRef}>
             <div className="tm-lay-ticket" data-tm-lay-mark="ticket">
               <Ticket coin={coin} market={m} mid={mid} />
             </div>
             <div className="tm-lay-cards">
               <SideDefer scrollRef={sideRef} mark="flow" minHeight={168} idle>
-                <FlowCard coin={coin} flow={shown?.flow24h} />
+                <FlowCard coin={coin} label={m?.base} flow={shown?.flow24h} />
               </SideDefer>
               <SideDefer scrollRef={sideRef} mark="traders" minHeight={312} idle>
                 <TradersToFollow />
@@ -242,7 +246,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
         </aside>
 
         <div className="card tm-lay-bottom">
-          <BottomPanel coin={coin} positions={q.data?.positions} trades={q.data?.trades} theses={thesisEvents.data} mid={mid} loading={q.isLoading && !initial} thesisOnly={thesisOnly} following={following} setThesisOnly={setThesisOnly} setFollowing={setFollowing} />
+          <BottomPanel coin={coin} label={m?.base} positions={q.data?.positions} trades={q.data?.trades} theses={thesisEvents.data} mid={mid} loading={q.isLoading && !initial} thesisOnly={thesisOnly} following={following} setThesisOnly={setThesisOnly} setFollowing={setFollowing} />
         </div>
       </div>
     </div>

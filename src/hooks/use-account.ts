@@ -25,3 +25,9 @@ export const TICKET_PRICE_EVENT = "sl:ticket-price";
 export function pushTicketPrice(px: number) {
   window.dispatchEvent(new CustomEvent(TICKET_PRICE_EVENT, { detail: px }));
 }
+
+export type MyThesis = { id: string; coin: string; text: string; createdAt: string; positionId: string | null; likes: number; replies: number };
+/** the signed-in user's live theses (open positions or unbound), newest first */
+export function useMyTheses(enabled = true) {
+  return useQuery({ queryKey: ["my-theses"], queryFn: () => api<{ theses: MyThesis[] }>("/api/thesis").then((r) => r.theses), enabled, staleTime: 10_000 });
+}

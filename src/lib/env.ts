@@ -13,6 +13,16 @@ export const BUILDER_FEE_TENTHS_BP = Math.min(
   Math.max(0, Number(process.env.BUILDER_FEE_TENTHS_BP ?? 50)),
 );
 
+/**
+ * the builder code is off when no builder wallet is configured or the fee is zero. hyperliquid only accepts a
+ * builder-fee approval for a builder holding at least 100 USDC in its own perps account, so a deployment without
+ * one would dead-end onboarding on a signature that can never register. off means orders carry no builder field
+ * and enabling trading asks for one signature instead of two.
+ */
+export const BUILDER_ENABLED = !/^0x0{40}$/i.test(BUILDER_ADDRESS) && BUILDER_FEE_TENTHS_BP > 0;
+/** what we actually charge: zero whenever the builder code is off, whatever BUILDER_FEE_TENTHS_BP says */
+export const BUILDER_FEE_CHARGED = BUILDER_ENABLED ? BUILDER_FEE_TENTHS_BP : 0;
+
 export const INVITE_CODE = process.env.INVITE_CODE ?? "";
 /** mainnet is gated behind an invite code when one is configured. testnet is always open. */
 export const INVITE_REQUIRED = !IS_TESTNET && INVITE_CODE.length > 0;

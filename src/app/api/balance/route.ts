@@ -4,10 +4,26 @@ import * as HL from "@/lib/hl";
 export const dynamic = "force-dynamic";
 
 export const GET = handler(async (req: Request) => {
-  const address = new URL(req.url).searchParams.get("address") ?? "";
+  const u = new URL(req.url);
+  const address = u.searchParams.get("address") ?? "";
+  const dex = (u.searchParams.get("dex") ?? "").slice(0, 16);
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new HttpError(400, "bad address");
-  const s = await HL.clearinghouseState(address);
+  if (dex && !/^[a-z0-9]+$/i.test(dex)) throw new HttpError(400, "bad dex");
+  const [s, spot, dexAbstraction, abstraction] = await Promise.all([
+    HL.clearinghouseState(address, dex),
+    HL.spotBalances(address).catch(() => null),
+    dex ? HL.dexAbstraction(address) : Promise.resolve(null),
+    HL.userAbstraction(address),
+  ]);
   return json({
+    dex,
+    dexAbstraction,
+    abstraction,
+    // one margin pool: spot USDC already backs perps, so there is nothing to move and usdClassTransfer is refused
+    unified: HL.isUnified(abstraction),
+    spot,
+    totalNtlPos: Number(s.marginSummary.totalNtlPos),
+    maintenanceMargin: s.crossMaintenanceMarginUsed !== undefined ? Number(s.crossMaintenanceMarginUsed) : null,
     accountValue: Number(s.marginSummary.accountValue),
     withdrawable: Number(s.withdrawable),
     marginUsed: Number(s.marginSummary.totalMarginUsed),

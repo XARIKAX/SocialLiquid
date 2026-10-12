@@ -312,6 +312,7 @@ function SortHead({ k, label, sort, dir, onSort, className = "" }: { k: Sort; la
 const VIEWS: readonly Tab[] = ["positions", "trades", "thesis"];
 
 export function PositionsTable({
+  label: marketLabel,
   coin,
   positions,
   trades,
@@ -326,6 +327,8 @@ export function PositionsTable({
   tab: tabProp,
   onTabChange,
 }: {
+  /** the market's display symbol (its base: "SOL" for SOL/USDC); the coin id stays for keys and data */
+  label?: string;
   coin: string;
   initialTab?: Tab;
   positions: MarketPosition[] | undefined;
@@ -341,6 +344,7 @@ export function PositionsTable({
   tab?: Tab;
   onTabChange?: (t: Tab) => void;
 }) {
+  const sym = marketLabel ?? coin;
   const [sort, setSort] = useState<Sort>("size");
   const [dir, setDir] = useState<Dir>("desc");
   const [tabState, setTabState] = useState<Tab>(initialTab);
@@ -441,11 +445,11 @@ export function PositionsTable({
             />
           ) : !posLoading && rows.length === 0 ? (
             following ? (
-              <BpEmpty icon={<BpIcon n="users" />} title={`Nobody you follow is in ${coin}`} hint="Follow traders from the feed or the leaderboard and their positions show up here." />
+              <BpEmpty icon={<BpIcon n="users" />} title={`Nobody you follow is in ${sym}`} hint="Follow traders from the feed or the leaderboard and their positions show up here." />
             ) : thesisOnly ? (
-              <BpEmpty tone="thesis" icon={<BpIcon n="pen" />} title={`No ${coin} positions with a thesis`} hint={`Nobody has explained a ${coin} trade yet. Write the first thesis in the order ticket.`} />
+              <BpEmpty tone="thesis" icon={<BpIcon n="pen" />} title={`No ${sym} positions with a thesis`} hint={`Nobody has explained a ${sym} trade yet. Write the first thesis in the order ticket.`} />
             ) : (
-              <BpEmpty icon={<BpIcon n="radar" />} title={`No open ${coin} positions`} hint={`Tracked traders are flat on ${coin} right now. New positions appear here the moment they open.`} />
+              <BpEmpty icon={<BpIcon n="radar" />} title={`No open ${sym} positions`} hint={`Tracked traders are flat on ${sym} right now. New positions appear here the moment they open.`} />
             )
           ) : (
             <table className="tm-bp-table">
@@ -477,7 +481,7 @@ export function PositionsTable({
                             user={p.user}
                             sub={
                               <span title={hold ?? undefined} suppressHydrationWarning>
-                                {coin} · {timeAgo(p.openedAt)}
+                                {sym} · {timeAgo(p.openedAt)}
                               </span>
                             }
                             extra={
@@ -500,7 +504,7 @@ export function PositionsTable({
                           <span className="tm-bp-2" title={fmtUsd(p.sizeUsd)}>
                             <span className="num tm-bp-val">{fmtUsd(p.sizeUsd, { compact: true })}</span>
                             <span className="tm-bp-sub num">
-                              {fmtQty(p.size)} {coin}
+                              {fmtQty(p.size)} {sym}
                             </span>
                           </span>
                         </td>
@@ -543,7 +547,7 @@ export function PositionsTable({
                 </tbody>
               </table>
             ) : (
-              <BpEmpty icon={<BpIcon n="receipt" />} title={`No ${coin} fills yet`} hint="Fills land here as tracked traders execute on Hyperliquid." />
+              <BpEmpty icon={<BpIcon n="receipt" />} title={`No ${sym} fills yet`} hint="Fills land here as tracked traders execute on Hyperliquid." />
             )
           ) : (
             <table className="tm-bp-table tm-bp-tape">
@@ -574,7 +578,7 @@ export function PositionsTable({
                       <td>
                         <span className={`pill ${pill.cls}`}>{pill.label}</span>
                       </td>
-                      <td className="r num tm-bp-strong" title={`${fmtQty(t.sz)} ${coin}`}>
+                      <td className="r num tm-bp-strong" title={`${fmtQty(t.sz)} ${sym}`}>
                         {fmtUsd(t.usd)}
                       </td>
                       <td className="r tm-bp-mid num tm-bp-fg2">{bpPx(t.px)}</td>
@@ -604,7 +608,7 @@ export function PositionsTable({
             <BpEmpty
               tone="thesis"
               icon={<BpIcon n="pen" />}
-              title={`No ${coin} theses yet`}
+              title={`No ${sym} theses yet`}
               hint="A thesis is a trade with the reason attached. Write one in the order ticket and it lands here with a live PnL badge."
             />
           ) : (

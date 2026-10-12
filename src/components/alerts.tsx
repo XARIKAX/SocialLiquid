@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { marketIdentity, useMarketIdentity } from "@/hooks/use-market";
 import { api } from "@/lib/client";
 import type { FeedItem } from "@/lib/queries";
 import { fmtUsd, timeAgo, userLabel } from "@/lib/format";
@@ -55,7 +56,7 @@ const closeIcon = (
 );
 
 /** the facts an alert carries, shared by the row and its spoken summary */
-function facts(it: FeedItem) {
+function facts(it: FeedItem, mk: ReturnType<typeof marketIdentity> = marketIdentity(it.coin)) {
   const p = it.payload as { sizeUsd?: number; leverage?: number; realisedPnl?: number; side?: string; text?: string };
   const name = it.user ? userLabel(it.user) : it.address.slice(0, 6) + "…" + it.address.slice(-4);
   const pnl = p.realisedPnl ?? it.position?.realisedPnl ?? null;
@@ -65,17 +66,17 @@ function facts(it: FeedItem) {
   const side = it.type === "THESIS" ? (p.side ?? it.position?.side) : undefined;
   const text = it.type === "THESIS" ? (it.thesis?.text ?? p.text) : undefined;
   const ago = timeAgo(it.time);
-  const label = `${name} ${verb(it)} ${it.coin}${size ? `, ${fmtUsd(size, { compact: true })}` : ""}${lev ? ` at ${lev}x` : ""}${closed && pnl !== null ? `, ${fmtUsd(pnl, { sign: true })}` : ""}, ${ago} ago`;
-  return { name, pnl, closed, lev, size, side, text, ago, label };
+  const label = `${name} ${verb(it)} ${mk.name}${size ? `, ${fmtUsd(size, { compact: true })}` : ""}${lev ? ` at ${lev}x` : ""}${closed && pnl !== null ? `, ${fmtUsd(pnl, { sign: true })}` : ""}, ${ago} ago`;
+  return { name, pnl, closed, lev, size, side, text, ago, label, mk };
 }
 
 function AlertRow({ it, onClick, fresh }: { it: FeedItem; onClick?: () => void; fresh?: boolean }) {
-  const { name, pnl, closed, lev, size, side, text, ago, label } = facts(it);
+  const { name, pnl, closed, lev, size, side, text, ago, label, mk } = facts(it, useMarketIdentity()(it.coin));
   return (
-    <Link href={`/m/${it.coin}`} onClick={onClick} className="tm-chrome-alert" data-new={fresh || undefined} aria-label={label}>
+    <Link href={mk.href} onClick={onClick} className="tm-chrome-alert" data-new={fresh || undefined} aria-label={label}>
       <span className="tm-chrome-alert-av" aria-hidden>
         <Avatar address={it.address} url={it.user?.avatarUrl} handle={it.user?.handle ?? it.user?.displayName} size={32} />
-        <CoinIcon coin={it.coin} size={15} className="tm-chrome-alert-coinbadge" />
+        <CoinIcon coin={mk.base} size={15} className="tm-chrome-alert-coinbadge" />
       </span>
       <span className="tm-chrome-alert-body" aria-hidden>
         <span className="tm-chrome-alert-line">
@@ -85,7 +86,7 @@ function AlertRow({ it, onClick, fresh }: { it: FeedItem; onClick?: () => void; 
         </span>
         <span className="tm-chrome-alert-meta tm-chrome-num">
           {side && <span className={side === "LONG" ? "tm-chrome-up" : "tm-chrome-down"}>{side === "LONG" ? "Long" : "Short"}</span>}
-          <b>{it.coin}</b>
+          <b>{mk.name}</b>
           {size ? <span>{fmtUsd(size, { compact: true })}</span> : null}
           {lev ? <span className="tm-chrome-alert-lev">{lev}x</span> : null}
           {closed && pnl !== null && <span className={`tm-chrome-alert-pnl ${pnl >= 0 ? "tm-chrome-up glow-up" : "tm-chrome-down glow-down"}`}>{fmtUsd(pnl, { sign: true })}</span>}

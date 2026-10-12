@@ -198,11 +198,13 @@ const Arrow = () => (
    the card
    ===================================================================== */
 export function OrderBook({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
+  /** what sizes are counted in, as a human reads it: "SOL" for the SOL/USDC pair, never its "@1" id */
+  const sym = market?.base ?? coin;
   const [tab, setTab] = usePref<Tab>("sl:book-tab", "book", TABS);
   const [unit, setUnit] = usePref<Unit>("sl:book-unit", "coin", UNITS);
   const [group, setGroup] = useState(0); // index into tick options
-  const book = useQuery({ queryKey: ["book", coin], queryFn: () => api<Book>(`/api/book?coin=${coin}`), refetchInterval: 1500, enabled: tab === "book" });
-  const trades = useQuery({ queryKey: ["recent-trades", coin], queryFn: () => api<{ trades: Trade[] }>(`/api/trades?coin=${coin}`).then((r) => r.trades), refetchInterval: 2000, enabled: tab === "trades" });
+  const book = useQuery({ queryKey: ["book", coin], queryFn: () => api<Book>(`/api/book?coin=${encodeURIComponent(coin)}`), refetchInterval: 1500, enabled: tab === "book" });
+  const trades = useQuery({ queryKey: ["recent-trades", coin], queryFn: () => api<{ trades: Trade[] }>(`/api/trades?coin=${encodeURIComponent(coin)}`).then((r) => r.trades), refetchInterval: 2000, enabled: tab === "trades" });
   const szDec = market?.szDecimals ?? 3;
   /* the grouping steps scale with the price; the book's own best bid stands in until a mid arrives */
   const base = mid ?? market?.markPx ?? book.data?.bids[0]?.px ?? 0;
@@ -223,7 +225,7 @@ export function OrderBook({ coin, market, mid }: { coin: string; market?: Market
     () => ticks.map((t, i) => ({ value: i, label: nf(stepDecimals(t)).format(t) })).filter((o) => reach.i < 0 || o.value <= reach.i || o.value === group),
     [ticks, reach.i, group],
   );
-  const unitToggle = <UnitToggle coin={coin} unit={unit} onChange={setUnit} />;
+  const unitToggle = <UnitToggle coin={sym} unit={unit} onChange={setUnit} />;
   /* the open tab's led says live only while it is: a refresh that keeps failing over loaded data turns it amber */
   const live = tab === "book" ? book : trades;
   const stale = live.isError && live.data !== undefined;
@@ -291,6 +293,7 @@ export function OrderBook({ coin, market, mid }: { coin: string; market?: Market
           id={`${uid}-panel-book`}
           labelledBy={`${uid}-tab-book`}
           coin={coin}
+          sym={sym}
           data={book.data}
           failed={book.isError}
           tick={tick}
@@ -302,7 +305,7 @@ export function OrderBook({ coin, market, mid }: { coin: string; market?: Market
           change={market?.change24h}
         />
       ) : (
-        <TradesPanel id={`${uid}-panel-trades`} labelledBy={`${uid}-tab-trades`} coin={coin} data={trades.data} failed={trades.isError} unit={unit} unitToggle={unitToggle} szDec={szDec} fine={ticks[0]} />
+        <TradesPanel id={`${uid}-panel-trades`} labelledBy={`${uid}-tab-trades`} coin={sym} data={trades.data} failed={trades.isError} unit={unit} unitToggle={unitToggle} szDec={szDec} fine={ticks[0]} />
       )}
     </div>
   );
@@ -318,6 +321,7 @@ function BookPanel({
   id,
   labelledBy,
   coin,
+  sym,
   data,
   failed,
   tick,
@@ -331,6 +335,8 @@ function BookPanel({
   id: string;
   labelledBy: string;
   coin: string;
+  /** the display symbol for sizes and labels (the market's base) */
+  sym: string;
   data?: Book;
   failed: boolean;
   tick: number;
@@ -481,7 +487,7 @@ function BookPanel({
   }, [g, unit, szDec, room.sz, room.end]);
   const cellSz = (r: Row) => cols.sz(unit === "coin" ? r.sz : r.sz * r.px);
   const cellTot = (r: Row) => cols.tot(unit === "coin" ? r.total : r.ntl);
-  const unitLabel = unit === "coin" ? coin : "USD";
+  const unitLabel = unit === "coin" ? sym : "USD";
 
   const renderRow = (r: Row, side: Side, i: number, n: number, max: number) => {
     const slot = `${side === "ask" ? "a" : "b"}${i}`;
@@ -526,7 +532,7 @@ function BookPanel({
   const tipAbove = hot ? hot.side === "ask" || fit.h - hot.bottom < TIP_H + 6 : false;
   const tipStyle: CSSProperties | undefined = hot ? (hot.out ? { left: hot.x, top: hot.y } : tipAbove ? { top: hot.top - 4, transform: "translateY(-100%)" } : { top: hot.bottom + 4 }) : undefined;
   const dir = mv.dir;
-  const sum = (v: number) => `${nf(szDec).format(v)} ${coin}`;
+  const sum = (v: number) => `${nf(szDec).format(v)} ${sym}`;
   const sharePct = g ? Math.round(g.share * 100) : null;
 
   return (
@@ -550,7 +556,7 @@ function BookPanel({
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHot(null);
         }}
       >
-        <div ref={asksRef} className="tm-book-side tm-book-asks" role="group" aria-label={`Asks, ${coin}`}>
+        <div ref={asksRef} className="tm-book-side tm-book-asks" role="group" aria-label={`Asks, ${sym}`}>
           {g?.askEnd && <EndOfDepth />}
           {g ? [...g.asks].reverse().map((r, j) => renderRow(r, "ask", g.asks.length - 1 - j, g.asks.length, g.max)) : <Ghosts n={fit.n} side="ask" />}
           {failed && !g && (
@@ -588,7 +594,7 @@ function BookPanel({
           </span>
           {g && <span className="tm-book-press" style={{ "--b": g.share.toFixed(4) } as CSSProperties} aria-hidden />}
         </div>
-        <div className="tm-book-side tm-book-bids" role="group" aria-label={`Bids, ${coin}`}>
+        <div className="tm-book-side tm-book-bids" role="group" aria-label={`Bids, ${sym}`}>
           {g ? g.bids.map((r, i) => renderRow(r, "bid", i, g.bids.length, g.max)) : <Ghosts n={fit.n} side="bid" />}
           {g?.bidEnd && <EndOfDepth />}
         </div>
@@ -602,7 +608,7 @@ function BookPanel({
             hotRow
               ? [
                   ["Avg price", nf(pxDec + 1).format(hotRow.ntl / Math.max(hotRow.total, 1e-12))],
-                  [`Sum ${coin}`, nf(szDec).format(hotRow.total)],
+                  [`Sum ${sym}`, nf(szDec).format(hotRow.total)],
                   ["Sum USD", usd(hotRow.ntl)],
                 ]
               : [

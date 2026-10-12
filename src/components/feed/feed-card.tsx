@@ -6,19 +6,20 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { FeedItem } from "@/lib/queries";
 import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, shortAddr, timeAgo, userPath } from "@/lib/format";
-import { livePnl } from "@/hooks/use-market";
+import { livePnl, useMarketIdentity } from "@/hooks/use-market";
 import { Avatar, CoinIcon, EventPill, Icon, OutcomePill } from "../ui";
 import { ThesisThread, useSignInPrompt } from "./thesis-thread";
 
 type Payload = { side?: string; sizeUsd?: number; size?: number; leverage?: number; entryPx?: number; closePx?: number | null; realisedPnl?: number; holdMs?: number; text?: string };
 
-/** /m/[coin]?copy=… prefills the ticket with the same side and leverage and records the copy on the resulting position */
-export function copyHref(item: FeedItem): string {
+/** /m/[coin]?copy=… prefills the ticket with the same side and leverage and records the copy on the resulting position.
+    pass the market's page (its slug) when known; the id works too */
+export function copyHref(item: FeedItem, page = `/m/${encodeURIComponent(item.coin)}`): string {
   const p = item.payload as { side?: string; leverage?: number };
   const pos = item.position!;
   const name = item.user?.displayName ?? item.user?.handle ?? item.address.slice(0, 6) + "…" + item.address.slice(-4);
   const q = new URLSearchParams({ copy: pos.id, from: item.address, side: String(pos.side ?? p.side ?? "LONG"), lev: String(pos.leverage ?? p.leverage ?? 10), name });
-  return `/m/${item.coin}?${q.toString()}`;
+  return `${page}?${q.toString()}`;
 }
 
 /** how the rail names a trader (as the landing mock does): @handle once claimed, else the hyperliquid display name, else a short address */
@@ -144,12 +145,13 @@ export const FeedCard = memo(function FeedCard({ item, mid, onNavigate, signedIn
   const tone = item.type === "LONG" ? "up" : item.type === "SHORT" || item.type === "LIQUIDATED" ? "down" : isThesis ? "thesis" : (realised ?? 0) >= 0 ? "up" : "down";
   const long = side === "LONG";
   const sideTag = side && <span className={`tm-rail-side ${long ? "tm-rail-up" : "tm-rail-down"}`}>{long ? "Long" : "Short"}</span>;
+  const mk = useMarketIdentity()(item.coin);
   const coinLink = (
-    <Link href={`/m/${item.coin}`} onClick={onNavigate} className="tm-rail-fc-coin" title={`Open ${item.coin}`}>
+    <Link href={mk.href} onClick={onNavigate} className="tm-rail-fc-coin" title={`Open ${mk.name}`}>
       <span className="tm-rail-coin">
-        <CoinIcon coin={item.coin} size={15} />
+        <CoinIcon coin={mk.base} size={15} />
       </span>
-      <b>{item.coin}</b>
+      <b>{mk.name}</b>
     </Link>
   );
 
@@ -173,7 +175,7 @@ export const FeedCard = memo(function FeedCard({ item, mid, onNavigate, signedIn
           <EventPill type={item.type} />
         </div>
         {open && !isClosed && (
-          <Link href={copyHref(item)} onClick={onNavigate} className="tm-rail-copy" title={`Open the same ${side === "SHORT" ? "short" : "long"} on ${item.coin}`}>
+          <Link href={copyHref(item, mk.href)} onClick={onNavigate} className="tm-rail-copy" title={`Open the same ${side === "SHORT" ? "short" : "long"} on ${mk.name}`}>
             <Icon.copy /> Copy
           </Link>
         )}

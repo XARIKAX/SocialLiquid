@@ -3,7 +3,7 @@ import { handler, json } from "@/lib/api";
 import * as HL from "@/lib/hl";
 
 export const dynamic = "force-dynamic";
-const Q = z.object({ coin: z.string().min(1).max(20), sig: z.coerce.number().int().min(2).max(5).optional() });
+const Q = z.object({ coin: z.string().min(1).max(48), sig: z.coerce.number().int().min(2).max(5).optional() });
 
 export const GET = handler(async (req: Request) => {
   const q = Q.parse(Object.fromEntries(new URL(req.url).searchParams));

@@ -7,12 +7,12 @@ import { getSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: string }> }) => {
-  const { coin } = await ctx.params;
+  const { coin: ref } = await ctx.params;
   const u = new URL(req.url);
   const s = await getSession();
-  const markets = await HL.markets();
-  const market = markets.find((m) => m.coin === coin);
+  const market = await HL.marketByRef(decodeURIComponent(ref));
   if (!market) throw new HttpError(404, "unknown market");
+  const coin = market.coin;
 
   const thesisOnly = u.searchParams.get("thesis") === "1";
   const following = u.searchParams.get("following") === "1";

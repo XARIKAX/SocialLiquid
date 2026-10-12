@@ -3,7 +3,8 @@ import "./chrome.css";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useMarkets, useMids } from "@/hooks/use-market";
+import { marketIdentity, useMarkets, useMids } from "@/hooks/use-market";
+import type { MarketSummary } from "@/lib/hl-types";
 import { CoinIcon, Icon } from "./ui";
 
 /* =====================================================================
@@ -47,13 +48,24 @@ function TickPx({ v, flash = true }: { v: number; flash?: boolean }) {
   );
 }
 
-type Item = { coin: string; px: number | undefined; chg: number | undefined };
+type Item = { coin: string; name: string; base: string; href: string; px: number | undefined; chg: number | undefined };
+
+/** the path names a market by its id or its slug, percent-encoded or not */
+function isAt(path: string | null, it: Item) {
+  if (!path) return false;
+  let p = path;
+  try {
+    p = decodeURIComponent(path);
+  } catch {}
+  p = p.toLowerCase();
+  return p === `/m/${it.coin}`.toLowerCase() || p === decodeURIComponent(it.href).toLowerCase();
+}
 
 function Tick({ it, current, hidden, flash }: { it: Item; current: boolean; hidden?: boolean; flash?: boolean }) {
   return (
-    <Link href={`/m/${it.coin}`} className="tm-chrome-tk" aria-current={current ? "page" : undefined} tabIndex={hidden ? -1 : undefined}>
-      <CoinIcon coin={it.coin} size={14} className="tm-chrome-coin" />
-      <span className="tm-chrome-tk-sym">{it.coin}</span>
+    <Link href={it.href} className="tm-chrome-tk" aria-current={current ? "page" : undefined} tabIndex={hidden ? -1 : undefined}>
+      <CoinIcon coin={it.base} size={14} className="tm-chrome-coin" />
+      <span className="tm-chrome-tk-sym">{it.name}</span>
       {it.px ? <TickPx v={it.px} flash={flash} /> : <span className="skeleton tm-chrome-tk-sk" />}
       {it.chg !== undefined && (
         <span className={`tm-chrome-tk-chg tm-chrome-num ${it.chg >= 0 ? "tm-chrome-up" : "tm-chrome-down"}`}>
@@ -112,14 +124,11 @@ export function Ticker() {
     };
   }, [updated]);
 
-  const item = (coin: string, chg?: number, mark?: number): Item => {
+  const item = (coin: string, m?: MarketSummary): Item => {
     const mid = mids.data?.[coin];
-    return { coin, px: mid ? Number(mid) : mark, chg };
+    return { coin, ...marketIdentity(coin, m), px: mid ? Number(mid) : m?.markPx, chg: m?.change24h };
   };
-  const pinned = PINNED.map((coin) => {
-    const m = markets.data?.find((x) => x.coin === coin);
-    return item(coin, m?.change24h, m?.markPx);
-  });
+  const pinned = PINNED.map((coin) => item(coin, markets.data?.find((x) => x.coin === coin)));
   // the next markets by 24h volume fill whatever width is left; what does not fit is clipped, not squeezed
   const more = drift
     ? []
@@ -127,12 +136,12 @@ export function Ticker() {
         .filter((m) => !PINNED.includes(m.coin))
         .sort((a, b) => b.volume24h - a.volume24h)
         .slice(0, MORE)
-        .map((m) => item(m.coin, m.change24h, m.markPx));
+        .map((m) => item(m.coin, m));
 
   const renderSet = (copy: boolean) => (
     <div className="tm-chrome-tape-set" ref={copy ? undefined : setRef} aria-hidden={copy || undefined}>
       {pinned.map((it) => (
-        <Tick key={it.coin} it={it} current={path === `/m/${it.coin}`} hidden={copy} />
+        <Tick key={it.coin} it={it} current={isAt(path, it)} hidden={copy} />
       ))}
     </div>
   );
@@ -148,7 +157,7 @@ export function Ticker() {
           // decorative overflow: the majors stay the keyboard's stops, every market is one search away
           <div className="tm-chrome-tape-more" aria-hidden>
             {more.map((it) => (
-              <Tick key={it.coin} it={it} current={path === `/m/${it.coin}`} hidden flash={false} />
+              <Tick key={it.coin} it={it} current={isAt(path, it)} hidden flash={false} />
             ))}
           </div>
         )}

@@ -15,7 +15,7 @@ export function AboutCard({ coin, market, mid, longShort, counts }: { coin: stri
   const id = useId();
   const q = useQuery({
     queryKey: ["candles", coin, "5m", "about"],
-    queryFn: () => api<{ candles: Candle[] }>(`/api/candles?coin=${coin}&interval=5m&bars=300`).then((r) => r.candles),
+    queryFn: () => api<{ candles: Candle[] }>(`/api/candles?coin=${encodeURIComponent(coin)}&interval=5m&bars=300`).then((r) => r.candles),
     refetchInterval: 60_000,
   });
   const now = mid ?? market?.markPx;
@@ -48,21 +48,26 @@ export function AboutCard({ coin, market, mid, longShort, counts }: { coin: stri
   const ns = counts?.shorts ?? 0;
   const n = nl + ns;
   const funding = market?.funding ?? 0;
+  // spot pairs have no leverage, funding or open interest; builder-dex markets say who deployed them
+  const spot = market?.kind === "spot";
+  const name = market?.name ?? coin;
+  const sym = market?.base ?? coin;
+  const sub = !market ? "On Hyperliquid" : spot ? "Spot pair on Hyperliquid" : market.kind === "hip3" ? `${market.category ? `${market.category} perpetual` : "Perpetual"} · ${market.dexName ?? market.dex}` : "Perpetual on Hyperliquid";
   /** a side's colour only when it holds something */
   const tone = (v: number, side: "up" | "down") => (v > 0 ? `tm-lay-${side}` : "tm-lay-zero");
   return (
     <section className="card tm-lay-card tm-lay-about" aria-labelledby={id}>
       <header className="tm-lay-ch">
         <span className="tm-lay-coin" aria-hidden>
-          <CoinIcon coin={coin} size={30} />
+          <CoinIcon coin={sym} size={30} />
         </span>
         <div className="min-w-0">
           <h3 id={id} className="tm-lay-ch-title">
-            About {coin}
+            About {name}
           </h3>
-          <p className="tm-lay-ch-sub">Perpetual on Hyperliquid</p>
+          <p className="tm-lay-ch-sub">{sub}</p>
         </div>
-        {market && <span className="tm-lay-ch-end pill pill-brand num" title={`Up to ${market.maxLeverage}x leverage`}>{market.maxLeverage}x</span>}
+        {market && (spot ? <span className="tm-lay-ch-end pill pill-neutral">Spot</span> : <span className="tm-lay-ch-end pill pill-brand num" title={`Up to ${market.maxLeverage}x leverage`}>{market.maxLeverage}x</span>)}
       </header>
 
       <div className="tm-lay-sect">
@@ -99,8 +104,8 @@ export function AboutCard({ coin, market, mid, longShort, counts }: { coin: stri
         </div>
       ) : n === 0 && tot === 0 ? (
         <>
-          <SplitBar small share={null} label={`No tracked trader holds ${coin} right now`} />
-          <p className="tm-lay-none mt-2">No tracked trader holds {coin} right now. Their positions show up here the moment they open.</p>
+          <SplitBar small share={null} label={`No tracked trader holds ${name} right now`} />
+          <p className="tm-lay-none mt-2">No tracked trader holds {name} right now. Their positions show up here the moment they open.</p>
         </>
       ) : (
         <div className="tm-lay-tracked">
@@ -121,21 +126,36 @@ export function AboutCard({ coin, market, mid, longShort, counts }: { coin: stri
           <dt>24h volume</dt>
           <dd>{market ? money(market.volume24h) : "–"}</dd>
         </div>
-        <div>
-          <dt>Open interest</dt>
-          <dd>{market ? money(market.openInterestUsd) : "–"}</dd>
-        </div>
-        <div>
-          <dt>Funding / 1h</dt>
-          <dd className={!market ? "" : funding > 0 ? "tm-lay-mint" : funding < 0 ? "tm-lay-down" : ""}>{market ? `${(funding * 100).toFixed(4)}%` : "–"}</dd>
-        </div>
+        {spot ? (
+          <>
+            <div>
+              <dt>Quote</dt>
+              <dd>USDC</dd>
+            </div>
+            <div>
+              <dt>Token</dt>
+              <dd>{market?.token ?? sym}</dd>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <dt>Open interest</dt>
+              <dd>{market ? money(market.openInterestUsd) : "–"}</dd>
+            </div>
+            <div>
+              <dt>Funding / 1h</dt>
+              <dd className={!market ? "" : funding > 0 ? "tm-lay-mint" : funding < 0 ? "tm-lay-down" : ""}>{market ? `${(funding * 100).toFixed(4)}%` : "–"}</dd>
+            </div>
+          </>
+        )}
       </dl>
 
       <div className="tm-lay-acts">
-        <a className="tm-lay-act" href={`https://x.com/search?q=%24${coin}`} target="_blank" rel="noreferrer">
-          <Icon.x /> Search ${coin}
+        <a className="tm-lay-act" href={`https://x.com/search?q=%24${encodeURIComponent(sym)}`} target="_blank" rel="noreferrer">
+          <Icon.x /> Search ${sym}
         </a>
-        <a className="tm-lay-act" href={`${HL_APP_URL_CLIENT}/trade/${coin}`} target="_blank" rel="noreferrer">
+        <a className="tm-lay-act" href={`${HL_APP_URL_CLIENT}/trade/${encodeURIComponent(spot ? (market?.token ?? coin) : coin)}`} target="_blank" rel="noreferrer">
           Hyperliquid <Icon.external />
         </a>
       </div>

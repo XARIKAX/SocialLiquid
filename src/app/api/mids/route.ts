@@ -3,4 +3,4 @@ import * as HL from "@/lib/hl";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handler(async () => json(await HL.allMids()));
+export const GET = handler(async () => json(await HL.allMidsAll()));

@@ -15,9 +15,9 @@ async function recentCloses(coin: string): Promise<number[]> {
 }
 
 /** initial market payload for ssr (same shape as /api/market/[coin]) */
-export async function marketInitial(coin: string) {
-  const markets = await HL.markets().catch(() => []);
-  const market = markets.find((m) => m.coin === coin);
+export async function marketInitial(ref: string) {
+  const market = await HL.marketByRef(ref).catch(() => undefined);
+  const coin = market?.coin ?? ref;
   if (!market) return null;
   const closes = await recentCloses(coin);
   // a db outage or missing schema must not take the page down; the client refetches and /api/health explains

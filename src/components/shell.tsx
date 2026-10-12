@@ -8,6 +8,8 @@ import { Ticker } from "./ticker";
 import { Icon } from "./icons";
 import { useAccount } from "wagmi";
 import { FundsHost } from "./trade/funds";
+import { ConvertHost } from "./trade/convert";
+import { ChaseRunner } from "./trade/chase-runner";
 import { ProfileHost } from "./profile-editor";
 import { AlertToasts } from "./alerts";
 
@@ -181,6 +183,8 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="tm-chrome-shell">
       <TopBar onToggleFeed={() => setTab((t) => (t === "feed" ? "page" : "feed"))} />
       {wallet && <FundsHost address={wallet} />}
+      {wallet && <ConvertHost address={wallet} />}
+      {wallet && <ChaseRunner />}
       <ProfileHost />
       <AlertToasts />
       <div className="tm-chrome-grid">

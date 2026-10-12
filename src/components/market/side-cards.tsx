@@ -49,7 +49,7 @@ const tone = (v: number, side: "up" | "down") => (v > 0 ? `tm-lay-${side}` : "tm
  * gomo's order flow card, for perps: notional opened long vs short in the last 24h.
  * memoised (as is TradersToFollow): the market view re-renders on every tick of the mid, these cards never need to.
  */
-export const FlowCard = memo(function FlowCard({ coin, flow }: { coin: string; flow?: { longUsd: number; shortUsd: number; count: number } }) {
+export const FlowCard = memo(function FlowCard({ coin, label, flow }: { coin: string; label?: string; flow?: { longUsd: number; shortUsd: number; count: number } }) {
   const id = useId();
   // no data yet is not the same as no flow: it shows as unknown, not as zeros
   const known = !!flow;
@@ -74,7 +74,7 @@ export const FlowCard = memo(function FlowCard({ coin, flow }: { coin: string; f
         </h3>
         <span className="tm-lay-ch-end tm-lay-tag">
           <i className="tm-lay-live" aria-hidden />
-          24h · {coin}
+          24h · {label ?? coin}
         </span>
       </header>
       <div className="tm-lay-flow-hero">

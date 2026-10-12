@@ -173,19 +173,24 @@ function useStored<T>(key: string, init: T, ok: (v: unknown) => v is T): [T, (v:
   return [v, set];
 }
 
-/** the market the terminal is showing, from the route: /m/<coin>, and /trade is BTC */
-function useCurrentCoin(): string | null {
+/** the market the terminal is showing, from the route: /m/<slug or coin>, and /trade is BTC. lowercased */
+function useCurrentRef(): string | null {
   const path = usePathname();
   if (!path) return null;
-  if (path === "/trade") return "BTC";
+  if (path === "/trade") return "btc";
   const m = path.match(/^\/m\/([^/?#]+)/);
   if (!m) return null;
   try {
-    return decodeURIComponent(m[1]).toUpperCase();
+    return decodeURIComponent(m[1]).toLowerCase();
   } catch {
-    return m[1].toUpperCase();
+    return m[1].toLowerCase();
   }
 }
+/** the route resolves a market by its hyperliquid id or its slug, so either may be in the url */
+const isRef = (m: MarketSummary, ref: string) => m.coin.toLowerCase() === ref || m.slug.toLowerCase() === ref;
+const marketHref = (m: MarketSummary) => `/m/${encodeURIComponent(m.slug)}`;
+/** the line under a market's name: leverage and what it is (perp, spot pair, or the builder dex's tradfi class) */
+const kindLine = (m: MarketSummary) => (m.kind === "spot" ? "spot" : m.kind === "hip3" ? `${m.maxLeverage}x · ${m.category ?? m.dexName ?? m.dex}` : `${m.maxLeverage}x · perp`);
 
 /* =====================================================================
    feed + alerts
@@ -401,7 +406,7 @@ function Feed({ onNavigate, alerts, active = true, onBrowse }: { onNavigate?: ()
           label="Market"
           value={coin}
           on={!!coin}
-          icon={coin ? <CoinIcon coin={coin} size={14} /> : null}
+          icon={coin ? <CoinIcon coin={markets.data?.find((m) => m.coin === coin)?.base ?? coin} size={14} /> : null}
           onChange={(v) => {
             setCoin(v);
             setLimit(PAGE);
@@ -411,7 +416,7 @@ function Feed({ onNavigate, alerts, active = true, onBrowse }: { onNavigate?: ()
           <option value="">All markets</option>
           {markets.data?.map((m) => (
             <option key={m.coin} value={m.coin}>
-              {m.coin}
+              {m.name}
             </option>
           ))}
         </RailSelect>
@@ -506,6 +511,15 @@ function FeedSkeleton() {
 type SortKey = "default" | "coin" | "px" | "chg" | "vol" | "oi" | "fund";
 type Sort = { key: SortKey; dir: "asc" | "desc" };
 const SORT_STORE = "sl:tokens-sort";
+/** market classes, named the way the market picker names them; hip3 = builder-dex tradfi perps */
+type Kind = "all" | MarketSummary["kind"];
+const KIND_STORE = "sl:tokens-kind";
+const KINDS: [Kind, string][] = [
+  ["all", "All"],
+  ["perp", "Perps"],
+  ["spot", "Spot"],
+  ["hip3", "Tradfi"],
+];
 const SORT_KEYS: SortKey[] = ["default", "coin", "px", "chg", "vol", "oi", "fund"];
 const sortValue: Record<Exclude<SortKey, "default" | "coin">, (m: MarketSummary) => number> = {
   px: (m) => m.markPx,
@@ -519,9 +533,10 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
   const markets = useMarkets();
   const mids = useMids();
   const router = useRouter();
-  const current = useCurrentCoin();
+  const current = useCurrentRef();
   const [q, setQ] = useState("");
   const [sort, setSortState] = useState<Sort>({ key: "default", dir: "desc" });
+  const [kind, setKindState] = useState<Kind>("all");
   const listRef = useRef<HTMLUListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -530,8 +545,27 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
     try {
       const s = JSON.parse(localStorage.getItem(SORT_STORE) ?? "null") as Sort | null;
       if (s && SORT_KEYS.includes(s.key) && (s.dir === "asc" || s.dir === "desc")) setSortState(s);
+      const k = localStorage.getItem(KIND_STORE) as Kind | null;
+      if (k && KINDS.some(([x]) => x === k)) setKindState(k);
     } catch {}
   }, []);
+  const setKind = (k: Kind) => {
+    setKindState(k);
+    try {
+      localStorage.setItem(KIND_STORE, k);
+    } catch {}
+  };
+  /* how many markets each class holds; the class filter only shows when there is more than one class */
+  const kindCounts = useMemo(() => {
+    const c: Record<Kind, number> = { all: 0, perp: 0, spot: 0, hip3: 0 };
+    for (const m of markets.data ?? []) {
+      c.all++;
+      c[m.kind]++;
+    }
+    return c;
+  }, [markets.data]);
+  const showKinds = (["perp", "spot", "hip3"] as const).filter((k) => kindCounts[k] > 0).length > 1;
+  const activeKind: Kind = showKinds && (kind === "all" || kindCounts[kind] > 0) ? kind : "all";
   /* a head cycles: first look (high to low, a to z for names), the other way, then back to the default order */
   const toggleSort = (key: SortKey) => {
     const first: Sort["dir"] = key === "coin" ? "asc" : "desc";
@@ -544,19 +578,24 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    let l = (markets.data ?? []).filter((m) => m.coin.toLowerCase().includes(needle));
-    if (sort.key === "coin") l = [...l].sort((a, b) => a.coin.localeCompare(b.coin) * (sort.dir === "asc" ? 1 : -1));
+    const hit = (m: MarketSummary) => !needle || m.name.toLowerCase().includes(needle) || m.coin.toLowerCase().includes(needle) || m.base.toLowerCase().includes(needle) || (m.category ?? "").toLowerCase().includes(needle);
+    let l = (markets.data ?? []).filter((m) => (activeKind === "all" || m.kind === activeKind) && hit(m));
+    if (sort.key === "coin") l = [...l].sort((a, b) => a.name.localeCompare(b.name) * (sort.dir === "asc" ? 1 : -1));
     else if (sort.key !== "default") {
       const f = sortValue[sort.key];
       l = [...l].sort((a, b) => (f(a) - f(b)) * (sort.dir === "asc" ? 1 : -1));
     }
     // typing a symbol puts the exact match first, then the ones that start with it
     if (needle) {
-      const rank = (m: MarketSummary) => (m.coin.toLowerCase() === needle ? 0 : m.coin.toLowerCase().startsWith(needle) ? 1 : 2);
+      const rank = (m: MarketSummary) => {
+        const n = m.name.toLowerCase();
+        const b = m.base.toLowerCase();
+        return n === needle || b === needle ? 0 : n.startsWith(needle) || b.startsWith(needle) ? 1 : 2;
+      };
       l = [...l].sort((a, b) => rank(a) - rank(b));
     }
     return l;
-  }, [markets.data, q, sort]);
+  }, [markets.data, q, sort, activeKind]);
 
   /* bring the market you are on into view (inside the rail's own scroll, never the page) */
   const revealed = useRef<string | null>(null);
@@ -573,9 +612,9 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
     if (r.top < s.top + head || r.bottom > s.bottom) sc.scrollTop += r.top - (s.top + head + (s.height - head) / 2 - r.height / 2);
   }, [active, current, hasRows]);
 
-  const go = (coin: string) => {
+  const go = (m: MarketSummary) => {
     onNavigate?.();
-    router.push(`/m/${coin}`);
+    router.push(marketHref(m));
   };
   const rows = () => Array.from(listRef.current?.querySelectorAll<HTMLAnchorElement>("a[data-tok]") ?? []);
   const onInputKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -584,7 +623,7 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
       rows()[0]?.focus();
     } else if (e.key === "Enter" && list[0]) {
       e.preventDefault();
-      go(list[0].coin);
+      go(list[0]);
     } else if (e.key === "Escape" && q) {
       e.preventDefault();
       setQ("");
@@ -642,6 +681,18 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
               )}
             </span>
           </label>
+          {showKinds && (
+            <div className="tm-rail-kinds seg" role="radiogroup" aria-label="Market type">
+              {KINDS.map(([k, label]) =>
+                k === "all" || kindCounts[k] > 0 ? (
+                  <button key={k} type="button" role="radio" aria-checked={activeKind === k} className={`seg-item ${activeKind === k ? "seg-active" : ""}`} onClick={() => setKind(k)}>
+                    {label}
+                    <small>{kindCounts[k]}</small>
+                  </button>
+                ) : null,
+              )}
+            </div>
+          )}
         </div>
         {/* over a skeleton the heads show the shape of what is coming; over an empty or failed list they step out */}
         <div className="tm-rail-cols" data-empty={!markets.isLoading && !hasRows ? "" : undefined}>
@@ -662,13 +713,19 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
         <RailEmpty
           quiet
           icon={<Icon.search />}
-          title={q ? `No market matches “${q.trim()}”` : "No markets yet"}
-          hint={q ? "Perps are listed by their Hyperliquid symbol, like BTC or HYPE." : undefined}
+          title={q ? `No ${activeKind === "all" ? "" : `${KINDS.find(([k]) => k === activeKind)?.[1].toLowerCase()} `}market matches “${q.trim()}”` : "No markets yet"}
+          hint={q ? "Markets are listed by their Hyperliquid name, like BTC, SOL/USDC or GOLD." : undefined}
           acts={
             q ? (
-              <button type="button" className="btn btn-sm" onClick={() => (setQ(""), inputRef.current?.focus())}>
-                Clear filter
-              </button>
+              activeKind !== "all" ? (
+                <button type="button" className="btn btn-sm" onClick={() => (setKind("all"), inputRef.current?.focus())}>
+                  Search all markets
+                </button>
+              ) : (
+                <button type="button" className="btn btn-sm" onClick={() => (setQ(""), inputRef.current?.focus())}>
+                  Clear filter
+                </button>
+              )
             ) : undefined
           }
         />
@@ -676,24 +733,25 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
         <ul ref={listRef} className="tm-rail-toklist">
           {list.map((m) => {
             const px = mids.data?.[m.coin] ? Number(mids.data[m.coin]) : m.markPx;
-            const cur = !!current && m.coin.toUpperCase() === current;
+            const cur = !!current && isRef(m, current);
+            const spot = m.kind === "spot";
             return (
               <li key={m.coin}>
-                <Link href={`/m/${m.coin}`} data-tok="" onClick={onNavigate} onKeyDown={onRowKey} className="tm-rail-tok" aria-current={cur ? "page" : undefined}>
+                <Link href={marketHref(m)} data-tok="" onClick={onNavigate} onKeyDown={onRowKey} className="tm-rail-tok" aria-current={cur ? "page" : undefined}>
                   <span className="tm-rail-tok-id">
                     <span className="tm-rail-coin">
-                      <CoinIcon coin={m.coin} size={full ? 30 : 24} />
+                      <CoinIcon coin={m.base} size={full ? 30 : 24} />
                     </span>
                     <span className="tm-rail-tok-name">
-                      <b>{m.coin}</b>
-                      <small className="num">{m.maxLeverage}x · perp</small>
+                      <b>{m.name}</b>
+                      <small className="num">{kindLine(m)}</small>
                     </span>
                   </span>
                   <LivePx value={px} className="tm-rail-px num" />
                   <ChangePill v={m.change24h} />
                   {full && <span className="tm-rail-x tm-rail-x-vol tm-rail-num2 num">{usdBig(m.volume24h)}</span>}
-                  {full && <span className="tm-rail-x tm-rail-x-oi tm-rail-num2 num">{usdBig(m.openInterestUsd)}</span>}
-                  {full && <span className={`tm-rail-x tm-rail-x-fund tm-rail-num2 num ${m.funding >= 0 ? "tm-rail-fund-up" : "tm-rail-fund-down"}`}>{fmtPct(m.funding, 4)}</span>}
+                  {full && <span className="tm-rail-x tm-rail-x-oi tm-rail-num2 num">{spot ? "–" : usdBig(m.openInterestUsd)}</span>}
+                  {full && (spot ? <span className="tm-rail-x tm-rail-x-fund tm-rail-num2 num">–</span> : <span className={`tm-rail-x tm-rail-x-fund tm-rail-num2 num ${m.funding >= 0 ? "tm-rail-fund-up" : "tm-rail-fund-down"}`}>{fmtPct(m.funding, 4)}</span>)}
                 </Link>
               </li>
             );
@@ -701,7 +759,13 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
         </ul>
       )}
       {!!list.length && markets.data && (
-        <div className="tm-rail-endcap num">{list.length === markets.data.length ? `All ${list.length} perps` : `${list.length} of ${markets.data.length} perps`}</div>
+        <div className="tm-rail-endcap num">
+          {(() => {
+            const total = activeKind === "all" ? markets.data.length : kindCounts[activeKind];
+            const noun = activeKind === "all" ? (showKinds ? "markets" : "perps") : activeKind === "perp" ? "perps" : activeKind === "spot" ? "spot pairs" : "tradfi markets";
+            return list.length === total ? `All ${total} ${noun}` : `${list.length} of ${total} ${noun}`;
+          })()}
+        </div>
       )}
     </div>
   );

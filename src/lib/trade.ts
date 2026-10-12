@@ -3,13 +3,13 @@
  * market, limit (gtc / ioc / alo), stop market, stop limit, scale ladders, twap, reduce only,
  * attached tp / sl, position tp / sl, leverage + margin mode, cancel.
  * the agent key is generated server side, stored aes-encrypted, and only ever used here.
- * every order carries builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP }.
+ * orders carry builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } when a builder is configured, nothing otherwise.
  */
 import * as hl from "@nktkas/hyperliquid";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { prisma } from "./db";
 import { decrypt, encrypt } from "./crypto";
-import { BUILDER_ADDRESS, BUILDER_FEE_TENTHS_BP, HL_MOCK } from "./env";
+import { BUILDER_ADDRESS, BUILDER_ENABLED, BUILDER_FEE_CHARGED, BUILDER_FEE_TENTHS_BP, HL_MOCK } from "./env";
 import * as HL from "./hl";
 import * as mock from "./hl-mock";
 import { HttpError } from "./api";
@@ -29,16 +29,83 @@ export async function getOrCreateAgent(userId: string) {
   return prisma.agentKey.create({ data: { userId, agentAddress: account.address.toLowerCase(), encryptedPrivKey: encrypt(pk) } });
 }
 
+/**
+ * is the builder code actually usable right now? configured, and the builder wallet still holds the 100 USDC
+ * hyperliquid demands of it. an unfunded builder cannot be approved by anyone, so rather than leave the whole
+ * app unusable we simply stop charging: orders go out with no builder field and onboarding asks for one
+ * signature. health and the trading check say so loudly, and it starts charging again the minute it is funded.
+ */
+export async function builderActive(): Promise<boolean> {
+  return BUILDER_ENABLED && (await builderEligibility()).ok;
+}
+
+/** the builder field hyperliquid expects on an order, or nothing while the builder code is off or unfunded */
+export async function builderArg() {
+  return (await builderActive()) ? { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } : undefined;
+}
+
 export async function approvalStatus(userAddress: string, agentAddress: string) {
-  const [agents, fee] = await Promise.all([
+  const [agents, fee, active] = await Promise.all([
     HL.extraAgents(userAddress).catch(() => [] as { address: string }[]),
     HL.maxBuilderFee(userAddress, BUILDER_ADDRESS).catch(() => 0),
+    builderActive(),
   ]);
   return {
     agentApproved: agents.some((a) => a.address.toLowerCase() === agentAddress.toLowerCase()),
-    builderApproved: fee >= BUILDER_FEE_TENTHS_BP,
+    // nothing to approve while the builder code is off: an approval for it could never register anyway
+    builderApproved: !active || fee >= BUILDER_FEE_TENTHS_BP,
     approvedFeeTenthsBp: fee,
   };
+}
+
+export type BuilderEligibility = { ok: boolean; accountValue: number | null; spotUsdc?: number | null; reason?: string };
+
+let builderCache: { at: number; value: BuilderEligibility } | null = null;
+
+/**
+ * hyperliquid only registers an approveBuilderFee whose builder holds at least 100 USDC in its own perps
+ * account, and a builder left at the zero address can never collect anything. in both cases the user's
+ * signature is accepted by the wallet and then never shows up on chain, so onboarding loops forever on
+ * "approval not visible yet". checked before we ask the wallet for anything. cached: it moves rarely.
+ */
+export async function builderEligibility(opts: { fresh?: boolean } = {}): Promise<BuilderEligibility> {
+  if (HL_MOCK || !BUILDER_ENABLED) return { ok: true, accountValue: null };
+  if (/^0x0{40}$/i.test(BUILDER_ADDRESS))
+    return {
+      ok: false,
+      accountValue: null,
+      reason: "Trading is not configured on this deployment: BUILDER_ADDRESS is still the zero address, so Hyperliquid has no builder to register the fee approval against. Set BUILDER_ADDRESS and NEXT_PUBLIC_BUILDER_ADDRESS to a wallet you control, then redeploy.",
+    };
+  // a user pressing "enable" gets a live read (the builder may have just moved funds); background callers may use the cache
+  if (!opts.fresh && builderCache && Date.now() - builderCache.at < 60_000) return builderCache.value;
+  let value: BuilderEligibility;
+  try {
+    const [st, spot] = await Promise.all([HL.clearinghouseState(BUILDER_ADDRESS), HL.spotBalances(BUILDER_ADDRESS).catch(() => null)]);
+    const accountValue = Number(st.marginSummary.accountValue);
+    const spotUsdc = spot ? (spot.find((b) => b.coin === "USDC")?.total ?? 0) : null;
+    const who = `the builder wallet ${BUILDER_ADDRESS}`;
+    value =
+      accountValue >= 100
+        ? { ok: true, accountValue, spotUsdc }
+        : spotUsdc !== null && accountValue + spotUsdc >= 100
+          ? {
+              ok: false,
+              accountValue,
+              spotUsdc,
+              reason: `${who} holds $${accountValue.toFixed(2)} in its perps account and $${spotUsdc.toFixed(2)} USDC in its spot balance. Hyperliquid only counts the perps account for the 100 USDC builder minimum, and deposits often land in spot. Connect that wallet and press "Move to perps" (one signed message, instant), or press Enable trading while connected as that wallet and it moves automatically. Then try again.`,
+            }
+          : {
+              ok: false,
+              accountValue,
+              spotUsdc,
+              reason: `Trading is not configured on this deployment: ${who} holds $${accountValue.toFixed(2)} in its perps account${spotUsdc ? ` (and $${spotUsdc.toFixed(2)} USDC in spot)` : ""}, and Hyperliquid requires at least 100 USDC in perps there before anyone can approve its builder fee. Deposit into that wallet (perps), then try again.`,
+            };
+  } catch {
+    // hyperliquid did not answer: never block onboarding on our own diagnostic, and never cache that
+    return { ok: true, accountValue: null };
+  }
+  builderCache = { at: Date.now(), value };
+  return value;
 }
 
 async function agentFor(userId: string) {
@@ -84,19 +151,19 @@ export type OrderResult =
 type OrderStatus = { filled: { totalSz: string; avgPx: string; oid: number } } | { resting: { oid: number } } | { error: string } | string;
 
 async function marketInfo(coin: string) {
-  const m = await HL.meta();
-  const asset = m.universe.findIndex((a) => a.name === coin);
-  if (asset < 0) throw new HttpError(400, `unknown market ${coin}`);
-  const mids = await HL.allMids();
-  const mid = Number(mids[coin]);
+  const m = (await HL.markets()).find((x) => x.coin === coin);
+  if (!m) throw new HttpError(400, `unknown market ${coin}`);
+  const mids = await HL.allMidsAll();
+  const mid = Number(mids[coin]) || m.midPx;
   if (!mid) throw new HttpError(502, "no price for market");
-  return { asset, szDecimals: m.universe[asset].szDecimals, maxLeverage: m.universe[asset].maxLeverage, mid };
+  return { asset: m.assetId, szDecimals: m.szDecimals, maxLeverage: m.maxLeverage, mid, kind: m.kind, dex: m.dex, token: m.token, base: m.base };
 }
 
 export async function placeOrder(userId: string, address: string, input: OrderInput): Promise<OrderResult> {
   const agent = await agentFor(userId);
-  const { asset, szDecimals, maxLeverage, mid } = await marketInfo(input.coin);
-  const leverage = Math.max(1, Math.min(maxLeverage, Math.round(input.leverage)));
+  const { asset, szDecimals, maxLeverage, mid, kind, token, base } = await marketInfo(input.coin);
+  const isSpot = kind === "spot";
+  const leverage = isSpot ? 1 : Math.max(1, Math.min(maxLeverage, Math.round(input.leverage)));
   const isBuy = input.side === "LONG";
   const isCross = input.isCross ?? true;
 
@@ -108,12 +175,19 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
   if (Number(szStr) <= 0) throw new HttpError(400, "size too small for this market");
   if (Number(szStr) * refPx < 10 && !input.reduceOnly) throw new HttpError(400, "minimum order value is $10");
 
-  const fmt = (px: number) => HL.formatPx(px, szDecimals);
+  const fmt = (px: number) => (isSpot ? HL.formatSpotPx(px, szDecimals) : HL.formatPx(px, szDecimals));
   const marketPx = mid * (isBuy ? 1 + MAX_SLIPPAGE : 1 - MAX_SLIPPAGE);
+
+  // ---------- mock exchange: spot trades move spot balances ----------
+  if (HL_MOCK && isSpot) {
+    if (input.type !== "market" && input.type !== "limit") throw new HttpError(400, "spot supports market and limit orders");
+    const r = await mock.mockSpotTrade(address, token ?? base, base, isBuy, Number(szStr));
+    return { status: "filled", oid: Date.now() % 1_000_000, avgPx: r.avgPx, totalSz: r.totalSz, sz: szStr, px: fmt(refPx) };
+  }
 
   // ---------- mock exchange ----------
   if (HL_MOCK) {
-    const common = { user: address, coin: input.coin, isBuy, leverage, builderFeeTenthsBp: BUILDER_FEE_TENTHS_BP, reduceOnly: input.reduceOnly };
+    const common = { user: address, coin: input.coin, isBuy, leverage, builderFeeTenthsBp: (await builderActive()) ? BUILDER_FEE_CHARGED : 0, reduceOnly: input.reduceOnly };
     if (input.type === "twap") {
       const twapId = await mock.mockTwap(address, input.coin, isBuy, Number(szStr), input.twap!.minutes, !!input.reduceOnly, input.twap!.randomize, leverage);
       return { status: "twap", twapId, sz: szStr, px: fmt(mid) };
@@ -146,10 +220,11 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
 
   // ---------- hyperliquid ----------
   const ex = exchangeFor(agent.encryptedPrivKey);
-  if (!input.reduceOnly) {
+  if (!input.reduceOnly && !isSpot) {
     await ex.updateLeverage({ asset, isCross, leverage }).catch((e: Error) => console.warn("[trade] updateLeverage:", e.message));
   }
-  const builder = { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP };
+  if (isSpot && (input.type.startsWith("stop") || input.type.startsWith("takeProfit") || input.tp || input.sl)) throw new HttpError(400, "spot orders have no triggers; use market or limit");
+  const builder = await builderArg();
 
   if (input.type === "twap") {
     const res = await ex.twapOrder({ twap: { a: asset, b: isBuy, s: szStr, r: !!input.reduceOnly, m: input.twap!.minutes, t: input.twap!.randomize } });
@@ -234,9 +309,14 @@ export async function cancelOrders(userId: string, address: string, cancels: { c
     await mock.mockCancel(address, cancels.map((c) => c.oid));
     return { canceled: cancels.length };
   }
-  const m = await HL.meta();
+  const all = await HL.markets();
+  const assetOf = (coin: string) => {
+    const m = all.find((x) => x.coin === coin);
+    if (!m) throw new HttpError(400, `unknown market ${coin}`);
+    return m.assetId;
+  };
   const ex = exchangeFor(agent.encryptedPrivKey);
-  const res = await ex.cancel({ cancels: cancels.map((c) => ({ a: m.universe.findIndex((u) => u.name === c.coin), o: c.oid })) });
+  const res = await ex.cancel({ cancels: cancels.map((c) => ({ a: assetOf(c.coin), o: c.oid })) });
   const statuses = (res as unknown as { response: { data: { statuses: (string | { error: string })[] } } }).response.data.statuses;
   const errors = statuses.filter((s) => typeof s === "object").map((s) => (s as { error: string }).error);
   if (errors.length === statuses.length) throw new HttpError(400, errors[0]);
@@ -246,9 +326,9 @@ export async function cancelOrders(userId: string, address: string, cancels: { c
 export async function cancelTwap(userId: string, address: string, coin: string, twapId: number) {
   const agent = await agentFor(userId);
   if (HL_MOCK) return mock.mockTwapCancel(address, twapId);
-  const m = await HL.meta();
+  const { asset } = await marketInfo(coin);
   const ex = exchangeFor(agent.encryptedPrivKey);
-  await ex.twapCancel({ a: m.universe.findIndex((u) => u.name === coin), t: twapId });
+  await ex.twapCancel({ a: asset, t: twapId });
 }
 
 export async function setLeverage(userId: string, address: string, coin: string, leverage: number, isCross: boolean) {
@@ -276,7 +356,7 @@ export async function positionTpsl(userId: string, address: string, coin: string
   const closeBuy = szi < 0;
   const fmt = (px: number) => HL.formatPx(px, szDecimals);
   if (HL_MOCK) {
-    const common = { user: address, coin, isBuy: closeBuy, sz: Number(szStr), leverage: pos.position.leverage.value, builderFeeTenthsBp: BUILDER_FEE_TENTHS_BP, reduceOnly: true, isPositionTpsl: true };
+    const common = { user: address, coin, isBuy: closeBuy, sz: Number(szStr), leverage: pos.position.leverage.value, builderFeeTenthsBp: (await builderActive()) ? BUILDER_FEE_CHARGED : 0, reduceOnly: true, isPositionTpsl: true };
     if (tp) await mock.mockPlaceOrder({ ...common, limitPx: Number(fmt(tp * (closeBuy ? 1.1 : 0.9))), trigger: { triggerPx: tp, isMarket: true, tpsl: "tp" } });
     if (sl) await mock.mockPlaceOrder({ ...common, limitPx: Number(fmt(sl * (closeBuy ? 1.1 : 0.9))), trigger: { triggerPx: sl, isMarket: true, tpsl: "sl" } });
     return { ok: true };
@@ -288,7 +368,7 @@ export async function positionTpsl(userId: string, address: string, coin: string
   if (tp) orders.push(mk(tp, "tp"));
   if (sl) orders.push(mk(sl, "sl"));
   if (!orders.length) throw new HttpError(400, "tp or sl required");
-  const res = await ex.order({ orders, grouping: "positionTpsl", builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } });
+  const res = await ex.order({ orders, grouping: "positionTpsl", builder: await builderArg() });
   const statuses = (res as unknown as { response: { data: { statuses: OrderStatus[] } } }).response.data.statuses;
   const err = statuses.find((s) => typeof s === "object" && "error" in s) as { error: string } | undefined;
   if (err) throw new HttpError(400, err.error);
@@ -302,4 +382,39 @@ export async function closePosition(userId: string, address: string, coin: strin
   if (!pos) throw new HttpError(404, "no open position");
   const szi = Number(pos.position.szi);
   return placeOrder(userId, address, { coin, side: szi > 0 ? "SHORT" : "LONG", sz: Math.abs(szi), leverage: pos.position.leverage.value, type: "market", reduceOnly: true });
+}
+
+export type SpotSellResult = { avgPx: number; totalSz: number; usdc: number; sz: string };
+
+/**
+ * sell a spot coin (USOL, UBTC…) for USDC on hyperliquid spot: an IOC order on the coin's USDC pair, signed by the agent,
+ * priced off the perps mid with 2% room. the USDC lands in the spot balance; usdClassTransfer (main wallet) moves it to perps.
+ */
+export async function sellSpotForUsdc(userId: string, address: string, coin: string, size: number): Promise<SpotSellResult> {
+  const pair = await HL.spotPair(coin);
+  if (!pair) throw new HttpError(400, `${coin} has no USDC spot market on Hyperliquid`);
+  const szStr = HL.formatSz(size, pair.szDecimals, "floor");
+  const sz = Number(szStr);
+  if (!(sz > 0)) throw new HttpError(400, `amount too small: ${coin} trades in steps of ${10 ** -pair.szDecimals}`);
+  // an order, so the approved agent signs it (browser wallets refuse the L1 signing domain): enable trading first
+  const agent = await agentFor(userId);
+  if (HL_MOCK) {
+    const r = await mock.mockSpotSell(address, coin, sz);
+    return { ...r, sz: szStr };
+  }
+  const perpName = coin.startsWith("U") ? coin.slice(1) : coin;
+  const mids = await HL.allMids();
+  const spotMid = Number(mids[pair.name] ?? mids[`@${pair.pairIndex}`] ?? mids[perpName]);
+  if (!Number.isFinite(spotMid) || spotMid <= 0) throw new HttpError(400, `no price for ${coin}`);
+  const ex = exchangeFor(agent.encryptedPrivKey);
+  const px = HL.formatSpotPx(spotMid * 0.98, pair.szDecimals);
+  const res = await ex.order({ orders: [{ a: pair.assetId, b: false, p: px, s: szStr, r: false, t: { limit: { tif: "Ioc" } } }], grouping: "na", builder: await builderArg() });
+  const first = (res as unknown as { response: { data: { statuses: OrderStatus[] } } }).response.data.statuses[0];
+  if (typeof first === "object" && "error" in first) throw new HttpError(400, first.error);
+  if (typeof first === "object" && "filled" in first) {
+    const avgPx = Number(first.filled.avgPx);
+    const totalSz = Number(first.filled.totalSz);
+    return { avgPx, totalSz, usdc: avgPx * totalSz, sz: szStr };
+  }
+  throw new HttpError(400, "the spot market did not fill the order; try again");
 }

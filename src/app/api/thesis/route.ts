@@ -15,3 +15,16 @@ export const POST = handler(async (req: Request) => {
   const thesis = await createThesis({ userId: s.userId, address: s.address, coin, text, position });
   return json({ thesis });
 });
+
+/** the caller's own theses that are still live: bound to an open position, or unbound. newest first, for the Positions tab */
+export const GET = handler(async () => {
+  const s = await getSession();
+  if (!s) throw new HttpError(401, "sign in first");
+  const rows = await prisma.thesis.findMany({
+    where: { userId: s.userId, OR: [{ position: { is: { closedAt: null } } }, { positionId: null }] },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    select: { id: true, coin: true, text: true, createdAt: true, positionId: true, _count: { select: { likes: true, replies: true } } },
+  });
+  return json({ theses: rows.map((t) => ({ id: t.id, coin: t.coin, text: t.text, createdAt: t.createdAt, positionId: t.positionId, likes: t._count.likes, replies: t._count.replies })) });
+});
