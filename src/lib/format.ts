@@ -5,6 +5,7 @@ export function fmtUsd(n: number | string | null | undefined, opts: { sign?: boo
   const abs = Math.abs(v);
   let body: string;
   if (abs === 0) body = "$0.00";
+  else if (opts.compact && abs >= 1_000_000_000) body = `$${(abs / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "")}B`;
   else if (opts.compact && abs >= 1_000_000) body = `$${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2).replace(/\.?0+$/, "")}M`;
   else if (opts.compact && abs >= 1_000) body = `$${(abs / 1_000).toFixed(abs >= 100_000 ? 0 : 1).replace(/\.0$/, "")}K`;
   else if (abs >= 1) body = `$${abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

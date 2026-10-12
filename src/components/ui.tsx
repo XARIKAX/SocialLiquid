@@ -5,9 +5,10 @@ import { fmtUsd, userLabel, userPath } from "@/lib/format";
 
 /* ---------- identity ---------- */
 
-export function Avatar({ address, url, size = 28, handle, ring }: { address: string; url?: string | null; size?: number; handle?: string | null; ring?: boolean }) {
-  const h1 = parseInt(address.slice(2, 8), 16) % 360;
-  const h2 = (h1 + 40 + (parseInt(address.slice(-4), 16) % 80)) % 360;
+/** a profile picture, or a glossy sphere tinted from the address (pass `initials` to print the handle's first letters on it) */
+export function Avatar({ address, url, size = 28, handle, ring, initials }: { address: string; url?: string | null; size?: number; handle?: string | null; ring?: boolean; initials?: boolean }) {
+  const h1 = (parseInt(address.slice(2, 8), 16) || 0) % 360;
+  const h2 = (h1 + 40 + ((parseInt(address.slice(-4), 16) || 0) % 80)) % 360;
   const label = (handle ?? address.slice(2, 4)).slice(0, 2).toUpperCase();
   const cls = `rounded-full shrink-0 ${ring ? "ring-2 ring-bg" : ""}`;
   return url ? (
@@ -15,10 +16,17 @@ export function Avatar({ address, url, size = 28, handle, ring }: { address: str
     <img src={url} alt="" width={size} height={size} className={`${cls} object-cover`} style={{ width: size, height: size }} />
   ) : (
     <span
-      className={`${cls} inline-flex items-center justify-center font-bold text-black/75`}
-      style={{ width: size, height: size, fontSize: Math.max(9, size * 0.36), background: `linear-gradient(135deg, hsl(${h1} 72% 62%), hsl(${h2} 70% 42%))` }}
+      aria-hidden
+      className={`${cls} inline-flex items-center justify-center font-bold text-black/70`}
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.max(9, size * 0.36),
+        background: `radial-gradient(circle at 32% 26%, hsl(${h1} 95% 88% / 0.95), transparent 46%), linear-gradient(140deg, hsl(${h1} 72% 62%), hsl(${h2} 70% 38%))`,
+        boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.16), inset 0 -2px 4px rgb(0 0 0 / 0.25), 0 2px 8px -2px rgb(0 0 0 / 0.45)",
+      }}
     >
-      {label}
+      {initials ? label : null}
     </span>
   );
 }
@@ -36,7 +44,7 @@ export function CoinIcon({ coin, size = 20, className = "" }: { coin: string; si
     );
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={`${ICON_BASE}/${coin}.svg`} alt="" width={size} height={size} onError={() => setBroken(true)} className={`rounded-full shrink-0 bg-panel-3 ${className}`} style={{ width: size, height: size }} />
+    <img src={`${ICON_BASE}/${coin}.svg`} alt="" width={size} height={size} onError={() => setBroken(true)} className={`coin-icon rounded-full shrink-0 bg-panel-3 ${className}`} style={{ width: size, height: size }} />
   );
 }
 

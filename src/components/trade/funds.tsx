@@ -1,6 +1,8 @@
 "use client";
 /** in-app deposit and withdrawal. funds move wallet ⇄ hyperliquid directly; socialLiquid signs nothing and holds nothing. */
-import { useEffect, useRef, useState } from "react";
+import "./ticket.css";
+import { useEffect, useId, useRef, useState, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
+import { createPortal } from "react-dom";
 import { useChainId, useReadContract, useWalletClient } from "wagmi";
 import { erc20Abi, formatUnits } from "viem";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,10 +12,64 @@ import { api, HL_APP_URL_CLIENT } from "@/lib/client";
 import { fmtUsd } from "@/lib/format";
 import { withdrawWithWallet } from "@/lib/hl-client";
 import { DEPOSIT_CHAIN, EXPLORER, MIN_DEPOSIT, MIN_WITHDRAW, USDC_ADDRESS, WITHDRAW_FEE, depositWithWallet } from "@/lib/funds";
-import { Icon } from "../ui";
 
 export type FundsMode = "deposit" | "withdraw";
 const EVT = "sl:funds";
+
+/* ---------- icons for the ticket region (inline, rounded, 24 grid) ---------- */
+type IcoProps = { size?: number; sw?: number; className?: string };
+function Svg({ size = 14, sw = 1.8, className, children }: IcoProps & { children: ReactNode }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      {children}
+    </svg>
+  );
+}
+export const TkIcon = {
+  pen: (p: IcoProps) => <Svg {...p}><path d="M12 20h8M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></Svg>,
+  lock: (p: IcoProps) => <Svg {...p}><rect x="5" y="11" width="14" height="10" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></Svg>,
+  swap: (p: IcoProps) => <Svg {...p}><path d="M7 4 4 7l3 3M4 7h12M17 20l3-3-3-3M20 17H8" /></Svg>,
+  key: (p: IcoProps) => <Svg {...p}><circle cx="8" cy="15" r="4" /><path d="m10.9 12.1 8.6-8.6M16.5 6.5l2.5 2.5M14 9l2 2" /></Svg>,
+  ticket: (p: IcoProps) => <Svg {...p}><path d="M3 9V7a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2a3 3 0 0 0 0 6v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a3 3 0 0 0 0-6z" /><path d="M14 6.5v2M14 11v2M14 15.5v2" /></Svg>,
+  at: (p: IcoProps) => <Svg {...p}><circle cx="12" cy="12" r="3.6" /><path d="M15.6 8.4v4.8a2.7 2.7 0 0 0 5.4 0V12a9 9 0 1 0-3.6 7.2" /></Svg>,
+  bolt: (p: IcoProps) => <Svg {...p}><path d="M13 2.5 4.5 13.5H11L10 21.5l8.5-11H12z" /></Svg>,
+  down: (p: IcoProps) => <Svg {...p}><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" /></Svg>,
+  up: (p: IcoProps) => <Svg {...p}><path d="M12 20V9M7 13.5l5-5 5 5M5 4h14" /></Svg>,
+  close: (p: IcoProps) => <Svg {...p}><path d="M6 6l12 12M18 6 6 18" /></Svg>,
+  check: (p: IcoProps) => <Svg {...p}><path d="m5 12.5 4.5 4.5L19 7" /></Svg>,
+  alert: (p: IcoProps) => <Svg {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.2M12 16.4v.1" /></Svg>,
+  spin: (p: IcoProps) => <Svg {...p}><path d="M21 12a9 9 0 1 1-6.2-8.56" /></Svg>,
+  arrow: (p: IcoProps) => <Svg {...p}><path d="M5 12h14M13 6l6 6-6 6" /></Svg>,
+  minus: (p: IcoProps) => <Svg {...p}><path d="M6 12h12" /></Svg>,
+  plus: (p: IcoProps) => <Svg {...p}><path d="M12 6v12M6 12h12" /></Svg>,
+  chev: (p: IcoProps) => <Svg {...p}><path d="m7 10 5 5 5-5" /></Svg>,
+};
+
+/* ---------- numbers that read like the mock: "$12,500", "112,231.1" ---------- */
+/** groups the integer part of a typed number for reading; anything that is not a plain number is left alone */
+export const groupDigits = (raw: string) => raw.replace(/^\d+/, (int) => int.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+
+/** a numeric field that shows grouped digits at rest and the raw value while it is being edited,
+    so typing, the caret and the value the order is built from are exactly what they were */
+export function TkNum({ value, onValue, ref, onFocus, onBlur, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & { value: string; onValue: (v: string) => void; ref?: Ref<HTMLInputElement> }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <input
+      {...rest}
+      ref={ref}
+      value={editing ? value : groupDigits(value)}
+      onChange={(e) => onValue(e.target.value)}
+      onFocus={(e) => {
+        setEditing(true);
+        onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        setEditing(false);
+        onBlur?.(e);
+      }}
+    />
+  );
+}
 
 /** open the funds modal from anywhere (ticket buttons, onboarding box, empty states) */
 export function openFunds(mode: FundsMode) {
@@ -29,7 +85,8 @@ export function FundsHost({ address }: { address: string }) {
     return () => window.removeEventListener(EVT, h);
   }, []);
   if (!mode) return null;
-  return <FundsModal mode={mode} address={address} onClose={() => setMode(null)} onMode={setMode} />;
+  // portalled to the body so no ancestor's stacking context can sit above the overlay
+  return createPortal(<FundsModal mode={mode} address={address} onClose={() => setMode(null)} onMode={setMode} />, document.body);
 }
 
 type Phase = { kind: "idle" } | { kind: "busy"; text: string } | { kind: "sent"; hash: string | null; text: string } | { kind: "done"; text: string } | { kind: "error"; text: string };
@@ -54,6 +111,8 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   const [dest, setDest] = useState(address);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const startBal = useRef<number | null>(null);
+  const amtRef = useRef<HTMLInputElement>(null);
+  const uid = useId();
   const amt = Number(amount);
 
   // after a deposit, watch the hyperliquid balance until it moves
@@ -71,10 +130,40 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
 
+  // focus goes back to whatever opened the modal (the ticket's Deposit button, the account menu)
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    return () => {
+      if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, []);
+  const boxRef = useRef<HTMLDivElement>(null);
+  /** tab stays inside the dialog */
+  const trap = (e: ReactKeyboardEvent) => {
+    if (e.key !== "Tab" || !boxRef.current) return;
+    const items = [...boxRef.current.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), a[href]")].filter((el) => el.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !boxRef.current.contains(document.activeElement))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
+  // a pointer user lands in the amount; a touch user is not ambushed by the keyboard
+  useEffect(() => {
+    if (window.matchMedia?.("(pointer: fine)").matches) amtRef.current?.focus({ preventScroll: true });
+  }, [mode]);
+
   const max = mode === "deposit" ? walletUsdc : bal.data ? Math.max(0, bal.data.withdrawable) : null;
   const min = mode === "deposit" ? MIN_DEPOSIT : MIN_WITHDRAW;
   const valid = amt >= min && (max === null || amt <= max + 1e-9) && (mode === "deposit" || /^0x[0-9a-fA-F]{40}$/.test(dest));
   const busy = phase.kind === "busy";
+  const deposit = mode === "deposit";
 
   const run = async () => {
     setPhase({ kind: "busy", text: mockMode ? "Applying…" : "Confirm in your wallet…" });
@@ -106,67 +195,207 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
     }
   };
 
+  const wallEnd = (
+    <span className="tm-tk-route-end">
+      <i className="tm-tk-route-dot" data-tone="peri" />
+      Wallet <small>{DEPOSIT_CHAIN.name}</small>
+    </span>
+  );
+  const hlEnd = (
+    <span className="tm-tk-route-end">
+      <i className="tm-tk-route-dot" />
+      Hyperliquid
+    </span>
+  );
+  const moving = busy || phase.kind === "sent";
+  const sub =
+    amt > 0
+      ? deposit
+        ? `≈ ${fmtUsd(amt)} on Hyperliquid in about a minute`
+        : `You receive ${fmtUsd(Math.max(0, amt - WITHDRAW_FEE))} after the ${fmtUsd(WITHDRAW_FEE)} network fee`
+      : `Min ${min} USDC`;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label={mode}>
-      <div className="card w-full max-w-md p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-3">
-          <span className="seg">
+    <div className="tm-tk-overlay" onClick={onClose}>
+      <div ref={boxRef} className="pop tm-tk-scope tm-tk-modal" role="dialog" aria-modal="true" aria-labelledby={`${uid}-t`} onClick={(e) => e.stopPropagation()} onKeyDown={trap}>
+        <div className="tm-tk-modal-head">
+          <span className="seg" aria-label="Direction">
             {(["deposit", "withdraw"] as FundsMode[]).map((m) => (
-              <button key={m} className={`seg-item h-8 capitalize ${mode === m ? "seg-active" : ""}`} onClick={() => { onMode(m); setPhase({ kind: "idle" }); setAmount(""); }}>{m}</button>
+              <button
+                key={m}
+                type="button"
+                aria-pressed={mode === m}
+                className={`seg-item capitalize ${mode === m ? "seg-active" : ""}`}
+                onClick={() => {
+                  onMode(m);
+                  setPhase({ kind: "idle" });
+                  setAmount("");
+                }}
+              >
+                {m === "deposit" ? <TkIcon.down size={13} /> : <TkIcon.up size={13} />}
+                {m}
+              </button>
             ))}
           </span>
-          <button className="btn btn-ghost h-8 w-8 px-0" onClick={onClose} aria-label="close">✕</button>
+          <button type="button" className="tm-tk-close" onClick={onClose} aria-label="Close">
+            <TkIcon.close size={15} />
+          </button>
         </div>
 
-        <div className="card-2 p-3 text-xs space-y-1.5">
-          {mode === "deposit" ? (
+        <h2 id={`${uid}-t`} className="tm-tk-modal-title">
+          {deposit ? "Deposit USDC" : "Withdraw USDC"}
+        </h2>
+        <p className="tm-tk-modal-sub">{deposit ? `From your wallet on ${DEPOSIT_CHAIN.name} straight into your Hyperliquid balance.` : "From your Hyperliquid balance back to your wallet on Arbitrum."}</p>
+
+        <div className="tm-tk-route" aria-hidden>
+          {deposit ? wallEnd : hlEnd}
+          <span className="tm-tk-route-line">{moving ? <i /> : <TkIcon.arrow size={12} sw={2} />}</span>
+          {deposit ? hlEnd : wallEnd}
+        </div>
+
+        <dl className="tm-tk-bal">
+          {deposit ? (
             <>
-              <div className="flex justify-between"><span className="text-muted">USDC in wallet · {DEPOSIT_CHAIN.name}</span><span className="num">{mockMode ? "mock" : walletUsdc === null ? "…" : fmtUsd(walletUsdc)}</span></div>
-              <div className="flex justify-between"><span className="text-muted">Hyperliquid balance</span><span className="num">{bal.data ? fmtUsd(bal.data.withdrawable) : "…"}</span></div>
+              <div>
+                <dt>USDC in wallet</dt>
+                <dd>{mockMode ? "mock" : walletUsdc === null ? "…" : <b>{fmtUsd(walletUsdc)}</b>}</dd>
+              </div>
+              <div>
+                <dt>Hyperliquid balance</dt>
+                <dd>{bal.data ? fmtUsd(bal.data.withdrawable) : "…"}</dd>
+              </div>
             </>
           ) : (
             <>
-              <div className="flex justify-between"><span className="text-muted">Available to withdraw</span><span className="num">{bal.data ? fmtUsd(bal.data.withdrawable) : "…"}</span></div>
-              <div className="flex justify-between"><span className="text-muted">Network fee</span><span className="num">{fmtUsd(WITHDRAW_FEE)} · paid to Hyperliquid</span></div>
+              <div>
+                <dt>Available to withdraw</dt>
+                <dd>{bal.data ? <b>{fmtUsd(bal.data.withdrawable)}</b> : "…"}</dd>
+              </div>
+              <div>
+                <dt>Network fee</dt>
+                <dd>{fmtUsd(WITHDRAW_FEE)} · paid to Hyperliquid</dd>
+              </div>
             </>
           )}
+        </dl>
+
+        <div className="tm-tk-size" onClick={() => amtRef.current?.focus()}>
+          <div className="tm-tk-size-head">
+            <label htmlFor={`${uid}-a`} className="tm-tk-size-label">
+              Amount
+            </label>
+            {max !== null && (
+              <button
+                type="button"
+                className="tm-tk-max"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAmount(String(Math.floor(max * 100) / 100));
+                }}
+                disabled={busy}
+              >
+                Max <b>{fmtUsd(max)}</b>
+              </button>
+            )}
+          </div>
+          <div className="tm-tk-size-main">
+            <span className="tm-tk-size-cur" data-on={!!amount}>
+              $
+            </span>
+            <TkNum
+              id={`${uid}-a`}
+              ref={amtRef}
+              className="tm-tk-size-input"
+              inputMode="decimal"
+              placeholder="0"
+              value={amount}
+              onValue={(v) => setAmount(v.replace(/[^0-9.]/g, ""))}
+              disabled={busy}
+              autoComplete="off"
+            />
+            <span className="tm-tk-unit" aria-hidden>
+              USDC
+            </span>
+          </div>
+          <div className="tm-tk-size-sub">{sub}</div>
         </div>
 
-        <label className="block mt-3 text-xs text-muted">Amount (USDC)</label>
-        <div className="flex items-center gap-2 mt-1">
-          <input className="input h-11 flex-1 num text-[15px]" inputMode="decimal" placeholder={`min ${min}`} value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} disabled={busy} />
-          <button className="btn h-11 px-3" onClick={() => max !== null && setAmount(String(Math.floor(max * 100) / 100))} disabled={busy || max === null}>Max</button>
-        </div>
         {mode === "withdraw" && (
-          <>
-            <label className="block mt-3 text-xs text-muted">Destination · Arbitrum address</label>
-            <input className="input h-10 w-full mt-1 num text-xs" value={dest} onChange={(e) => setDest(e.target.value.trim())} disabled={busy} spellCheck={false} />
-          </>
-        )}
-        {amt > 0 && amt < min && <p className="text-warn text-[11px] mt-1.5">Minimum {mode} is {min} USDC.</p>}
-        {max !== null && amt > max + 1e-9 && <p className="text-warn text-[11px] mt-1.5">That is more than you have available.</p>}
-
-        {phase.kind === "idle" || phase.kind === "error" ? (
-          <button className="btn btn-primary h-11 w-full mt-3 text-[14px]" onClick={run} disabled={!valid || (!mockMode && !wallet)}>
-            {mode === "deposit" ? `Deposit${amt >= min ? ` ${fmtUsd(amt)}` : ""} to Hyperliquid` : `Withdraw${amt >= min ? ` ${fmtUsd(amt)}` : ""} to Arbitrum`}
-          </button>
-        ) : (
-          <div className="btn h-11 w-full mt-3 text-[13px] justify-center cursor-default">
-            {phase.kind === "busy" ? <span className="animate-pulse">{phase.text}</span> : <span className="inline-flex items-center gap-1.5 text-up"><Icon.check /> {phase.kind === "done" ? "Done" : "Sent"}</span>}
+          <div className="tm-tk-size tm-tk-dest" onClick={() => document.getElementById(`${uid}-d`)?.focus()}>
+            <div className="tm-tk-size-head">
+              <label htmlFor={`${uid}-d`} className="tm-tk-size-label">
+                Destination
+              </label>
+              <span className="tm-tk-ref">{dest.toLowerCase() === address.toLowerCase() ? "This wallet · Arbitrum" : "Arbitrum address"}</span>
+            </div>
+            <input id={`${uid}-d`} className="tm-tk-input tm-tk-input-mono tm-tk-dest-input" value={dest} onChange={(e) => setDest(e.target.value.trim())} disabled={busy} spellCheck={false} autoComplete="off" aria-invalid={!/^0x[0-9a-fA-F]{40}$/.test(dest) || undefined} />
           </div>
         )}
-        {phase.kind !== "idle" && phase.kind !== "busy" && (
-          <p className={`text-xs mt-2 leading-snug ${phase.kind === "error" ? "text-down" : "text-muted"}`}>
-            {phase.text}
-            {phase.kind === "sent" && phase.hash && <> <a className="text-brand hover:underline" href={`${EXPLORER}/tx/${phase.hash}`} target="_blank" rel="noreferrer">View transaction</a>.</>}
-            {phase.kind === "sent" && mode === "deposit" && <> Waiting for Hyperliquid to credit it…</>}
+        {amt > 0 && amt < min && (
+          <p className="tm-tk-msg" data-tone="warn">
+            <TkIcon.alert size={13} />
+            <span>
+              Minimum {mode} is {min} USDC.
+            </span>
+          </p>
+        )}
+        {max !== null && amt > max + 1e-9 && (
+          <p className="tm-tk-msg" data-tone="warn">
+            <TkIcon.alert size={13} />
+            <span>That is more than you have available.</span>
           </p>
         )}
 
-        <p className="text-[11px] text-dim mt-3 leading-snug">
-          {mode === "deposit"
-            ? <>A deposit is a USDC transfer from your wallet to Hyperliquid&apos;s bridge on {DEPOSIT_CHAIN.name}. socialLiquid never holds funds. Coming from Solana, Ethereum or Base? <a className="text-brand hover:underline" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Use Hyperliquid&apos;s cross-chain routes</a> and the balance shows up here.</>
-            : <>Withdrawals are signed by your main wallet, never by the trading agent, and are processed by Hyperliquid&apos;s validators. USDC arrives on Arbitrum.</>}
+        {phase.kind === "idle" || phase.kind === "error" ? (
+          <button type="button" className={`btn btn-primary tm-tk-cta ${!valid || (!mockMode && !wallet) ? "" : "btn-glow"}`} onClick={run} disabled={!valid || (!mockMode && !wallet)}>
+            {deposit ? <TkIcon.down size={15} /> : <TkIcon.up size={15} />}
+            {deposit ? `Deposit${amt >= min ? ` ${fmtUsd(amt)}` : ""} to Hyperliquid` : `Withdraw${amt >= min ? ` ${fmtUsd(amt)}` : ""} to Arbitrum`}
+          </button>
+        ) : (
+          <div className="tm-tk-status" data-tone={phase.kind === "busy" ? undefined : "ok"} role="status">
+            {phase.kind === "busy" ? (
+              <>
+                <TkIcon.spin size={15} className="tm-tk-spin" />
+                {phase.text}
+              </>
+            ) : (
+              <>
+                <TkIcon.check size={15} sw={2.2} /> {phase.kind === "done" ? "Done" : "Sent"}
+              </>
+            )}
+          </div>
+        )}
+        {phase.kind !== "idle" && phase.kind !== "busy" && (
+          <p className="tm-tk-msg" data-tone={phase.kind === "error" ? "err" : "ok"} role={phase.kind === "error" ? "alert" : "status"}>
+            {phase.kind === "error" ? <TkIcon.alert size={13} /> : <TkIcon.check size={13} />}
+            <span>
+              {phase.text}
+              {phase.kind === "sent" && phase.hash && (
+                <>
+                  {" "}
+                  <a className="underline underline-offset-2" href={`${EXPLORER}/tx/${phase.hash}`} target="_blank" rel="noreferrer">
+                    View transaction
+                  </a>
+                  .
+                </>
+              )}
+              {phase.kind === "sent" && mode === "deposit" && <> Waiting for Hyperliquid to credit it…</>}
+            </span>
+          </p>
+        )}
+
+        <p className="tm-tk-modal-foot">
+          {deposit ? (
+            <>
+              A deposit is a USDC transfer from your wallet to Hyperliquid&apos;s bridge on {DEPOSIT_CHAIN.name}. socialLiquid never holds funds. Coming from Solana, Ethereum or Base?{" "}
+              <a href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">
+                Use Hyperliquid&apos;s cross-chain routes
+              </a>{" "}
+              and the balance shows up here.
+            </>
+          ) : (
+            <>Withdrawals are signed by your main wallet, never by the trading agent, and are processed by Hyperliquid&apos;s validators. USDC arrives on Arbitrum.</>
+          )}
         </p>
       </div>
     </div>

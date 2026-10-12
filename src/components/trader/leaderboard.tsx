@@ -50,9 +50,9 @@ function HlBoard() {
   return (
     <>
       {top3.length === 3 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {top3.map((r) => (
-            <Link key={r.user.address} href={userPath(r.user)} className="card p-4 flex items-center gap-3 hover:bg-panel-2 transition-colors">
+            <Link key={r.user.address} href={userPath(r.user)} className="card p-4 flex items-center gap-3 min-w-0 hover:bg-panel-2 transition-colors">
               <span className={`num text-2xl font-semibold ${r.rank === 1 ? "text-warn" : r.rank === 2 ? "text-fg-2" : "text-[#cd7f32]"}`}>#{r.rank}</span>
               <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={40} />
               <span className="min-w-0 leading-tight">
@@ -129,9 +129,9 @@ function OwnBoard({ by }: { by: Exclude<Key, "hl"> }) {
     <>
 
       {top3.length === 3 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {top3.map((r) => (
-            <Link key={r.user.address} href={userPath(r.user)} className="card p-4 flex items-center gap-3 hover:bg-panel-2 transition-colors">
+            <Link key={r.user.address} href={userPath(r.user)} className="card p-4 flex items-center gap-3 min-w-0 hover:bg-panel-2 transition-colors">
               <span className={`num text-2xl font-semibold ${r.rank === 1 ? "text-warn" : r.rank === 2 ? "text-fg-2" : "text-[#cd7f32]"}`}>#{r.rank}</span>
               <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={40} />
               <span className="min-w-0 leading-tight">

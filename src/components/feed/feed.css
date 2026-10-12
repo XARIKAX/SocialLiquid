@@ -1,0 +1,1113 @@
+/* =====================================================================
+   the rail (.tm-rail-*): tokens, feed, leaderboard and alerts down the
+   left of the terminal, in the landing mock's language. glass tabs with
+   a live dot, token rows that tint on every tick and light the market
+   you are on, feed cards with glossy avatars, glowing pills, periwinkle
+   thesis quotes and pnl that glows, a podium on the leaderboard, and
+   empty states that glow where there is something to do.
+   glow is attention, breathing is alive, and both scale with --glow.
+   ===================================================================== */
+
+@layer components {
+  /* ---------- tokens (rgb triplets so every glow can carry its own alpha) ---------- */
+  :root {
+    --tm-rail-up: 34 211 107;
+    --tm-rail-down: 255 77 79;
+    --tm-rail-mint: 77 227 193;
+    --tm-rail-thesis: 107 147 255;
+    --tm-rail-pink: 255 143 160;
+    /* the mock's luminous tints on ink */
+    --tm-rail-up-text: color-mix(in srgb, var(--color-up) 68%, #e9fff3);
+    --tm-rail-down-text: color-mix(in srgb, var(--color-down) 74%, #fff0f0);
+    --tm-rail-mint-text: var(--color-brand-2);
+    --tm-rail-thesis-text: #b9cbff;
+    --tm-rail-pink-text: #ff8fa0;
+    /* secondary text that still carries meaning (times, sub lines, column heads) */
+    --tm-rail-quiet: var(--color-dim);
+    --tm-rail-sep: rgb(255 255 255 / 0.045);
+    --tm-rail-chip-top: rgb(255 255 255 / 0.08);
+    --tm-rail-chip-bot: rgb(255 255 255 / 0.03);
+    --tm-rail-chip-ring: rgb(255 255 255 / 0.07);
+  }
+  /* paper: plain tokens, darkened where small text needs 4.5:1 */
+  [data-theme="light"] {
+    --tm-rail-up: 31 157 85;
+    --tm-rail-down: 217 68 74;
+    --tm-rail-mint: 15 159 152;
+    --tm-rail-thesis: 63 106 224;
+    --tm-rail-pink: 214 51 108;
+    --tm-rail-up-text: color-mix(in srgb, var(--color-up) 82%, #000);
+    --tm-rail-down-text: color-mix(in srgb, var(--color-down) 86%, #000);
+    --tm-rail-mint-text: color-mix(in srgb, var(--color-brand) 78%, #000);
+    --tm-rail-thesis-text: var(--color-thesis);
+    --tm-rail-pink-text: #c2335f;
+    --tm-rail-quiet: var(--color-muted);
+    --tm-rail-sep: rgb(28 29 33 / 0.065);
+    --tm-rail-chip-top: #ffffff;
+    --tm-rail-chip-bot: #f1f1ec;
+    --tm-rail-chip-ring: rgb(28 29 33 / 0.1);
+  }
+
+  .tm-rail-up { color: var(--tm-rail-up-text); }
+  .tm-rail-down { color: var(--tm-rail-down-text); }
+  .tm-rail-dim { color: var(--color-dim); }
+  .tm-rail-quiet { color: var(--tm-rail-quiet); }
+  .tm-rail-mono { font-family: var(--font-label); font-feature-settings: "zero" 0; }
+
+  /* ---------- the column ---------- */
+  .tm-rail {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    /* the rail is resizable (296 to 460px): the tab bar and filters tighten by its width, not the viewport's */
+    container: tm-rail / inline-size;
+  }
+  /* phones: the shell lets the rail grow and the page scroll, which buried the tabs under a long feed, kept the
+     filters from sticking and the "new" pill from ever showing. here the rail is an app panel instead: it fills the
+     space between the top bar and the tab bar, its tabs stay in reach, and each panel scrolls (and keeps its place)
+     on its own, as on desktop. a landscape phone keeps a usable minimum and lets the page take the rest. */
+  @media (max-width: 767px) {
+    .tm-rail {
+      /* the aside around it is a .card: its two 1px borders come off too */
+      height: calc(100dvh - var(--tm-chrome-bar-h, 52px) - var(--tm-chrome-gap, 12px) - 70px - 2px - env(safe-area-inset-bottom));
+      min-height: 420px;
+    }
+  }
+
+  /* ---------- tabs: glass pill on the active one, a live dot on the feed ---------- */
+  .tm-rail-tabs {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    height: 46px;
+    padding: 0 6px 0 8px;
+    border-bottom: 1px solid var(--hair);
+    background: linear-gradient(180deg, rgb(255 255 255 / calc(0.025 * var(--glow))), transparent);
+  }
+  /* the tabs themselves: if a rail is ever narrower than they are, they scroll and the collapse button stays put */
+  .tm-rail-tablist {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-inline: -3px;
+    padding-inline: 3px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tm-rail-tablist::-webkit-scrollbar { display: none; }
+  /* the panel's light, caught on the rim above the tabs */
+  .tm-rail-tabs::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    left: 18%;
+    right: 18%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(214 255 245 / calc(0.4 * var(--glow))) 50%, transparent);
+    pointer-events: none;
+  }
+  [data-theme="light"] .tm-rail-tabs::before { display: none; }
+  .tm-rail-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding-inline: 9px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    color: var(--color-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s, background-color 0.2s, box-shadow 0.25s;
+  }
+  .tm-rail-tab:hover { color: var(--color-fg); }
+  .tm-rail-tab:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+  .tm-rail-tab[aria-selected="true"] {
+    color: var(--color-fg);
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0.035));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.06), 0 4px 12px -4px rgb(0 0 0 / 0.7);
+  }
+  [data-theme="light"] .tm-rail-tab[aria-selected="true"] {
+    background: linear-gradient(180deg, #ffffff, #f5f5f1);
+    box-shadow: inset 0 1px 0 #ffffff, inset 0 0 0 1px var(--hair-2), 0 3px 10px -4px rgb(28 29 33 / 0.28);
+  }
+  .tm-rail-tab svg { flex: none; opacity: 0.8; }
+  .tm-rail-tab[aria-selected="true"] svg { opacity: 1; }
+  .tm-rail-tab .count { min-width: 15px; height: 15px; padding-inline: 4px; font-size: 9.5px; }
+  .tm-rail-collapse {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 28px;
+    height: 28px;
+    margin-left: auto;
+    border-radius: 8px;
+    color: var(--color-dim);
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s, box-shadow 0.25s;
+  }
+  .tm-rail-collapse:hover { color: var(--color-fg); background: var(--row-hover); box-shadow: inset 0 0 0 1px var(--hair); }
+  .tm-rail-collapse:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+
+  /* the live dot: a lit bead with a ring pinging out of it */
+  .tm-rail-live {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #d9fff6, rgb(var(--tm-rail-mint)) 60%);
+    box-shadow: 0 0 8px rgb(var(--tm-rail-mint) / calc(0.9 * var(--glow)));
+  }
+  .tm-rail-live::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgb(var(--tm-rail-mint));
+    animation: tm-rail-ping 2.4s var(--ease-out) infinite;
+  }
+  .tm-rail-live { transition: background-color 0.4s, box-shadow 0.6s var(--ease-out), opacity 0.4s; }
+  .tm-rail-live[data-off] { background: var(--color-dim); box-shadow: none; opacity: 0.45; }
+  .tm-rail-live[data-off]::after { animation: none; opacity: 0; }
+  .tm-rail-live-thesis { background: radial-gradient(circle at 35% 35%, #e3ebff, rgb(var(--tm-rail-thesis)) 62%); box-shadow: 0 0 8px rgb(var(--tm-rail-thesis) / calc(0.9 * var(--glow))); }
+  .tm-rail-live-thesis::after { background: rgb(var(--tm-rail-thesis)); animation-duration: 3.2s; }
+  [data-theme="light"] .tm-rail-live { background: rgb(var(--tm-rail-mint)); }
+  [data-theme="light"] .tm-rail-live-thesis { background: rgb(var(--tm-rail-thesis)); }
+  [data-theme="light"] .tm-rail-live[data-off] { background: var(--color-dim); }
+
+  /* ---------- panels ---------- */
+  .tm-rail-scroll {
+    position: relative;
+    flex: 1 1 0%;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .tm-rail-scroll[hidden] { display: none !important; }
+  /* a panel settles in when its tab opens (an animation restarts whenever display returns). no fill: once it
+     lands nothing stays applied, so the panel holds no animated transform while it scrolls */
+  .tm-rail-scroll > * { animation: tm-rail-panel-in 0.32s var(--ease-out); }
+
+  /* sticky head of a panel: opaque glass, and a soft shadow once rows slide under it */
+  .tm-rail-head {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    border-bottom: 1px solid var(--hair);
+    background: linear-gradient(180deg, var(--surface-top), color-mix(in srgb, var(--surface-top) 82%, var(--surface-bot)));
+  }
+  .tm-rail-head::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    height: 12px;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgb(0 0 0 / calc(0.32 * var(--glow))), transparent);
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  [data-theme="light"] .tm-rail-head::after { background: linear-gradient(180deg, rgb(28 29 33 / 0.07), transparent); }
+  [data-scrolled] > * > .tm-rail-head::after,
+  [data-scrolled] > .tm-rail-head::after { opacity: 1; }
+  /* off the rail (the tokens page) the head is a plain band */
+  .tm-rail-page .tm-rail-head { position: relative; background: transparent; }
+
+  /* ---------- glass search ---------- */
+  .tm-rail-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    padding: 0 6px 0 10px;
+    border-radius: 10px;
+    color: var(--color-dim);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair);
+    transition: box-shadow 0.3s var(--ease-out), color 0.2s;
+  }
+  .tm-rail-search:focus-within {
+    color: var(--tm-rail-mint-text);
+    box-shadow:
+      inset 0 1px 0 var(--inset-hi),
+      inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.45),
+      0 0 0 3px rgb(var(--tm-rail-mint) / calc(0.12 * var(--glow))),
+      0 0 18px -6px rgb(var(--tm-rail-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-rail-search input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    background: transparent;
+    outline: none;
+    font-size: 12.5px;
+    color: var(--color-fg);
+  }
+  .tm-rail-search input::placeholder { color: var(--color-dim); }
+  .tm-rail-search input::-webkit-search-cancel-button { display: none; }
+  .tm-rail-search-end { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+  .tm-rail-search .kbd { height: 18px; padding-inline: 5px; font-size: 9.5px; }
+  .tm-rail-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    color: var(--color-dim);
+    cursor: pointer;
+  }
+  .tm-rail-clear:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-rail-clear:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 0; }
+
+  /* ---------- tokens ---------- */
+  .tm-rail-tokens {
+    --tm-rail-cols: minmax(0, 1fr) 92px 66px;
+    container: tm-rail-tok / inline-size;
+  }
+  .tm-rail-tokens-top { padding: 12px 12px 0; }
+  .tm-rail-cols {
+    display: grid;
+    grid-template-columns: var(--tm-rail-cols);
+    align-items: center;
+    column-gap: 8px;
+    height: 30px;
+    padding-inline: 14px;
+  }
+  /* no rows to head (no match, failed): the heads step out and leave the search its breathing room */
+  .tm-rail-cols[data-empty] { visibility: hidden; height: 12px; }
+  .tm-rail-colhead {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 20px;
+    margin-inline: -4px;
+    padding-inline: 4px;
+    border-radius: 5px;
+    font-family: var(--font-label);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--tm-rail-quiet);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s, background-color 0.2s;
+  }
+  .tm-rail-colhead:hover { color: var(--color-fg-2); background: var(--row-hover); }
+  .tm-rail-colhead:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 0; }
+  .tm-rail-colhead[data-on] { color: var(--tm-rail-mint-text); }
+  .tm-rail-colhead svg { opacity: 0; transition: opacity 0.2s, transform 0.25s var(--ease-out); }
+  .tm-rail-colhead:hover svg { opacity: 0.5; }
+  .tm-rail-colhead[data-on] svg { opacity: 1; }
+  .tm-rail-colhead[data-dir="asc"] svg { transform: rotate(180deg); }
+  .tm-rail-end { justify-self: end; }
+
+  .tm-rail-toklist { list-style: none; margin: 0; padding: 0 0 6px; }
+  .tm-rail-tok {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--tm-rail-cols);
+    align-items: center;
+    column-gap: 8px;
+    min-height: 46px;
+    padding: 0 14px;
+    outline: none;
+    transition: background-color 0.15s;
+  }
+  .tm-rail-tok:hover { background-color: var(--row-hover); }
+  .tm-rail-tok:focus-visible { border-radius: 10px; background-color: var(--row-hover); box-shadow: inset 0 0 0 1.5px rgb(var(--tm-rail-mint) / 0.6), inset 0 0 14px -6px rgb(var(--tm-rail-mint) / calc(0.5 * var(--glow))); }
+  .tm-rail-tok-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .tm-rail-tok-name { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+  .tm-rail-tok-name b { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: var(--color-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tm-rail-tok-name small { margin-top: 2px; font-family: var(--font-label); font-size: 10px; letter-spacing: 0.01em; color: var(--tm-rail-quiet); white-space: nowrap; }
+  .tm-rail-px { justify-self: end; font-size: 12.5px; font-weight: 500; color: var(--color-fg); white-space: nowrap; }
+  .tm-rail-num2 { justify-self: end; font-size: 12px; color: var(--color-fg-2); white-space: nowrap; }
+  .tm-rail-x { display: none; }
+
+  /* the market you are on: a mint bar breathing on the left edge, the row lit from it */
+  .tm-rail-tok[aria-current="page"] {
+    background:
+      linear-gradient(90deg, rgb(var(--tm-rail-mint) / calc(0.11 * var(--glow))), rgb(var(--tm-rail-mint) / calc(0.035 * var(--glow))) 48%, transparent 88%);
+    box-shadow: inset 0 1px 0 rgb(var(--tm-rail-mint) / calc(0.1 * var(--glow))), inset 0 -1px 0 rgb(var(--tm-rail-mint) / calc(0.06 * var(--glow)));
+  }
+  .tm-rail-tok[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 9px;
+    bottom: 9px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: linear-gradient(180deg, var(--color-brand-2), var(--color-brand));
+    box-shadow: 0 0 10px 1px rgb(var(--tm-rail-mint) / calc(0.75 * var(--glow)));
+    animation: tm-rail-breathe 4.6s ease-in-out infinite;
+  }
+  .tm-rail-tok[aria-current="page"]:hover { background-color: var(--row-hover); }
+  /* the lit row still shows the keyboard where it is (its own edge shadows would otherwise replace the ring) */
+  .tm-rail-tok[aria-current="page"]:focus-visible {
+    background-color: var(--row-hover);
+    box-shadow: inset 0 0 0 1.5px rgb(var(--tm-rail-mint) / 0.7), inset 0 0 16px -6px rgb(var(--tm-rail-mint) / calc(0.6 * var(--glow)));
+  }
+  [data-theme="light"] .tm-rail-tok[aria-current="page"]::before { background: var(--color-brand); }
+  .tm-rail-tok[aria-current="page"] .tm-rail-coin { box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 0 14px -2px rgb(var(--tm-rail-mint) / calc(0.7 * var(--glow))); }
+  .tm-rail-tok[aria-current="page"] .tm-rail-tok-name small { color: var(--tm-rail-mint-text); opacity: 0.85; }
+
+  /* a price tints toward the way it ticked, then settles (two names so a tick restarts it) */
+  /* a breath of colour, not a blink: it holds, then dissolves over 1.5s (an ease-out snapped back in ~200ms) */
+  .tm-rail-tick-up0 { animation: tm-rail-tick-up0 1.5s var(--ease-io); }
+  .tm-rail-tick-up1 { animation: tm-rail-tick-up1 1.5s var(--ease-io); }
+  .tm-rail-tick-down0 { animation: tm-rail-tick-down0 1.5s var(--ease-io); }
+  .tm-rail-tick-down1 { animation: tm-rail-tick-down1 1.5s var(--ease-io); }
+
+  /* 24h change: a soft tinted lozenge, no halo (there are many of them) */
+  .tm-rail-chg {
+    justify-self: end;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    min-width: 62px;
+    height: 20px;
+    padding-inline: 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .tm-rail-chg-up { color: var(--tm-rail-up-text); background: linear-gradient(180deg, rgb(var(--tm-rail-up) / 0.15), rgb(var(--tm-rail-up) / 0.055)); box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-up) / 0.2); }
+  .tm-rail-chg-down { color: var(--tm-rail-down-text); background: linear-gradient(180deg, rgb(var(--tm-rail-down) / 0.15), rgb(var(--tm-rail-down) / 0.055)); box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-down) / 0.22); }
+  .tm-rail-chg-flat { color: var(--color-muted); background: linear-gradient(180deg, var(--inset-top), var(--inset-bot)); box-shadow: inset 0 0 0 1px var(--hair); }
+  [data-theme="light"] .tm-rail-chg-up { background: rgb(var(--tm-rail-up) / 0.09); box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-up) / 0.2); }
+  [data-theme="light"] .tm-rail-chg-down { background: rgb(var(--tm-rail-down) / 0.08); box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-down) / 0.2); }
+  .tm-rail-chg svg { flex: none; }
+  .tm-rail-fund-up { color: var(--tm-rail-up-text); }
+  .tm-rail-fund-down { color: var(--tm-rail-down-text); }
+
+  /* the tokens page: the same rows with volume, open interest and funding as room allows */
+  .tm-rail-tokens-full { --tm-rail-cols: minmax(0, 1fr) 96px 72px; }
+  .tm-rail-tokens-full .tm-rail-tok { min-height: 56px; padding-inline: 18px; }
+  .tm-rail-tokens-full .tm-rail-cols { padding-inline: 18px; }
+  .tm-rail-tokens-full .tm-rail-tokens-top { padding: 14px 18px 2px; }
+  .tm-rail-tokens-full .tm-rail-tok-name b { font-size: 14px; }
+  .tm-rail-tokens-full .tm-rail-px { font-size: 13.5px; }
+  /* a container query styles descendants only, so the columns are set on the rows and the head */
+  @container tm-rail-tok (min-width: 520px) {
+    .tm-rail-tokens-full :is(.tm-rail-tok, .tm-rail-cols) { --tm-rail-cols: minmax(0, 1fr) 110px 80px 100px; }
+    .tm-rail-tokens-full .tm-rail-x-vol { display: block; }
+  }
+  @container tm-rail-tok (min-width: 680px) {
+    .tm-rail-tokens-full :is(.tm-rail-tok, .tm-rail-cols) { --tm-rail-cols: minmax(0, 1fr) 120px 84px 110px 120px; }
+    .tm-rail-tokens-full .tm-rail-x-oi { display: block; }
+  }
+  @container tm-rail-tok (min-width: 820px) {
+    .tm-rail-tokens-full :is(.tm-rail-tok, .tm-rail-cols) { --tm-rail-cols: minmax(0, 1.2fr) 130px 90px 120px 130px 100px; }
+    .tm-rail-tokens-full .tm-rail-x-fund { display: block; }
+  }
+
+  /* ---------- coin + avatar orbs ---------- */
+  .tm-rail-coin {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 2px 6px -2px rgb(0 0 0 / 0.6);
+    transition: box-shadow 0.3s var(--ease-out);
+  }
+  .tm-rail-coin::after,
+  .tm-rail-av::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle at 32% 24%, rgb(255 255 255 / 0.26), rgb(255 255 255 / 0) 48%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14), inset 0 -2px 4px rgb(0 0 0 / 0.16);
+  }
+  .tm-rail-av {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 3px 9px -3px rgb(0 0 0 / 0.7);
+  }
+  .tm-rail-av::after { background: radial-gradient(circle at 30% 22%, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0) 46%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2), inset 0 -3px 6px rgb(0 0 0 / 0.2); }
+  /* spheres, as in the mock and the positions table: the name sits right beside it, so the hex initials go */
+  .tm-rail-av > span { color: transparent !important; user-select: none; }
+  .tm-rail-av-link { display: inline-flex; flex: none; border-radius: 50%; }
+  .tm-rail-av-link .tm-rail-av { transition: box-shadow 0.3s var(--ease-out); }
+  .tm-rail-av-link:hover .tm-rail-av { box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 0 0 3px rgb(255 255 255 / calc(0.07 * var(--glow))), 0 3px 9px -3px rgb(0 0 0 / 0.7); }
+  [data-theme="light"] .tm-rail-av-link:hover .tm-rail-av { box-shadow: 0 0 0 1px rgb(28 29 33 / 0.1), 0 0 0 3px rgb(28 29 33 / 0.06), 0 2px 6px -2px rgb(28 29 33 / 0.3); }
+  /* on paper a ring firm enough to hold pale marks (hype, eth) off the page */
+  [data-theme="light"] .tm-rail-coin,
+  [data-theme="light"] .tm-rail-av { box-shadow: 0 0 0 1px rgb(28 29 33 / 0.13), 0 2px 6px -2px rgb(28 29 33 / 0.3); }
+  .tm-rail-tok:hover .tm-rail-coin { box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 0 0 3px rgb(255 255 255 / calc(0.05 * var(--glow))), 0 2px 6px -2px rgb(0 0 0 / 0.6); }
+
+  /* ---------- feed: filters ---------- */
+  .tm-rail-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 5px;
+    padding: 10px 12px;
+  }
+  .tm-rail-filters .toggle { font-size: 11px; gap: 5px; }
+  .tm-rail-filters .select + .toggle,
+  .tm-rail-filters .toggle + .toggle { margin-left: 2px; }
+  .tm-rail-filters .toggle-box { width: 13px; height: 13px; }
+  .tm-rail-select {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    min-width: 0;
+    height: 26px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-fg-2);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair-2);
+    transition: box-shadow 0.25s var(--ease-out), color 0.2s;
+  }
+  .tm-rail-select:hover { color: var(--color-fg); }
+  .tm-rail-select select {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 100%;
+    max-width: 120px;
+    padding: 0 18px 0 8px;
+    border-radius: inherit;
+    /* size to the chosen option, not the longest one (falls back to a wrap where unsupported) */
+    field-sizing: content;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    outline: none;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    color-scheme: dark;
+  }
+  .tm-rail-select option { background: var(--color-panel); color: var(--color-fg); }
+  [data-theme="light"] .tm-rail-select select { color-scheme: light; }
+  .tm-rail-select > svg { position: absolute; right: 4px; pointer-events: none; color: var(--color-dim); }
+  .tm-rail-select-coin { padding-left: 6px; }
+  .tm-rail-select-coin select { padding-left: 4px; }
+  .tm-rail-select:focus-within {
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.5), 0 0 0 3px rgb(var(--tm-rail-mint) / calc(0.12 * var(--glow)));
+  }
+  /* a filter that narrows the stream reads as on */
+  .tm-rail-select[data-on] {
+    color: var(--tm-rail-mint-text);
+    background: linear-gradient(180deg, rgb(var(--tm-rail-mint) / 0.14), rgb(var(--tm-rail-mint) / 0.04));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.32), 0 0 12px -4px rgb(var(--tm-rail-mint) / calc(0.55 * var(--glow)));
+  }
+  .tm-rail-select[data-on] > svg { color: var(--tm-rail-mint-text); }
+  .tm-rail-filters-end { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+  .tm-rail-reset {
+    height: 22px;
+    padding-inline: 7px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--color-muted);
+    cursor: pointer;
+  }
+  .tm-rail-reset:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-rail-reset:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 0; }
+  /* refetching with new filters: the old list stays, quieter, and a light runs along the head */
+  .tm-rail-loading-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .tm-rail-loading-line::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, rgb(var(--tm-rail-mint) / 0.9), transparent);
+    box-shadow: 0 0 8px rgb(var(--tm-rail-mint) / calc(0.8 * var(--glow)));
+    animation: tm-rail-run 1.1s var(--ease-io) infinite;
+  }
+  .tm-rail-stale { opacity: 0.55; transition: opacity 0.25s; }
+  /* new events while you read further down: a lit pill under the filters that takes you back up */
+  .tm-rail-newpill {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 50%;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding-inline: 10px 12px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 650;
+    color: #04251f;
+    white-space: nowrap;
+    cursor: pointer;
+    background: linear-gradient(180deg, #c4fff1, #6ff2d3 45%, #3fcfae);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 0 0 1px rgb(0 0 0 / 0.3), 0 10px 24px -8px rgb(var(--tm-rail-mint) / calc(0.75 * var(--glow)));
+    transform: translateX(-50%);
+    animation: tm-rail-pill-in 0.45s var(--ease-out) both;
+    transition: filter 0.2s;
+  }
+  .tm-rail-newpill:hover { filter: brightness(1.06); }
+  .tm-rail-newpill:focus-visible { outline: 2px solid var(--color-brand-2); outline-offset: 2px; }
+  [data-theme="light"] .tm-rail-newpill { color: #ffffff; background: linear-gradient(180deg, #17b8ad, #0f9690); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 8px 20px -8px rgb(15 159 152 / 0.7); }
+
+  /* ---------- feed: cards ---------- */
+  .tm-rail-fc {
+    position: relative;
+    padding: 12px 14px 12px 14px;
+    border-bottom: 1px solid var(--tm-rail-sep);
+    transition: background-color 0.2s;
+  }
+  .tm-rail-fc:hover { background-color: var(--row-hover); }
+  /* a thesis card sits in periwinkle light from the left (measured against the mock, which runs a touch stronger) */
+  .tm-rail-fc-thesis {
+    background-image: linear-gradient(100deg, rgb(var(--tm-rail-thesis) / calc(0.115 * var(--glow))), rgb(var(--tm-rail-thesis) / calc(0.03 * var(--glow))) 58%, transparent);
+  }
+  [data-theme="light"] .tm-rail-fc-thesis { background-image: linear-gradient(100deg, rgb(var(--tm-rail-thesis) / 0.085), rgb(var(--tm-rail-thesis) / 0.02) 58%, transparent); }
+  .tm-rail-fc-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .tm-rail-fc-who { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+  .tm-rail-fc-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-radius: 4px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-fg);
+  }
+  .tm-rail-fc-name:hover,
+  .tm-rail-fc-meta-link:hover { text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+  .tm-rail-fc-name:focus-visible,
+  .tm-rail-fc-meta-link:focus-visible,
+  .tm-rail-fc-x:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  .tm-rail-fc-x { display: inline-flex; flex: none; color: var(--color-dim); transition: color 0.2s; }
+  .tm-rail-fc-x:hover { color: var(--color-fg); }
+  .tm-rail-fc .pill { flex: none; height: 18px; padding-inline: 7px; font-size: 10px; }
+  .tm-rail-fc-ago { flex: none; font-family: var(--font-label); font-size: 10px; color: var(--tm-rail-quiet); white-space: nowrap; }
+  .tm-rail-fc-body { padding-left: 36px; }
+  .tm-rail-fc-mid {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px 5px;
+    min-width: 0;
+    margin-top: 5px;
+    font-size: 12px;
+    color: var(--color-fg-2);
+    white-space: nowrap;
+  }
+  .tm-rail-fc-mid > * { flex: none; }
+  .tm-rail-fc-coin { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--color-fg); border-radius: 4px; }
+  .tm-rail-fc-coin:hover b { text-decoration: underline; text-underline-offset: 2px; text-decoration-color: rgb(var(--tm-rail-mint) / 0.6); }
+  .tm-rail-fc-coin:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+  .tm-rail-fc-coin b { font-weight: 600; }
+  .tm-rail-side { font-weight: 500; }
+  .tm-rail-lev {
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    padding-inline: 5px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-fg-2);
+    background: linear-gradient(180deg, var(--tm-rail-chip-top), var(--tm-rail-chip-bot));
+    box-shadow: inset 0 0 0 1px var(--tm-rail-chip-ring);
+  }
+  .tm-rail-fc-right { margin-left: auto; padding-left: 6px; display: inline-flex; align-items: center; gap: 5px; }
+  .tm-rail-pnl { font-weight: 600; font-size: 12.5px; letter-spacing: -0.01em; }
+  .tm-rail-pnl-up { color: var(--tm-rail-up-text); text-shadow: 0 0 14px rgb(var(--tm-rail-up) / calc(0.55 * var(--glow))); }
+  .tm-rail-pnl-down { color: var(--tm-rail-down-text); text-shadow: 0 0 14px rgb(var(--tm-rail-down) / calc(0.45 * var(--glow))); }
+  .tm-rail-pnl-flat { color: var(--color-muted); }
+  /* unrealised pnl on an open position: the same colour, quieter, no glow (it is still moving) */
+  .tm-rail-upnl { font-size: 11.5px; font-weight: 500; text-shadow: none; }
+  /* coloured but unlit: the leaderboard below the podium (glow is attention, not a column of thirty) */
+  .tm-rail-noglow { text-shadow: none; }
+  .tm-rail-roe { font-size: 11px; font-weight: 600; }
+  .tm-rail-fc-sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin-top: 4px;
+    font-family: var(--font-label);
+    font-size: 10px;
+    color: var(--tm-rail-quiet);
+    white-space: nowrap;
+  }
+  .tm-rail-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .tm-rail-fc-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--tm-rail-quiet);
+  }
+  .tm-rail-fc-meta > span { display: inline-flex; align-items: center; gap: 4px; }
+  .tm-rail-fc-meta-link { border-radius: 4px; color: var(--color-fg-2); font-weight: 500; }
+  .tm-rail-copiers {
+    height: 18px;
+    padding-inline: 6px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--tm-rail-mint-text);
+    background: linear-gradient(180deg, rgb(var(--tm-rail-mint) / 0.16), rgb(var(--tm-rail-mint) / 0.05));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.26);
+  }
+
+  /* copy: a quiet chip in the corner, lit when you reach for it (always shown on touch) */
+  .tm-rail-copy {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    height: 20px;
+    padding-inline: 6px 7px;
+    border-radius: 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--tm-rail-mint-text);
+    opacity: 0;
+    transition: opacity 0.2s, background-color 0.2s, box-shadow 0.25s;
+  }
+  .tm-rail-fc:hover .tm-rail-copy,
+  .tm-rail-fc:focus-within .tm-rail-copy { opacity: 1; }
+  .tm-rail-copy:hover,
+  .tm-rail-copy:focus-visible {
+    background: linear-gradient(180deg, rgb(var(--tm-rail-mint) / 0.2), rgb(var(--tm-rail-mint) / 0.07));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.36), 0 0 14px -4px rgb(var(--tm-rail-mint) / calc(0.6 * var(--glow)));
+    outline: none;
+  }
+  .tm-rail-fc:hover .tm-rail-copy:not(:hover) { box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.22); }
+  @media (hover: none) {
+    .tm-rail-copy { opacity: 1; box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.22); }
+  }
+
+  /* the thesis as a quote: a periwinkle bar that glows, the words in text-2 */
+  .tm-rail-quote {
+    position: relative;
+    margin-top: 8px;
+    padding-left: 11px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--color-fg-2);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .tm-rail-quote::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 3px;
+    bottom: 3px;
+    width: 2px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #a9c0ff, rgb(var(--tm-rail-thesis) / 0.2));
+    box-shadow: 0 0 8px rgb(var(--tm-rail-thesis) / calc(0.55 * var(--glow)));
+  }
+  [data-theme="light"] .tm-rail-quote::before { background: linear-gradient(180deg, rgb(var(--tm-rail-thesis)), rgb(var(--tm-rail-thesis) / 0.25)); }
+  .tm-rail-fc-foot { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; margin-top: 9px; }
+  .tm-rail-fc-result { display: inline-flex; align-items: center; gap: 8px; margin-right: 2px; }
+  .tm-rail-fc-result-live { display: inline-flex; align-items: center; gap: 6px; }
+  .tm-rail-act {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    margin-inline: -4px;
+    padding-inline: 4px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--tm-rail-quiet);
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+  }
+  .tm-rail-act:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-rail-act:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 0; }
+  .tm-rail-act[aria-expanded="true"] { color: var(--color-fg); }
+  .tm-rail-like svg { color: var(--tm-rail-pink-text); transition: transform 0.3s var(--ease-out), filter 0.3s; }
+  .tm-rail-like:hover svg { transform: scale(1.12); }
+  .tm-rail-like[aria-pressed="true"] { color: var(--tm-rail-pink-text); }
+  .tm-rail-like[aria-pressed="true"] svg { filter: drop-shadow(0 0 5px rgb(var(--tm-rail-pink) / calc(0.75 * var(--glow)))); }
+  .tm-rail-like[data-pop] svg { animation: tm-rail-pop 0.45s var(--ease-out); }
+  .tm-rail-fc-foot .tm-rail-push { margin-left: auto; }
+
+  /* a fresh card lands: a soft wash in its own colour, a short drop, never a flash */
+  .tm-rail-fc { --tm-rail-tone: var(--tm-rail-mint); }
+  .tm-rail-fc[data-tone="up"] { --tm-rail-tone: var(--tm-rail-up); }
+  .tm-rail-fc[data-tone="down"] { --tm-rail-tone: var(--tm-rail-down); }
+  .tm-rail-fc[data-tone="thesis"] { --tm-rail-tone: var(--tm-rail-thesis); }
+  .tm-rail-fc-new { animation: tm-rail-land 0.7s var(--ease-out) both; }
+  .tm-rail-fc-new::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(100deg, rgb(var(--tm-rail-tone) / calc(0.17 * var(--glow))), rgb(var(--tm-rail-tone) / calc(0.04 * var(--glow))) 58%, transparent);
+    opacity: 0;
+    animation: tm-rail-wash 2.8s var(--ease-out) both;
+  }
+  /* the newest card carries the live edge: a mint bar that breathes */
+  .tm-rail-fc-lead::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 12px;
+    bottom: 12px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: linear-gradient(180deg, var(--color-brand-2), var(--color-brand));
+    box-shadow: 0 0 10px 1px rgb(var(--tm-rail-mint) / calc(0.7 * var(--glow)));
+    animation: tm-rail-breathe 4.6s ease-in-out infinite;
+    pointer-events: none;
+  }
+  [data-theme="light"] .tm-rail-fc-lead::after { background: var(--color-brand); }
+
+  .tm-rail-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    height: 44px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-muted);
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+  }
+  .tm-rail-more:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-rail-more:focus-visible { outline: 2px solid var(--color-brand); outline-offset: -2px; }
+  .tm-rail-more[aria-disabled] { cursor: default; color: var(--tm-rail-quiet); background: none; }
+  .tm-rail-more svg { transition: transform 0.25s var(--ease-out); }
+  .tm-rail-more:hover:not([aria-disabled]) svg { transform: translateY(2px); }
+  /* the next page is on its way: a small mint arc turning, the list above stays as it is */
+  .tm-rail-more-spin {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 1.5px solid rgb(var(--tm-rail-mint) / 0.25);
+    border-top-color: var(--tm-rail-mint-text);
+    animation: tm-rail-spin 0.8s linear infinite;
+  }
+  .tm-rail-endcap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 18px 18px;
+    font-family: var(--font-label);
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-dim);
+  }
+  .tm-rail-endcap::before,
+  .tm-rail-endcap::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--hair-2), transparent); }
+
+  /* ---------- leaderboard ---------- */
+  .tm-rail-lb-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px 9px; }
+  .tm-rail-lb-head .seg-item { height: 24px; padding-inline: 9px; font-size: 11.5px; }
+  .tm-rail-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    height: 24px;
+    padding-inline: 6px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: var(--color-muted);
+    white-space: nowrap;
+    transition: color 0.2s, background-color 0.2s;
+  }
+  .tm-rail-link:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-rail-link:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 0; }
+  .tm-rail-link svg { transition: transform 0.25s var(--ease-out); }
+  .tm-rail-link:hover svg { transform: translateX(2px); }
+  .tm-rail-lb-row {
+    display: grid;
+    grid-template-columns: 22px 28px minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 10px;
+    min-height: 52px;
+    padding: 0 14px 0 12px;
+    border-bottom: 1px solid var(--tm-rail-sep);
+    outline: none;
+    transition: background-color 0.15s;
+  }
+  .tm-rail-lb-row:hover { background-color: var(--row-hover); }
+  .tm-rail-lb-row:focus-visible { border-radius: 10px; background-color: var(--row-hover); box-shadow: inset 0 0 0 1.5px rgb(var(--tm-rail-mint) / 0.6), inset 0 0 14px -6px rgb(var(--tm-rail-mint) / calc(0.5 * var(--glow))); }
+  .tm-rail-lb-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+  .tm-rail-lb-who b { font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em; color: var(--color-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tm-rail-lb-who small { margin-top: 2px; font-family: var(--font-label); font-size: 10px; color: var(--tm-rail-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tm-rail-lb-pnl { justify-self: end; text-align: right; font-size: 13px; }
+  /* the podium: #1 is lit mint, #2 and #3 are glass with a mint catch, the rest are numbers */
+  .tm-rail-rank {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    font-family: var(--font-label);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-dim);
+  }
+  .tm-rail-rank-1 {
+    color: #04251f;
+    background: linear-gradient(180deg, #c4fff1, #6ff2d3 45%, #3fcfae);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 0 0 1px rgb(0 0 0 / 0.25), 0 0 16px -2px rgb(var(--tm-rail-mint) / calc(0.85 * var(--glow)));
+  }
+  .tm-rail-rank-2,
+  .tm-rail-rank-3 {
+    color: var(--color-fg);
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.15), rgb(255 255 255 / 0.04));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2), inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.3), 0 0 12px -4px rgb(var(--tm-rail-mint) / calc(0.45 * var(--glow)));
+  }
+  .tm-rail-rank-3 { color: var(--color-fg-2); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.18); }
+  [data-theme="light"] .tm-rail-rank-1 { color: #ffffff; background: linear-gradient(180deg, #17b8ad, #0f9690); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 4px 12px -4px rgb(15 159 152 / 0.7); }
+  [data-theme="light"] .tm-rail-rank-2,
+  [data-theme="light"] .tm-rail-rank-3 { background: linear-gradient(180deg, #ffffff, #f1f1ec); box-shadow: inset 0 0 0 1px rgb(15 159 152 / 0.35); }
+  [data-theme="light"] .tm-rail-rank-3 { box-shadow: inset 0 0 0 1px rgb(15 159 152 / 0.2); }
+
+  /* ---------- empty + loading ---------- */
+  /* an empty panel reads as composed, not as content that has not arrived: it sits about a third of the way down */
+  .tm-rail-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: clamp(44px, 12vh, 124px) 24px 40px;
+  }
+  .tm-rail-empty-ring {
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    color: var(--tm-rail-mint-text);
+    background:
+      radial-gradient(circle at 50% 30%, rgb(151 252 228 / 0.18), rgb(77 227 193 / 0.04) 70%),
+      linear-gradient(180deg, #11302b, #0a1a18);
+    box-shadow:
+      inset 0 1px 0 rgb(214 255 245 / 0.3),
+      inset 0 0 0 1px rgb(151 252 228 / 0.22),
+      0 12px 28px -12px rgb(var(--tm-rail-mint) / calc(0.7 * var(--glow))),
+      0 0 0 1px rgb(0 0 0 / 0.4);
+  }
+  .tm-rail-empty-ring svg { filter: drop-shadow(0 0 6px rgb(var(--tm-rail-mint) / calc(0.75 * var(--glow)))); }
+  /* the halo breathes and an outer ring sits in the light */
+  .tm-rail-empty-ring::before {
+    content: "";
+    position: absolute;
+    inset: -14px;
+    z-index: -1;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgb(var(--tm-rail-mint) / 0.26), transparent);
+    animation: tm-rail-breathe 5s ease-in-out infinite;
+  }
+  .tm-rail-empty-ring::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.16);
+  }
+  [data-theme="light"] .tm-rail-empty-ring {
+    background: linear-gradient(180deg, #effcf8, #dcf5ee);
+    box-shadow: inset 0 1px 0 #ffffff, inset 0 0 0 1px rgb(15 159 152 / 0.28), 0 10px 22px -12px rgb(15 159 152 / 0.6);
+  }
+  [data-theme="light"] .tm-rail-empty-ring svg { filter: none; }
+  /* nothing to do here: the same ring, unlit */
+  .tm-rail-empty-ring[data-quiet] {
+    color: var(--color-muted);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair-2), 0 0 0 1px rgb(0 0 0 / 0.2);
+  }
+  .tm-rail-empty-ring[data-quiet] svg { filter: none; }
+  .tm-rail-empty-ring[data-quiet]::before { display: none; }
+  .tm-rail-empty-ring[data-quiet]::after { box-shadow: inset 0 0 0 1px var(--hair); }
+  [data-theme="light"] .tm-rail-empty-ring[data-quiet] { background: linear-gradient(180deg, #ffffff, #f1f1ec); box-shadow: inset 0 0 0 1px var(--hair-2); }
+  .tm-rail-empty-title { margin-top: 18px; font-size: 14px; font-weight: 600; letter-spacing: -0.015em; color: var(--color-fg); }
+  .tm-rail-empty-hint { margin-top: 6px; max-width: 250px; font-size: 12px; line-height: 1.5; color: var(--color-muted); text-wrap: balance; }
+  .tm-rail-empty-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
+  .tm-rail-empty-note { margin-top: 12px; font-family: var(--font-label); font-size: 9.5px; letter-spacing: 0.06em; color: var(--color-dim); }
+
+  .tm-rail-skel { padding: 4px 0; }
+  .tm-rail-skel-row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; }
+  .tm-rail-skel-col { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+  /* the shared shimmer, with enough body to read as the shape of what is coming */
+  .tm-rail-skel .skeleton,
+  .tm-rail-thread .skeleton {
+    border-radius: 5px;
+    background-color: rgb(255 255 255 / 0.045);
+    background-image: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.075) 50%, transparent 70%);
+    background-size: 220% 100%;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  }
+  [data-theme="light"] .tm-rail-skel .skeleton,
+  [data-theme="light"] .tm-rail-thread .skeleton {
+    background-color: rgb(28 29 33 / 0.06);
+    background-image: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.75) 50%, transparent 70%);
+    box-shadow: none;
+  }
+  .tm-rail-skel .tm-rail-skel-dot,
+  .tm-rail-thread .tm-rail-skel-dot { border-radius: 50%; flex: none; }
+
+  /* ---------- replies under a thesis ---------- */
+  .tm-rail-thread { position: relative; margin-top: 10px; }
+  /* in a card the conversation opens below a hairline, so it reads as part of the thesis and not the next event */
+  .tm-rail-thread:not(.tm-rail-thread-page) { padding-top: 9px; border-top: 1px solid var(--tm-rail-sep); }
+  .tm-rail-thread-list { position: relative; list-style: none; margin: 0; padding: 0; }
+  /* the thread line runs through the reply avatars */
+  .tm-rail-thread-list::before {
+    content: "";
+    position: absolute;
+    left: 10.5px;
+    top: 12px;
+    bottom: 12px;
+    width: 1px;
+    background: linear-gradient(180deg, rgb(var(--tm-rail-thesis) / 0.45), rgb(var(--tm-rail-thesis) / 0.06));
+  }
+  .tm-rail-reply { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 9px; padding: 6px 0; }
+  .tm-rail-reply .tm-rail-av { margin-top: 1px; box-shadow: 0 0 0 2px var(--surface-top), 0 0 0 3px rgb(var(--tm-rail-thesis) / 0.25); }
+  .tm-rail-reply-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 12px; line-height: 1.35; }
+  .tm-rail-reply-head a { font-weight: 600; color: var(--color-fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; }
+  .tm-rail-reply-head a:hover { text-decoration: underline; text-underline-offset: 2px; }
+  .tm-rail-reply-head a:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  .tm-rail-reply-head span { flex: none; color: var(--tm-rail-quiet); }
+  .tm-rail-reply-head time { flex: none; font-family: var(--font-label); font-size: 10px; color: var(--tm-rail-quiet); }
+  .tm-rail-reply-text { margin-top: 2px; font-size: 12.5px; line-height: 1.45; color: var(--color-fg-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .tm-rail-thread-note { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 4px 0 2px; font-size: 11.5px; color: var(--tm-rail-quiet); }
+  .tm-rail-thread-note button,
+  .tm-rail-thread-note a { color: var(--tm-rail-mint-text); font-weight: 600; cursor: pointer; border-radius: 4px; }
+  .tm-rail-thread-note button:hover,
+  .tm-rail-thread-note a:hover { text-decoration: underline; text-underline-offset: 2px; }
+  .tm-rail-thread-note :is(button, a):focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  .tm-rail-compose { display: flex; align-items: flex-end; gap: 8px; margin-top: 8px; }
+  .tm-rail-compose-field { position: relative; flex: 1; min-width: 0; }
+  .tm-rail-compose textarea {
+    display: block;
+    width: 100%;
+    min-height: 34px;
+    max-height: 132px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    resize: none;
+    field-sizing: content;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--color-fg);
+    outline: none;
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair);
+    transition: box-shadow 0.3s var(--ease-out);
+  }
+  .tm-rail-compose textarea::placeholder { color: var(--color-dim); }
+  .tm-rail-compose textarea:focus {
+    box-shadow:
+      inset 0 1px 0 var(--inset-hi),
+      inset 0 0 0 1px rgb(var(--tm-rail-mint) / 0.45),
+      0 0 0 3px rgb(var(--tm-rail-mint) / calc(0.12 * var(--glow))),
+      0 0 18px -6px rgb(var(--tm-rail-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-rail-compose .btn { height: 34px; padding-inline: 12px; font-size: 12px; border-radius: 10px; }
+  .tm-rail-compose-meta { display: flex; align-items: center; gap: 8px; margin-top: 5px; font-family: var(--font-label); font-size: 9.5px; color: var(--color-dim); }
+  .tm-rail-compose-meta .kbd { height: 16px; padding-inline: 4px; font-size: 9px; }
+  .tm-rail-compose-meta [data-warn] { color: var(--color-warn); }
+  .tm-rail-thread-err { margin-top: 6px; font-size: 11px; color: var(--tm-rail-down-text); }
+  /* standalone (the thesis page): a little larger, no card around the replies */
+  .tm-rail-thread-page { margin-top: 12px; }
+  .tm-rail-thread-page .tm-rail-reply { grid-template-columns: 28px minmax(0, 1fr); column-gap: 11px; padding: 9px 0; }
+  .tm-rail-thread-page .tm-rail-thread-list::before { left: 13.5px; top: 16px; bottom: 16px; }
+  .tm-rail-thread-page .tm-rail-reply-head { font-size: 13px; }
+  .tm-rail-thread-page .tm-rail-reply-text { font-size: 13.5px; }
+  .tm-rail-thread-page .tm-rail-reply .tm-rail-av { box-shadow: 0 0 0 2px var(--surface-top), 0 0 0 3px rgb(var(--tm-rail-thesis) / 0.25); }
+  .tm-rail-thread-page .tm-rail-compose textarea { min-height: 38px; font-size: 13px; }
+  .tm-rail-thread-page .tm-rail-compose .btn { height: 38px; }
+
+  /* ---------- a narrower rail (it resizes from 296 to 460px) ----------
+     the same bar and filters, tighter, in two steps so the default width keeps its full size.
+     last in the file: these override the base rules above at equal specificity */
+  @container tm-rail (max-width: 340px) {
+    .tm-rail-tab { padding-inline: 7px; }
+  }
+  @container tm-rail (max-width: 312px) {
+    .tm-rail-tabs { gap: 2px; padding-inline: 6px 4px; }
+    .tm-rail-tab { gap: 5px; padding-inline: 6px; font-size: 11.5px; }
+    .tm-rail-collapse { width: 26px; }
+    .tm-rail-filters { gap: 6px 4px; padding-inline: 10px; }
+  }
+
+  /* ---------- motion ---------- */
+  @keyframes tm-rail-breathe { 0%, 100% { opacity: calc(0.5 * var(--glow)); } 50% { opacity: var(--glow); } }
+  @keyframes tm-rail-ping { 0% { transform: scale(1); opacity: 0.6; } 80%, 100% { transform: scale(3); opacity: 0; } }
+  @keyframes tm-rail-wash { 0% { opacity: 0; } 16% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes tm-rail-land { from { opacity: 0; transform: translate3d(0, -6px, 0); } to { opacity: 1; transform: none; } }
+  @keyframes tm-rail-run { from { transform: translate3d(-100%, 0, 0); } to { transform: translate3d(250%, 0, 0); } }
+  @keyframes tm-rail-spin { to { transform: rotate(360deg); } }
+  @keyframes tm-rail-panel-in { from { opacity: 0; transform: translate3d(0, 4px, 0); } }
+  @keyframes tm-rail-pill-in { from { opacity: 0; transform: translate(-50%, -6px) scale(0.96); } }
+  @keyframes tm-rail-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  @keyframes tm-rail-tick-up0 { from { color: color-mix(in srgb, var(--tm-rail-up-text) 68%, var(--color-fg)); text-shadow: 0 0 10px rgb(var(--tm-rail-up) / calc(0.3 * var(--glow))); } }
+  @keyframes tm-rail-tick-up1 { from { color: color-mix(in srgb, var(--tm-rail-up-text) 68%, var(--color-fg)); text-shadow: 0 0 10px rgb(var(--tm-rail-up) / calc(0.3 * var(--glow))); } }
+  @keyframes tm-rail-tick-down0 { from { color: color-mix(in srgb, var(--tm-rail-down-text) 68%, var(--color-fg)); text-shadow: 0 0 10px rgb(var(--tm-rail-down) / calc(0.28 * var(--glow))); } }
+  @keyframes tm-rail-tick-down1 { from { color: color-mix(in srgb, var(--tm-rail-down-text) 68%, var(--color-fg)); text-shadow: 0 0 10px rgb(var(--tm-rail-down) / calc(0.28 * var(--glow))); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tm-rail-live::after,
+    .tm-rail-tok[aria-current="page"]::before,
+    .tm-rail-fc-lead::after,
+    .tm-rail-empty-ring::before,
+    .tm-rail-fc-new,
+    .tm-rail-fc-new::before,
+    .tm-rail-loading-line::after,
+    .tm-rail-more-spin,
+    .tm-rail-like[data-pop] svg,
+    .tm-rail-scroll > *,
+    .tm-rail-newpill,
+    .tm-rail-tick-up0,
+    .tm-rail-tick-up1,
+    .tm-rail-tick-down0,
+    .tm-rail-tick-down1 { animation: none !important; }
+  }
+}

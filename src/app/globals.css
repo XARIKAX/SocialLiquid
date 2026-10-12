@@ -52,6 +52,9 @@
   --page-glow-a: rgb(77 227 193 / 0.055);
   --page-glow-b: rgb(107 147 255 / 0.045);
   --glow: 1;
+  --skel-base: rgb(255 255 255 / 0.04);
+  --skel-sheen: rgb(255 255 255 / 0.075);
+  --thumb-mid: #c9fff2;
   --font-label: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
@@ -67,8 +70,9 @@
   --color-line-2: #cfcfc8;
   --color-fg: #1c1d21;
   --color-fg-2: #3a3c43;
-  --color-muted: #666a74;
-  --color-dim: #8a8e98;
+  /* muted and dim stay a step apart and both clear 4.5:1 on paper */
+  --color-muted: #565a64;
+  --color-dim: #6b6f79;
   --color-brand: #0f9f98;
   --color-brand-2: #12b3a8;
   --color-up: #1f9d55;
@@ -92,6 +96,9 @@
   --page-glow-a: rgb(15 159 152 / 0.07);
   --page-glow-b: rgb(63 106 224 / 0.05);
   --glow: 0.45;
+  --skel-base: rgb(28 29 33 / 0.05);
+  --skel-sheen: rgb(255 255 255 / 0.7);
+  --thumb-mid: #e3f7f3;
   color-scheme: light;
 }
 /* surfaces that are art-directed dark regardless of the user's theme (landing) */
@@ -512,7 +519,7 @@ body {
 /* skeleton: a slow light sweep instead of a blink */
 .skeleton {
   border-radius: var(--radius-inner);
-  background: linear-gradient(100deg, var(--inset-bot) 20%, var(--inset-top) 40%, var(--hair) 50%, var(--inset-top) 60%, var(--inset-bot) 80%) var(--recess);
+  background: linear-gradient(100deg, transparent 25%, var(--skel-sheen) 50%, transparent 75%) var(--skel-base);
   background-size: 220% 100%;
   animation: ui-shimmer 1.8s linear infinite;
 }
@@ -536,6 +543,7 @@ body {
 .glow-brand { text-shadow: 0 0 14px rgb(77 227 193 / calc(0.6 * var(--glow))); }
 }
 
+@layer components {
 /* range slider: recessed track, glowing fill, lit thumb */
 input[type="range"].slider {
   -webkit-appearance: none;
@@ -555,7 +563,7 @@ input[type="range"].slider::-webkit-slider-thumb {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: radial-gradient(circle at 38% 32%, #ffffff, #c9fff2 45%, var(--color-brand));
+  background: radial-gradient(circle at 38% 32%, #ffffff, var(--thumb-mid) 45%, var(--color-brand));
   border: 0;
   cursor: grab;
   box-shadow: 0 0 0 3px rgb(77 227 193 / 0.22), 0 0 16px 2px rgb(77 227 193 / calc(0.55 * var(--glow))), 0 2px 6px rgb(0 0 0 / 0.5);
@@ -566,12 +574,13 @@ input[type="range"].slider::-moz-range-thumb {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: radial-gradient(circle at 38% 32%, #ffffff, #c9fff2 45%, var(--color-brand));
+  background: radial-gradient(circle at 38% 32%, #ffffff, var(--thumb-mid) 45%, var(--color-brand));
   border: 0;
   cursor: grab;
   box-shadow: 0 0 0 3px rgb(77 227 193 / 0.22), 0 0 16px 2px rgb(77 227 193 / calc(0.55 * var(--glow)));
 }
 input[type="range"].slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--color-brand), 0 0 16px 2px rgb(77 227 193 / 0.6); }
+}
 
 @keyframes flash-up { from { background-color: rgb(34 211 107 / 0.18); } to { background-color: transparent; } }
 @keyframes flash-down { from { background-color: rgb(255 77 79 / 0.18); } to { background-color: transparent; } }
@@ -634,10 +643,12 @@ input[type="range"].slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0
 [data-theme="light"] .pill-brand { color: var(--color-brand); }
 [data-theme="light"] .pill-warn { color: var(--color-warn); }
 [data-theme="light"] .pill-liq { color: #b3261e; }
-[data-theme="light"] .btn-primary { color: #fff; background: linear-gradient(180deg, #17b8ad, #0f9690); border-color: #0d8c86; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 8px 20px -10px rgb(15 159 152 / 0.7); text-shadow: none; }
-[data-theme="light"] .btn-up { color: #fff; background: linear-gradient(180deg, #27b062, #1c8a4b); border-color: #1a8046; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 8px 20px -10px rgb(31 157 85 / 0.7); text-shadow: none; }
-[data-theme="light"] .btn-down { color: #fff; background: linear-gradient(180deg, #e2555a, #c53a40); border-color: #b9353b; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 8px 20px -10px rgb(217 68 74 / 0.7); text-shadow: none; }
-[data-theme="light"] .count { color: #fff; background: linear-gradient(180deg, #17b8ad, #0f9690); }
+[data-theme="light"] .btn-primary { color: #fff; background: linear-gradient(180deg, #0f9a91, #0b7a74); border-color: #0a716b; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 8px 20px -10px rgb(15 159 152 / 0.7); text-shadow: none; }
+[data-theme="light"] .btn-up { color: #fff; background: linear-gradient(180deg, #1f9a54, #16783f); border-color: #146e3a; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 8px 20px -10px rgb(31 157 85 / 0.7); text-shadow: none; }
+[data-theme="light"] .btn-down { color: #fff; background: linear-gradient(180deg, #d4454b, #b2323a); border-color: #a62e35; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 8px 20px -10px rgb(217 68 74 / 0.7); text-shadow: none; }
+[data-theme="light"] .count { color: #fff; background: linear-gradient(180deg, #0e837d, #0b726d); }
+/* hyperliquid's coin glyphs are drawn for dark backgrounds: give them an ink disc on paper */
+[data-theme="light"] .coin-icon { background-color: #17222a; }
 
 @media (prefers-reduced-motion: reduce) {
   .toast-in, .skeleton, .live-dot, .live-dot::after, .btn-glow::before, .btn-glow::after { animation: none !important; }

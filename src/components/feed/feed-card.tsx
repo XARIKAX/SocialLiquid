@@ -1,13 +1,14 @@
 "use client";
+import "./feed.css";
 import Link from "next/link";
-import { useState } from "react";
+import { memo, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { FeedItem } from "@/lib/queries";
 import { api } from "@/lib/client";
-import { fmtDuration, fmtPx, fmtUsd, timeAgo } from "@/lib/format";
+import { fmtDuration, fmtPx, fmtUsd, shortAddr, timeAgo, userPath } from "@/lib/format";
 import { livePnl } from "@/hooks/use-market";
-import { Avatar, CoinIcon, EventPill, Icon, OutcomePill, Pnl, TraderLink } from "../ui";
-import { ThesisThread } from "./thesis-thread";
+import { Avatar, CoinIcon, EventPill, Icon, OutcomePill } from "../ui";
+import { ThesisThread, useSignInPrompt } from "./thesis-thread";
 
 type Payload = { side?: string; sizeUsd?: number; size?: number; leverage?: number; entryPx?: number; closePx?: number | null; realisedPnl?: number; holdMs?: number; text?: string };
 
@@ -20,7 +21,110 @@ export function copyHref(item: FeedItem): string {
   return `/m/${item.coin}?${q.toString()}`;
 }
 
-export function FeedCard({ item, mid, onNavigate, signedIn }: { item: FeedItem; mid?: number; onNavigate?: () => void; signedIn: boolean }) {
+/** how the rail names a trader (as the landing mock does): @handle once claimed, else the hyperliquid display name, else a short address */
+export function railName(u: { handle?: string | null; displayName?: string | null } | null | undefined, address: string): string {
+  return u?.handle ? `@${u.handle}` : u?.displayName ?? shortAddr(address);
+}
+
+/**
+ * usd as the rail shows it, as the mock does: whole dollars once cents stop mattering (+$2,140, not +$2,140.37),
+ * cents below $100, and never past the cent (a fresh position reads $0.00, not +$0.0027). `compact` columns use
+ * whole dollars under $1K so they read -$277 beside +$4.9K. the tone follows what is shown: a rounded zero is flat.
+ */
+function railUsd(v: number, compact?: boolean): { text: string; tone: "up" | "down" | "flat" } {
+  const abs = Math.abs(v);
+  const whole = compact ? abs < 999.5 : abs >= 99.995;
+  const shown = whole ? Math.round(abs) : Math.round(abs * 100) / 100;
+  if (shown === 0) return { text: whole ? "$0" : "$0.00", tone: "flat" };
+  const body = whole ? `$${shown.toLocaleString("en-US")}` : fmtUsd(shown, { compact });
+  return { text: `${v < 0 ? "-" : "+"}${body}`, tone: v < 0 ? "down" : "up" };
+}
+
+/** a usd amount coloured by sign, glowing softly unless `glow` is off (closed pnl, leaderboard pnl) */
+export function RailMoney({ v, compact, className = "", quiet, glow = true }: { v: number | null | undefined; compact?: boolean; className?: string; quiet?: boolean; glow?: boolean }) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return <span className={`tm-rail-dim ${className}`}>–</span>;
+  const { text, tone } = railUsd(v, compact);
+  return <span className={`num tm-rail-pnl tm-rail-pnl-${tone} ${quiet ? "tm-rail-upnl" : glow ? "" : "tm-rail-noglow"} ${className}`}>{text}</span>;
+}
+
+/**
+ * a link to a trader's profile. in the rail it also calls `onNavigate`, so on a phone the page comes forward
+ * instead of opening behind the feed tab. `decorative` (the avatar beside the name) keeps it out of the tab
+ * order and the accessibility tree: the name is the one link to it.
+ */
+function TraderAnchor({ address, handle, onNavigate, className = "", decorative, children }: { address: string; handle?: string | null; onNavigate?: () => void; className?: string; decorative?: boolean; children: ReactNode }) {
+  return (
+    <Link href={userPath({ handle, address })} onClick={onNavigate} className={className} tabIndex={decorative ? -1 : undefined} aria-hidden={decorative || undefined}>
+      {children}
+    </Link>
+  );
+}
+
+/**
+ * one clock for every relative time on the page: a single interval, started by the first label and stopped with the
+ * last. a label re-renders only itself, so a memoised card that nothing else touches still counts up its age.
+ */
+const clock = (() => {
+  let now = 0;
+  let iv = 0;
+  const subs = new Set<() => void>();
+  return {
+    now: () => now,
+    subscribe(fn: () => void) {
+      subs.add(fn);
+      if (subs.size === 1) {
+        now = Date.now();
+        iv = window.setInterval(() => {
+          now = Date.now();
+          subs.forEach((f) => f());
+        }, 5000);
+      }
+      return () => {
+        subs.delete(fn);
+        if (!subs.size) window.clearInterval(iv);
+      };
+    },
+  };
+})();
+
+/** "now" for the first few seconds (a bare 0s reads as a glitch), then the shared format: 12s, 4m, 3h */
+function Ago({ time, className }: { time: string; className?: string }) {
+  useSyncExternalStore(clock.subscribe, clock.now, () => 0);
+  const t = new Date(time).getTime();
+  const label = Date.now() - t < 5000 ? "now" : timeAgo(time);
+  return (
+    <time className={className} dateTime={time} title={new Date(t).toLocaleString()} suppressHydrationWarning>
+      {label}
+    </time>
+  );
+}
+
+function Tri({ up }: { up: boolean }) {
+  return (
+    <svg width="7" height="7" viewBox="0 0 10 10" fill="currentColor" aria-hidden style={{ display: "inline", verticalAlign: "0.5px" }}>
+      <path d={up ? "M5 1.5 9 8.5H1z" : "M5 8.5 1 1.5h8z"} />
+    </svg>
+  );
+}
+
+/** a return on equity as an arrow and a percentage, coloured by sign */
+function Roe({ v, className = "" }: { v: number; className?: string }) {
+  const up = v >= 0;
+  return (
+    <span className={`num ${up ? "tm-rail-up" : "tm-rail-down"} ${className}`}>
+      <Tri up={up} /> <span className="sr-only">{up ? "up" : "down"} </span>
+      {Math.abs(v * 100).toFixed(2)}%
+    </span>
+  );
+}
+
+/**
+ * one event in the stream, in the landing mock's language: identity and event pill on top, the position on
+ * the second line (side first, then the coin), then a thesis as a periwinkle quote or a close's prices and hold.
+ * optional `fresh` (glows in) and `lead` (the newest card: a breathing mint edge) are set by the rail.
+ * memoised: the rail passes `mid` only to open positions, so a price poll re-renders just the cards it moves.
+ */
+export const FeedCard = memo(function FeedCard({ item, mid, onNavigate, signedIn, fresh, lead }: { item: FeedItem; mid?: number; onNavigate?: () => void; signedIn: boolean; fresh?: boolean; lead?: boolean }) {
   const p = item.payload as Payload;
   const pos = item.position;
   const side = (p.side ?? pos?.side) as string | undefined;
@@ -29,147 +133,198 @@ export function FeedCard({ item, mid, onNavigate, signedIn }: { item: FeedItem; 
   const entry = p.entryPx ?? pos?.entryPx;
   const isClosed = item.type === "CLOSED" || item.type === "LIQUIDATED";
   const isThesis = item.type === "THESIS";
-  const live = pos && !pos.closedAt ? livePnl({ side: pos.side, size: pos.size, entryPx: pos.entryPx }, mid) : null;
+  const open = !!pos && !pos.closedAt;
+  const live = pos && open ? livePnl({ side: pos.side, size: pos.size, entryPx: pos.entryPx }, mid) : null;
   const roe = live !== null && pos && pos.sizeUsd ? (live * pos.leverage) / pos.sizeUsd : null;
+  const realised = p.realisedPnl ?? pos?.realisedPnl ?? null;
+  const closedRoe = isClosed && realised !== null && sizeUsd && lev ? (realised * lev) / sizeUsd : null;
   const handle = item.user?.handle;
   const displayName = item.user?.displayName;
+  const name = railName(item.user, item.address);
+  const tone = item.type === "LONG" ? "up" : item.type === "SHORT" || item.type === "LIQUIDATED" ? "down" : isThesis ? "thesis" : (realised ?? 0) >= 0 ? "up" : "down";
+  const long = side === "LONG";
+  const sideTag = side && <span className={`tm-rail-side ${long ? "tm-rail-up" : "tm-rail-down"}`}>{long ? "Long" : "Short"}</span>;
+  const coinLink = (
+    <Link href={`/m/${item.coin}`} onClick={onNavigate} className="tm-rail-fc-coin" title={`Open ${item.coin}`}>
+      <span className="tm-rail-coin">
+        <CoinIcon coin={item.coin} size={15} />
+      </span>
+      <b>{item.coin}</b>
+    </Link>
+  );
 
   return (
-    <article className={`relative px-4 py-3 border-b border-line row-hover ${isThesis ? "thread" : ""}`}>
-      <div className="flex items-center gap-2.5">
-        <TraderLink address={item.address} handle={handle} displayName={displayName} className="shrink-0 hover:no-underline">
-          <Avatar address={item.address} url={item.user?.avatarUrl} handle={handle ?? displayName} size={32} />
-        </TraderLink>
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <TraderLink address={item.address} handle={handle} displayName={displayName} className="font-semibold text-[13px] truncate max-w-[10rem]" />
+    <article className={`tm-rail-fc ${isThesis ? "tm-rail-fc-thesis" : ""} ${fresh ? "tm-rail-fc-new" : ""} ${lead ? "tm-rail-fc-lead" : ""}`} data-tone={tone}>
+      <div className="tm-rail-fc-top">
+        <TraderAnchor address={item.address} handle={handle} onNavigate={onNavigate} decorative className="tm-rail-av-link">
+          <span className="tm-rail-av">
+            <Avatar address={item.address} url={item.user?.avatarUrl} handle={handle ?? displayName} size={28} />
+          </span>
+        </TraderAnchor>
+        <div className="tm-rail-fc-who">
+          <TraderAnchor address={item.address} handle={handle} onNavigate={onNavigate} className="tm-rail-fc-name">
+            {name}
+          </TraderAnchor>
           {item.user?.xHandle && (
-            <a href={`https://x.com/${item.user.xHandle}`} target="_blank" rel="noreferrer" className="text-dim hover:text-fg" title={`@${item.user.xHandle}`}>
+            <a href={`https://x.com/${item.user.xHandle}`} target="_blank" rel="noreferrer" className="tm-rail-fc-x" title={`@${item.user.xHandle} on X`} aria-label={`@${item.user.xHandle} on X`}>
               <Icon.x />
             </a>
           )}
           <EventPill type={item.type} />
         </div>
-        <span className="text-[11px] text-dim num shrink-0">{timeAgo(item.time)}</span>
+        {open && !isClosed && (
+          <Link href={copyHref(item)} onClick={onNavigate} className="tm-rail-copy" title={`Open the same ${side === "SHORT" ? "short" : "long"} on ${item.coin}`}>
+            <Icon.copy /> Copy
+          </Link>
+        )}
+        <Ago time={item.time} className="tm-rail-fc-ago" />
       </div>
 
-      <div className="pl-[42px] mt-1.5">
+      <div className="tm-rail-fc-body">
         {!isClosed && (
-          <div className="flex items-center gap-1.5 text-[13px] flex-wrap">
-            <Link href={`/m/${item.coin}`} onClick={onNavigate} className="flex items-center gap-1.5 font-semibold hover:underline underline-offset-2">
-              <CoinIcon coin={item.coin} size={18} />
-              {item.coin}
-            </Link>
-            {sizeUsd !== undefined && <span className="num font-semibold">{fmtUsd(sizeUsd, { compact: true })}</span>}
+          <div className="tm-rail-fc-mid num">
+            {/* a long or short event says its side in the pill; a thesis says it here */}
+            {isThesis && sideTag}
+            {coinLink}
+            {sizeUsd !== undefined && <span>{fmtUsd(sizeUsd, { compact: true })}</span>}
             {entry !== undefined && (
               <>
-                <span className="text-dim">at</span>
-                <span className="num text-fg-2">{fmtPx(entry)}</span>
+                <span className="tm-rail-dim">at</span>
+                <span>{fmtPx(entry)}</span>
               </>
             )}
-            {lev !== undefined && <span className="pill pill-neutral num">{lev}x</span>}
-            {isThesis && roe !== null && (
-              <span className={`num text-xs ${roe >= 0 ? "text-up" : "text-down"}`}>
-                ({roe >= 0 ? "▲" : "▼"} {Math.abs(roe * 100).toFixed(2)}%)
+            {lev !== undefined && <span className="tm-rail-lev">{lev}x</span>}
+            {!isThesis && live !== null && (
+              <span className="tm-rail-fc-right" title="Unrealised PnL, live">
+                <RailMoney v={live} quiet />
               </span>
-            )}
-            {isThesis && pos && !pos.closedAt && <span className="w-1.5 h-1.5 rounded-full bg-thesis live-dot" />}
-            {!isThesis && live !== null && <Pnl value={live} className="ml-auto text-xs font-medium" />}
-          </div>
-        )}
-        {pos && !pos.closedAt && (pos.copiedFrom || pos.copiers > 0 || !isClosed) && (
-          <div className="flex items-center gap-2 mt-1.5 text-[11px] text-dim flex-wrap">
-            {pos.copiedFrom && (
-              <span className="inline-flex items-center gap-1">
-                <Icon.copy /> copied <TraderLink address={pos.copiedFrom.address} handle={pos.copiedFrom.handle} displayName={pos.copiedFrom.displayName} className="text-fg-2 font-medium" />
-              </span>
-            )}
-            {pos.copiers > 0 && <span className="num">{pos.copiers} {pos.copiers === 1 ? "trader" : "traders"} copied this</span>}
-            {!isClosed && (
-              <Link
-                href={copyHref(item)}
-                onClick={onNavigate}
-                className="ml-auto btn h-7 px-2.5 text-[11px] font-semibold border-brand/40 text-brand hover:bg-brand/10"
-                title={`Open the same ${side === "SHORT" ? "short" : "long"} on ${item.coin}`}
-              >
-                <Icon.copy /> Copy
-              </Link>
             )}
           </div>
         )}
 
         {isClosed && (
-          <div className="card-2 flex items-center gap-2.5 px-3 py-2 mt-0.5">
-            <CoinIcon coin={item.coin} size={28} />
-            <div className="min-w-0 flex-1 leading-tight">
-              <div className="flex items-center gap-1.5">
-                <Link href={`/m/${item.coin}`} onClick={onNavigate} className="font-semibold text-[13px] hover:underline underline-offset-2">
-                  {item.coin}
-                </Link>
-                {side && <span className={`text-[11px] font-medium ${side === "LONG" ? "text-up" : "text-down"}`}>{side === "LONG" ? "Long" : "Short"}</span>}
-                {lev !== undefined && <span className="text-[11px] text-dim num">{lev}x</span>}
-              </div>
-              <div className="text-[11px] text-muted num mt-0.5 truncate">
-                {sizeUsd !== undefined && <span>{fmtUsd(sizeUsd, { compact: true })} · </span>}
-                {entry !== undefined && <span>{fmtPx(entry)}</span>}
-                {p.closePx !== undefined && p.closePx !== null && <span> → {fmtPx(p.closePx)}</span>}
-                {p.holdMs !== undefined && <span> · held {fmtDuration(p.holdMs)}</span>}
-              </div>
+          <>
+            <div className="tm-rail-fc-mid num">
+              {sideTag}
+              {coinLink}
+              {sizeUsd !== undefined && <span>{fmtUsd(sizeUsd, { compact: true })}</span>}
+              {lev !== undefined && <span className="tm-rail-lev">{lev}x</span>}
+              <span className="tm-rail-fc-right">
+                <RailMoney v={realised} />
+              </span>
             </div>
-            <div className="text-right leading-tight shrink-0">
-              <Pnl value={p.realisedPnl ?? pos?.realisedPnl} className="text-[13px] font-semibold block" />
-              {sizeUsd !== undefined && lev !== undefined && (p.realisedPnl ?? pos?.realisedPnl) !== undefined && (
-                <span className={`num text-[11px] ${(p.realisedPnl ?? pos?.realisedPnl ?? 0) >= 0 ? "text-up" : "text-down"}`}>
-                  {(p.realisedPnl ?? pos?.realisedPnl ?? 0) >= 0 ? "▲" : "▼"} {Math.abs((((p.realisedPnl ?? pos?.realisedPnl ?? 0) * lev) / sizeUsd) * 100).toFixed(2)}%
-                </span>
-              )}
+            <div className="tm-rail-fc-sub num">
+              <span className="tm-rail-ellipsis">
+                {entry !== undefined && fmtPx(entry)}
+                {p.closePx !== undefined && p.closePx !== null && <> → {fmtPx(p.closePx)}</>}
+                {p.holdMs !== undefined && <> · held {fmtDuration(p.holdMs)}</>}
+              </span>
+              {closedRoe !== null && <Roe v={closedRoe} className="ml-auto shrink-0" />}
             </div>
+          </>
+        )}
+
+        {pos && open && (pos.copiedFrom || pos.copiers > 0) && (
+          <div className="tm-rail-fc-meta">
+            {pos.copiedFrom && (
+              <span>
+                <Icon.copy /> copied{" "}
+                <TraderAnchor address={pos.copiedFrom.address} handle={pos.copiedFrom.handle} onNavigate={onNavigate} className="tm-rail-fc-meta-link">
+                  {railName(pos.copiedFrom, pos.copiedFrom.address)}
+                </TraderAnchor>
+              </span>
+            )}
+            {pos.copiers > 0 && (
+              <span className="tm-rail-copiers num">
+                {pos.copiers} {pos.copiers === 1 ? "copier" : "copiers"}
+              </span>
+            )}
           </div>
         )}
 
-        {item.thesis && <ThesisBody item={item} signedIn={signedIn} />}
+        {item.thesis && <ThesisBody item={item} signedIn={signedIn} roe={roe} onNavigate={onNavigate} />}
       </div>
     </article>
   );
-}
+});
 
-function ThesisBody({ item, signedIn }: { item: FeedItem; signedIn: boolean }) {
+function ThesisBody({ item, signedIn, roe, onNavigate }: { item: FeedItem; signedIn: boolean; roe: number | null; onNavigate?: () => void }) {
   const t = item.thesis!;
   const qc = useQueryClient();
+  const prompt = useSignInPrompt();
   const [likes, setLikes] = useState(t.likes);
   const [liked, setLiked] = useState(t.likedByMe);
   const [busy, setBusy] = useState(false);
+  const [pop, setPop] = useState(0);
   const [replies, setReplies] = useState(t.replies ?? 0);
   const [threadOpen, setThreadOpen] = useState(false);
   const pos = item.position;
+  // follow the server's counts as the feed refreshes, unless a like is in flight
+  useEffect(() => {
+    if (busy) return;
+    setLikes(t.likes);
+    setLiked(t.likedByMe);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t.likes, t.likedByMe]);
+  // and the reply count, when another reader adds one
+  useEffect(() => {
+    setReplies(t.replies ?? 0);
+  }, [t.replies]);
   const toggleLike = async () => {
-    if (!signedIn || busy) return;
+    if (!signedIn) return prompt();
+    if (busy) return;
+    // optimistic: the heart answers at once, the server's count settles it
+    const was = liked;
+    setLiked(!was);
+    setLikes((n) => Math.max(0, n + (was ? -1 : 1)));
+    if (!was) setPop((n) => n + 1);
     setBusy(true);
     try {
       const r = await api<{ liked: boolean; likes: number }>("/api/like", { method: "POST", json: { thesisId: t.id } });
       setLiked(r.liked);
       setLikes(r.likes);
       qc.invalidateQueries({ queryKey: ["feed"] });
+    } catch {
+      setLiked(was);
+      setLikes(t.likes);
     } finally {
       setBusy(false);
     }
   };
   return (
-    <div className="mt-2">
-      <p className="text-[13.5px] leading-snug text-fg whitespace-pre-wrap break-words">{t.text}</p>
-      <div className="mt-2 flex items-center gap-3">
-        <button onClick={toggleLike} className={`inline-flex items-center gap-1 text-xs num ${liked ? "text-down" : "text-dim hover:text-fg"} ${signedIn ? "" : "cursor-default"}`} title={signedIn ? "like" : "sign in to like"}>
-          <Icon.heart filled={liked} /> {likes}
+    <>
+      <p className="tm-rail-quote">{t.text}</p>
+      <div className="tm-rail-fc-foot">
+        {/* the call and how it is going: holding with the live return, or the outcome with what it made */}
+        <span className="tm-rail-fc-result">
+          <OutcomePill outcome={t.outcome} />
+          {pos && !pos.closedAt && roe !== null && (
+            <span className="tm-rail-fc-result-live" title="Return on margin, live">
+              <Roe v={roe} className="tm-rail-roe" />
+              <span className="tm-rail-live tm-rail-live-thesis" aria-hidden />
+            </span>
+          )}
+          {t.outcome !== "OPEN" && pos?.closedAt && <RailMoney v={pos.realisedPnl} className="text-[12px]" />}
+        </span>
+        <button
+          type="button"
+          onClick={toggleLike}
+          className="tm-rail-act tm-rail-like"
+          aria-pressed={liked}
+          data-pop={pop ? "" : undefined}
+          title={signedIn ? (liked ? "Unlike" : "Like") : "Sign in to like"}
+          aria-label={`${liked ? "Unlike" : "Like"}, ${likes} ${likes === 1 ? "like" : "likes"}`}
+        >
+          <Icon.heart key={pop} filled={liked} /> <span className="num">{likes}</span>
         </button>
-        <button onClick={() => setThreadOpen((v) => !v)} className={`inline-flex items-center gap-1 text-xs num ${threadOpen ? "text-fg" : "text-dim hover:text-fg"}`} title="replies">
-          <Icon.reply /> {replies}
+        <button type="button" onClick={() => setThreadOpen((v) => !v)} className="tm-rail-act" aria-expanded={threadOpen} title={threadOpen ? "Hide replies" : "Replies"} aria-label={`${replies} ${replies === 1 ? "reply" : "replies"}`}>
+          <Icon.reply /> <span className="num">{replies}</span>
         </button>
-        {t.outcome !== "OPEN" && <OutcomePill outcome={t.outcome} />}
-        {t.outcome !== "OPEN" && pos?.closedAt && <Pnl value={pos.realisedPnl} className="text-xs" />}
-        <Link href={`/t/${item.user?.handle ?? item.address}/thesis/${t.id}`} className="ml-auto text-dim hover:text-fg" title="permalink">
+        <Link href={`/t/${item.user?.handle ?? item.address}/thesis/${t.id}`} onClick={onNavigate} className="tm-rail-act tm-rail-push" title="Open the thesis" aria-label="Open the thesis">
           <Icon.share />
         </Link>
       </div>
-      {threadOpen && <ThesisThread thesisId={t.id} compact autoFocus onCount={setReplies} />}
-    </div>
+      {threadOpen && <ThesisThread thesisId={t.id} compact autoFocus onCount={setReplies} onNavigate={onNavigate} />}
+    </>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import "./ticket.css";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
@@ -7,20 +8,22 @@ import { TICKET_PRICE_EVENT } from "@/hooks/use-account";
 import { api } from "@/lib/client";
 import { fmtPx, fmtUsd } from "@/lib/format";
 import type { MarketSummary } from "@/lib/hl-types";
-import { Icon, Toggle } from "../ui";
-import { useOnboarding } from "./onboarding";
-import { openFunds } from "./funds";
+import { Icon, Switch } from "../ui";
+import { STAGE_STEP, useOnboarding, type Stage } from "./onboarding";
+import { openFunds, TkIcon, TkNum } from "./funds";
 
 type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap";
-const PRO: [OrderType, string][] = [
-  ["stopMarket", "Stop Market"],
-  ["stopLimit", "Stop Limit"],
-  ["takeProfitMarket", "Take Profit Market"],
-  ["takeProfitLimit", "Take Profit Limit"],
-  ["scale", "Scale"],
-  ["twap", "TWAP"],
+const PRO: [OrderType, string, string][] = [
+  ["stopMarket", "Stop Market", "Market order once the stop trades"],
+  ["stopLimit", "Stop Limit", "Limit order once the stop trades"],
+  ["takeProfitMarket", "Take Profit Market", "Market order at your target"],
+  ["takeProfitLimit", "Take Profit Limit", "Limit order at your target"],
+  ["scale", "Scale", "A ladder of limits across a range"],
+  ["twap", "TWAP", "Sliced into small orders over time"],
 ];
 const LABEL: Record<OrderType, string> = { market: "Market", limit: "Limit", stopMarket: "Stop Market", stopLimit: "Stop Limit", takeProfitMarket: "TP Market", takeProfitLimit: "TP Limit", scale: "Scale", twap: "TWAP" };
+const TIF_HINT = { Gtc: "Good till cancelled", Ioc: "Immediate or cancel", Alo: "Add liquidity only (post only)" } as const;
+const QUICK = [10, 100, 500, 1000];
 const TAKER = 0.00045;
 const MAKER = 0.00015;
 const BUILDER = 0.0005;
@@ -28,6 +31,23 @@ const MAX_SLIP = 0.03;
 
 type Book = { bids: { px: number; sz: number }[]; asks: { px: number; sz: number }[] };
 type OrderResponse = { order: { status: "filled" | "resting" | "twap"; avgPx?: number; totalSz?: number; oid?: number; count?: number; twapId?: number }; thesis: { id: string } | null; copied?: boolean };
+
+/** "$100", "$1,250", "$12.50": the cta speaks in round numbers */
+function fmtCta(v: number) {
+  if (v >= 100) return `$${Math.round(v).toLocaleString("en-US")}`;
+  return `$${v.toFixed(2).replace(/\.00$/, "")}`;
+}
+const fmtQuick = (v: number) => (v >= 1000 ? `$${v / 1000}K` : `$${v}`);
+/** the line under the cta while onboarding: what this step is, in a few words */
+const STAGE_NOTE: Record<Stage, string> = {
+  connect: "Non-custodial · funds stay on Hyperliquid",
+  signin: "Free signature · no gas, no permissions",
+  invite: "Invite only while we test with real money",
+  handle: "Your name on the feed",
+  enable: "Two signatures, once",
+  ready: "",
+};
+const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
   const { address, signedIn } = useAuth();
@@ -37,6 +57,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const bal = useBalance(signedIn ? address : null);
   const maxLev = market?.maxLeverage ?? 50;
   const szDec = market?.szDecimals ?? 4;
+  const uid = useId();
 
   const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
   const [type, setType] = useState<OrderType>("market");
@@ -57,9 +78,17 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const [scale, setScale] = useState({ start: "", end: "", count: "5", skew: "1" });
   const [twap, setTwap] = useState({ minutes: "30", randomize: true });
   const [thesis, setThesis] = useState("");
+  /** the thesis composer is on by default; switching it off hides the card and posts nothing */
+  const [postThesis, setPostThesis] = useState(true);
   const [showStep, setShowStep] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  /** bumps when a price lands from the book, so the price field lights once */
+  const [pxFlash, setPxFlash] = useState(0);
+  /** bumps when the cta is pressed without a size: the size field lights and takes focus */
+  const [sizeNudge, setSizeNudge] = useState(0);
+  /** the cta dock is pinned to the bottom of the column (the ticket runs past the fold) */
+  const [stuck, setStuck] = useState(false);
   /** copy trade: set from /m/[coin]?copy=<positionId>&from=<address>&side=&lev=&name= */
   const [copyOf, setCopyOf] = useState<{ positionId: string; address: string; name: string; side: "LONG" | "SHORT"; lev: number } | null>(null);
   useEffect(() => {
@@ -88,6 +117,73 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
     window.history.replaceState(null, "", u.pathname + (u.search || ""));
   };
   const proRef = useRef<HTMLDivElement>(null);
+  const levRef = useRef<HTMLDivElement>(null);
+  const sizeRef = useRef<HTMLInputElement>(null);
+  const thesisRef = useRef<HTMLTextAreaElement>(null);
+  const sideRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const levSliderRef = useRef<HTMLInputElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const specRef = useRef<HTMLSpanElement>(null);
+  const dockEndRef = useRef<HTMLSpanElement>(null);
+  const stepRef = useRef<HTMLDivElement>(null);
+  /* the dock. two observers, no scroll listener, nothing per frame:
+     - engaged: the ticket's top edge has risen into the upper part of the viewport, i.e. the trader is in
+       the ticket. only then is the dock sticky, so on phones and tablets (where the ticket scrolls in from
+       below) it never rides over the margin row, the order types or long/short while they come into view.
+       (written straight to the dock as data-engaged: it changes a css position, nothing react renders)
+     - stuck: a zero-height sentinel sits under the dock's natural place, drawn one sticky inset lower (css),
+       so it crosses the edge of the scroll area at the exact moment the dock pins or lets go. */
+  useEffect(() => {
+    const top = specRef.current;
+    const dock = dockRef.current;
+    const end = dockEndRef.current;
+    if (!top || !dock || !end || typeof IntersectionObserver === "undefined") return;
+    let engaged = false;
+    const measure = () => {
+      const inset = parseFloat(getComputedStyle(end).top) || 0;
+      setStuck(engaged && end.getBoundingClientRect().top - inset - dock.getBoundingClientRect().bottom > 1);
+    };
+    const engage = new IntersectionObserver(
+      ([e]) => {
+        const on = !!e.rootBounds && e.boundingClientRect.top <= e.rootBounds.bottom;
+        if (on === engaged) return;
+        engaged = on;
+        dock.toggleAttribute("data-engaged", on);
+        measure();
+      },
+      { rootMargin: "0px 0px -55% 0px" },
+    );
+    const pin = new IntersectionObserver(measure);
+    engage.observe(top);
+    pin.observe(end);
+    return () => {
+      engage.disconnect();
+      pin.disconnect();
+    };
+  }, []);
+  // an opened menu takes focus on its checked (or first) item; the leverage dialog on its slider
+  useEffect(() => {
+    if (!proOpen) return;
+    const items = menuRef.current?.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]");
+    (menuRef.current?.querySelector<HTMLButtonElement>("[aria-checked=true]") ?? items?.[0])?.focus({ preventScroll: true });
+  }, [proOpen]);
+  useEffect(() => {
+    if (levOpen) levSliderRef.current?.focus({ preventScroll: true });
+  }, [levOpen]);
+
+  // an opened onboarding step is brought into view (it opens under the cta, often past the fold)
+  useEffect(() => {
+    if (!showStep) return;
+    const id = requestAnimationFrame(() => stepRef.current?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" }));
+    return () => cancelAnimationFrame(id);
+  }, [showStep]);
+  // a success note bows out on its own (its timer is a css animation, so hover pauses it); errors stay until dismissed
+  useEffect(() => {
+    if (!msg?.ok || !reducedMotion()) return;
+    const t = window.setTimeout(() => setMsg((m) => (m === msg ? null : m)), 9000);
+    return () => window.clearTimeout(t);
+  }, [msg]);
 
   useEffect(() => setLev((l) => Math.min(l, maxLev)), [maxLev]);
   useEffect(() => {
@@ -102,18 +198,37 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
       const px = (e as CustomEvent<number>).detail;
       setPrice(String(Number(px.toPrecision(7))));
       setType((t) => (t === "market" ? "limit" : t));
+      setPxFlash((n) => n + 1);
     };
     window.addEventListener(TICKET_PRICE_EVENT, h);
     return () => window.removeEventListener(TICKET_PRICE_EVENT, h);
   }, []);
+  // popovers close on an outside press or Escape
   useEffect(() => {
-    const h = (e: MouseEvent) => !proRef.current?.contains(e.target as Node) && setProOpen(false);
+    const h = (e: MouseEvent) => {
+      if (!proRef.current?.contains(e.target as Node)) setProOpen(false);
+      if (!levRef.current?.contains(e.target as Node)) setLevOpen(false);
+    };
+    const k = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // focus goes back to the trigger it came from
+      const a = document.activeElement;
+      if (proRef.current?.contains(a)) proRef.current.querySelector<HTMLButtonElement>("button")?.focus();
+      if (levRef.current?.contains(a)) levRef.current.querySelector<HTMLButtonElement>(".tm-tk-lev")?.focus();
+      setProOpen(false);
+      setLevOpen(false);
+    };
     document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    document.addEventListener("keydown", k);
+    return () => {
+      document.removeEventListener("mousedown", h);
+      document.removeEventListener("keydown", k);
+    };
   }, []);
 
   const isLimit = type === "limit" || type === "stopLimit" || type === "takeProfitLimit";
   const isTrig = type.startsWith("stop") || type.startsWith("takeProfit");
+  const isMarketish = type === "market" || type.endsWith("Market");
   const refPx = isLimit && Number(price) ? Number(price) : type === "scale" && Number(scale.start) && Number(scale.end) ? (Number(scale.start) + Number(scale.end)) / 2 : (mid ?? market?.markPx ?? 0);
   const myPos = bal.data?.positions.find((p) => p.coin === coin && p.szi !== 0);
   const avail = bal.data?.withdrawable ?? 0;
@@ -139,7 +254,11 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
     if (left > 0) return MAX_SLIP;
     return Math.abs(cost / sizeCoin - mid) / mid;
   }, [book, sizeCoin, type, side, mid]);
-  const feeRate = (type === "market" || type.endsWith("Market") || tif === "Ioc" ? TAKER : MAKER) + BUILDER;
+  /* the fee estimate (display only): taker for anything that takes liquidity (market, triggered market,
+     twap slices, an ioc limit), maker for orders that rest */
+  const takes = type === "market" || type.endsWith("Market") || type === "twap" || (isLimit && tif === "Ioc");
+  const baseFee = takes ? TAKER : MAKER;
+  const feeRate = baseFee + BUILDER;
   const tpGain = Number(tp) && refPx ? ((Number(tp) - refPx) / refPx) * dir * lev : null;
   const slLoss = Number(sl) && refPx ? ((Number(sl) - refPx) / refPx) * dir * lev : null;
 
@@ -158,6 +277,13 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
     if (u === unit) return;
     if (sizeCoin) setSize(u === "coin" ? String(Number(sizeCoin.toFixed(szDec))) : String(Math.floor(sizeUsd)));
     setUnit(u);
+  };
+  /** a quick size is the same as typing it in dollars */
+  const pickUsd = (v: number) => {
+    setUnit("usd");
+    setSize(String(v));
+    const c = refPx ? v / refPx : 0;
+    setPct(maxCoin ? Math.min(100, Math.round((c / maxCoin) * 100)) : 0);
   };
 
   const invalid = ready && (() => {
@@ -192,14 +318,16 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
           sl: tpsl && Number(sl) ? Number(sl) : undefined,
           scale: type === "scale" ? { startPx: Number(scale.start), endPx: Number(scale.end), count: Number(scale.count), skew: Number(scale.skew) || 1 } : undefined,
           twap: type === "twap" ? { minutes: Number(twap.minutes), randomize: twap.randomize } : undefined,
-          thesis: thesis.trim() || undefined,
+          thesis: postThesis ? thesis.trim() || undefined : undefined,
           copyOf: copyOf ? { positionId: copyOf.positionId, address: copyOf.address } : undefined,
         },
       });
       const o = r.order;
-      if (o.status === "filled") setMsg({ ok: true, text: `Filled ${o.totalSz} ${coin} at ${fmtPx(o.avgPx)}${copyOf ? ` · copied ${copyOf.name}` : ""}${r.thesis ? " · thesis posted" : ""}` });
-      if (copyOf && o.status === "filled") clearCopy();
-      else if (o.status === "twap") setMsg({ ok: true, text: `TWAP #${o.twapId} running for ${twap.minutes} min` });
+      // one message per outcome (a fill used to fall through to the "resting" line and read "Order #undefined resting")
+      if (o.status === "filled") {
+        setMsg({ ok: true, text: `Filled ${o.totalSz} ${coin} at ${fmtPx(o.avgPx)}${copyOf ? ` · copied ${copyOf.name}` : ""}${r.thesis ? " · thesis posted" : ""}` });
+        if (copyOf) clearCopy();
+      } else if (o.status === "twap") setMsg({ ok: true, text: `TWAP #${o.twapId} running for ${twap.minutes} min` });
       else setMsg({ ok: true, text: o.count ? `${o.count} orders resting` : `Order #${o.oid} resting${r.thesis ? " · thesis posted" : ""}` });
       setThesis("");
       setSize("");
@@ -222,204 +350,577 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
     if (ready) await api("/api/trade/leverage", { method: "POST", json: { coin, leverage: l, isCross: cross } }).catch((e) => setMsg({ ok: false, text: (e as Error).message }));
   };
 
+  /** armed but no size yet: the cta rests (no halo) and a press shows where the size goes instead of doing nothing */
+  const needSize = ready && !sizeCoin;
   const onCta = () => {
+    if (needSize) {
+      sizeRef.current?.focus();
+      setSizeNudge((n) => n + 1);
+      return;
+    }
     if (ready) return submit();
     if (ob.act) return ob.act();
     setShowStep((v) => !v);
   };
+  /** popovers close when focus moves on to something outside them (a tab past the last control) */
+  const closeOnLeave = (close: () => void) => (e: FocusEvent<HTMLDivElement>) => {
+    const to = e.relatedTarget as Node | null;
+    if (to && !e.currentTarget.contains(to)) close();
+  };
+
+  /* the pro menu moves with arrows, Home and End */
+  const onMenuKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]") ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    const to = e.key === "ArrowDown" ? (i + 1) % items.length : e.key === "ArrowUp" ? (i - 1 + items.length) % items.length : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    items[to]?.focus();
+  };
+
+  /* long / short is a radio group: arrows move the choice, like any segmented control */
+  const onSideKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+    e.preventDefault();
+    const next = side === "LONG" ? "SHORT" : "LONG";
+    setSide(next);
+    sideRefs.current[next === "LONG" ? 0 : 1]?.focus();
+  };
+
+  const tone = !ready ? "brand" : side === "LONG" ? "long" : "short";
+  const step = STAGE_STEP[ob.stage];
+  const ctaDisabled = busy || ob.busy || (!!invalid && !needSize);
+  /** an onboarding step is open under the cta: its own button is the call to action, the cta folds into a quiet header */
+  const stepOpen = !ready && showStep && !!ob.Panel;
+  /* the halo means "this will do something now": armed with a size, or the next onboarding move */
+  const ctaGlow = !ctaDisabled && !needSize && !stepOpen;
+  const ctaCls = stepOpen ? "tm-tk-cta-quiet" : ready ? (side === "LONG" ? "btn-up" : "btn-down") : "btn-primary";
+  const invalidIsMargin = typeof invalid === "string" && invalid.startsWith("Margin ");
+  const lowBalance = ready && bal.data !== undefined && avail < 10 && !reduceOnly;
+  const maxUsd = maxCoin * refPx;
+  const levTicks = [1, Math.round(maxLev / 4), Math.round(maxLev / 2), Math.round((3 * maxLev) / 4), maxLev].filter((v, i, a) => a.indexOf(v) === i);
+  const levAt = (v: number) => (v - 1) / Math.max(1, maxLev - 1);
+  /** margin beyond the balance: the summary row and the deposit button say where the fix is */
+  const overMargin = ready && !reduceOnly && sizeCoin > 0 && margin > avail && avail > 0;
+  const nudgeDeposit = (ready && bal.data !== undefined && avail < 10) || overMargin;
+  const sizeSub =
+    sizeCoin > 0
+      ? unit === "usd"
+        ? `≈ ${sizeCoin.toFixed(Math.min(szDec, 6))} ${coin}`
+        : `≈ ${fmtUsd(sizeUsd)}`
+      : reduceOnly
+        ? "Reduces your position only"
+        : "Min order $10";
+  const thesisLevel = thesis.length >= 280 ? "full" : thesis.length >= 240 ? "warn" : undefined;
 
   return (
-    <section className="card p-3 text-[13px] space-y-3">
+    <section className="card tm-tk" data-tone={tone} aria-label={`Order ticket, ${coin}`}>
+      <span ref={specRef} className="tm-tk-spec" aria-hidden />
+
       {/* margin mode + leverage */}
-      <div className="grid grid-cols-3 gap-1.5">
-        <span className="seg !p-0.5 col-span-2">
-          <button className={`seg-item flex-1 h-8 ${isCross ? "seg-active" : ""}`} onClick={() => applyLeverage(lev, true)}>Cross</button>
-          <button className={`seg-item flex-1 h-8 ${!isCross ? "seg-active" : ""}`} onClick={() => applyLeverage(lev, false)}>Isolated</button>
-        </span>
-        <div className="relative">
-          <button className="btn w-full h-9 num font-semibold" onClick={() => setLevOpen((v) => !v)}>{lev}x</button>
+      <div className="tm-tk-top">
+        <div className="seg tm-tk-mode" aria-label="Margin mode">
+          <button type="button" aria-pressed={isCross} className={`seg-item ${isCross ? "seg-active" : ""}`} onClick={() => applyLeverage(lev, true)}>
+            Cross
+          </button>
+          <button type="button" aria-pressed={!isCross} className={`seg-item ${!isCross ? "seg-active" : ""}`} onClick={() => applyLeverage(lev, false)}>
+            Isolated
+          </button>
+        </div>
+        <div ref={levRef} className="tm-tk-anchor" onBlur={closeOnLeave(() => setLevOpen(false))}>
+          <button type="button" className="tm-tk-lev" onClick={() => setLevOpen((v) => !v)} aria-expanded={levOpen} aria-haspopup="dialog" aria-label={`Leverage ${lev}x. Adjust`}>
+            <span className="tm-tk-lev-k" aria-hidden>
+              LEV
+            </span>
+            <span className="tm-tk-lev-v">{lev}x</span>
+            <TkIcon.chev size={13} sw={2} />
+          </button>
           {levOpen && (
-            <div className="absolute right-0 top-11 z-30 w-72 card p-4 shadow-2xl shadow-black/70">
-              <div className="flex items-center justify-between text-xs"><span className="font-semibold">Adjust leverage</span><span className="num text-brand font-semibold">{lev}x</span></div>
-              <input type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} className="slider mt-3" style={{ ["--pct" as string]: `${((lev - 1) / Math.max(1, maxLev - 1)) * 100}%` }} aria-label="leverage" />
-              <div className="flex justify-between text-[10px] text-dim num mt-1">
-                {[1, Math.round(maxLev / 4), Math.round(maxLev / 2), Math.round((3 * maxLev) / 4), maxLev].map((v, i) => (
-                  <button key={i} onClick={() => setLev(v)} className="hover:text-fg">{v}x</button>
+            <div className="pop tm-tk-pop tm-tk-levpop" role="dialog" aria-label="Adjust leverage">
+              <div className="tm-tk-pop-head">
+                <span className="tm-tk-pop-title">Adjust leverage</span>
+                <span className="tm-tk-stepper">
+                  <button type="button" onClick={() => setLev((l) => Math.max(1, l - 1))} disabled={lev <= 1} aria-label="Decrease leverage">
+                    <TkIcon.minus size={13} sw={2} />
+                  </button>
+                  <b>{lev}x</b>
+                  <button type="button" onClick={() => setLev((l) => Math.min(maxLev, l + 1))} disabled={lev >= maxLev} aria-label="Increase leverage">
+                    <TkIcon.plus size={13} sw={2} />
+                  </button>
+                </span>
+              </div>
+              <input ref={levSliderRef} type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} className="slider mt-5" style={{ ["--pct" as string]: `${levAt(lev) * 100}%` }} aria-label="leverage" />
+              <div className="tm-tk-ticks mt-2">
+                {levTicks.map((v) => (
+                  <button key={v} type="button" onClick={() => setLev(v)} style={{ "--at": levAt(v) } as CSSProperties} data-on={lev === v} data-past={v > 1 && lev > v}>
+                    {v}x
+                  </button>
                 ))}
               </div>
-              <p className="text-[11px] text-dim mt-3 leading-snug">Max {maxLev}x on {coin}. Higher leverage lowers the margin required and moves the liquidation price closer.</p>
-              <button className="btn btn-primary w-full h-9 mt-3" onClick={() => applyLeverage(lev, isCross)}>Confirm</button>
+              <p className="tm-tk-pop-copy">
+                Max <b>{maxLev}x</b> on {coin}. Higher leverage lowers the margin required and moves the liquidation price closer.
+              </p>
+              <button type="button" className="btn btn-primary w-full h-9 mt-3" onClick={() => applyLeverage(lev, isCross)}>
+                Confirm {lev}x
+              </button>
             </div>
           )}
         </div>
       </div>
 
       {/* order type */}
-      <div className="flex items-center border-b border-line">
+      <div className="tm-tk-types">
         {(["market", "limit"] as OrderType[]).map((t) => (
-          <button key={t} className={`h-9 px-3 text-[13px] font-medium border-b-2 -mb-px ${type === t ? "border-brand text-fg" : "border-transparent text-muted hover:text-fg"}`} onClick={() => setType(t)}>{LABEL[t]}</button>
+          <button key={t} type="button" className="tm-tk-type" data-on={type === t} aria-pressed={type === t} onClick={() => setType(t)}>
+            {LABEL[t]}
+          </button>
         ))}
-        <div ref={proRef} className="relative">
-          <button className={`h-9 px-3 text-[13px] font-medium border-b-2 -mb-px inline-flex items-center gap-1 ${!["market", "limit"].includes(type) ? "border-brand text-fg" : "border-transparent text-muted hover:text-fg"}`} onClick={() => setProOpen((v) => !v)}>
-            {["market", "limit"].includes(type) ? "Pro" : LABEL[type]} <Icon.chevron />
+        <div ref={proRef} className="tm-tk-anchor flex" onBlur={closeOnLeave(() => setProOpen(false))}>
+          <button type="button" className="tm-tk-type" data-on={!["market", "limit"].includes(type)} aria-haspopup="menu" aria-expanded={proOpen} onClick={() => setProOpen((v) => !v)}>
+            {["market", "limit"].includes(type) ? "Pro" : LABEL[type]} <TkIcon.chev size={12} sw={2} />
           </button>
           {proOpen && (
-            <div className="absolute left-0 top-10 z-30 w-48 card p-1 shadow-2xl shadow-black/70">
-              {PRO.map(([t, l]) => (
-                <button key={t} className={`w-full text-left px-3 h-9 rounded-lg hover:bg-panel-2 ${type === t ? "text-brand" : ""}`} onClick={() => { setType(t); setProOpen(false); }}>{l}</button>
+            <div ref={menuRef} className="pop tm-tk-pop tm-tk-menu" role="menu" aria-label="Pro order types" onKeyDown={onMenuKey}>
+              {PRO.map(([t, l, hint]) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={type === t}
+                  className="tm-tk-menu-item"
+                  onClick={() => {
+                    setType(t);
+                    setProOpen(false);
+                    proRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+                  }}
+                >
+                  <span>
+                    <b>{l}</b>
+                    <small>{hint}</small>
+                  </span>
+                  <TkIcon.check size={14} sw={2.2} />
+                </button>
               ))}
             </div>
           )}
         </div>
-        <span className="ml-auto text-[11px] text-dim pr-1">{type === "twap" ? "slices every 30s" : type === "scale" ? "ladder of limits" : ""}</span>
+        {(type === "twap" || type === "scale") && <span className="tm-tk-types-hint">{type === "twap" ? "slices every 30s" : "ladder of limits"}</span>}
       </div>
 
       {copyOf && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-[10px] bg-brand/10 border border-brand/30 text-[12px]">
-          <span className="text-brand"><Icon.copy /></span>
-          <span className="min-w-0 leading-tight">
-            Copying <b className="text-fg">{copyOf.name}</b>
-            <span className="block text-[11px] text-muted">{coin} <span className={copyOf.side === "LONG" ? "text-up" : "text-down"}>{copyOf.side === "LONG" ? "Long" : "Short"}</span> <span className="num">{copyOf.lev}x</span> · pick your size</span>
+        <div className="tm-tk-copy">
+          <span className="tm-tk-copy-ico">
+            <Icon.copy />
           </span>
-          <button className="ml-auto btn btn-ghost h-6 w-6 px-0 text-dim shrink-0" onClick={clearCopy} aria-label="stop copying">✕</button>
+          <span className="min-w-0 leading-tight">
+            <span className="block text-fg-2">
+              Copying <b className="text-fg font-semibold">{copyOf.name}</b>
+            </span>
+            <span className="block text-[11px] text-muted mt-0.5">
+              {coin} <span className={copyOf.side === "LONG" ? "tm-tk-up" : "tm-tk-down"}>{copyOf.side === "LONG" ? "Long" : "Short"}</span> <span className="num">{copyOf.lev}x</span> · pick your size
+            </span>
+          </span>
+          <button type="button" className="tm-tk-copy-x" onClick={clearCopy} aria-label="Stop copying">
+            <TkIcon.close size={13} />
+          </button>
         </div>
       )}
 
       {/* side */}
-      <div className="grid grid-cols-2 gap-1 p-1 rounded-[12px] bg-panel-2 border border-line">
-        <button className={`h-9 rounded-[9px] font-semibold transition-colors ${side === "LONG" ? "bg-up text-black" : "text-muted hover:text-fg"}`} onClick={() => setSide("LONG")}>Buy / Long</button>
-        <button className={`h-9 rounded-[9px] font-semibold transition-colors ${side === "SHORT" ? "bg-down text-white" : "text-muted hover:text-fg"}`} onClick={() => setSide("SHORT")}>Sell / Short</button>
+      <div className="tm-tk-side" role="radiogroup" aria-label="Side" data-side={side} onKeyDown={onSideKey}>
+        <span className="tm-tk-side-thumb" aria-hidden />
+        {(["LONG", "SHORT"] as const).map((s, i) => (
+          <button
+            key={s}
+            ref={(el) => {
+              sideRefs.current[i] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={side === s}
+            tabIndex={side === s ? 0 : -1}
+            data-v={s}
+            className="tm-tk-side-btn"
+            onClick={() => setSide(s)}
+          >
+            {s === "LONG" ? "Long" : "Short"}
+          </button>
+        ))}
       </div>
 
-      <dl className="text-xs space-y-1 px-0.5">
-        <Row k="Available to Trade" v={signedIn ? `${fmtUsd(avail)} USDC` : "–"} />
-        <Row k="Current Position" v={myPos ? <span className={myPos.szi > 0 ? "text-up" : "text-down"}>{myPos.szi} {coin}</span> : `0.00 ${coin}`} />
+      <dl className="tm-tk-info">
+        <div>
+          <dt>Available to trade</dt>
+          <dd>
+            {signedIn ? (
+              <>
+                {fmtUsd(avail).replace("$", "")}
+                <small>USDC</small>
+              </>
+            ) : (
+              "–"
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Current position</dt>
+          <dd>
+            {myPos ? (
+              <span className={myPos.szi > 0 ? "tm-tk-up" : "tm-tk-down"}>
+                {myPos.szi > 0 ? "Long" : "Short"} {Math.abs(myPos.szi)}
+                <small>{coin}</small>
+              </span>
+            ) : (
+              <>
+                0.00<small>{coin}</small>
+              </>
+            )}
+          </dd>
+        </div>
       </dl>
 
       {/* prices */}
       {isTrig && (
-        <Field label={type.startsWith("stop") ? "Stop Price (USDC)" : "TP Price (USDC)"}>
-          <input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={trigger} onChange={(e) => setTrigger(e.target.value.replace(/[^0-9.]/g, ""))} placeholder={mid ? fmtPx(mid) : ""} />
-          <button className="text-brand text-xs ml-2" onClick={() => mid && setTrigger(String(Number(mid.toPrecision(7))))}>Mark</button>
-        </Field>
+        <label className="tm-tk-row">
+          <span className="tm-tk-row-label">{type.startsWith("stop") ? "Stop price" : "TP price"}</span>
+          <TkNum className="tm-tk-input" inputMode="decimal" value={trigger} onValue={(v) => setTrigger(v.replace(/[^0-9.]/g, ""))} placeholder={mid ? fmtPx(mid) : ""} autoComplete="off" />
+          <button type="button" className="tm-tk-act" onClick={() => mid && setTrigger(String(Number(mid.toPrecision(7))))} disabled={!mid}>
+            Mark
+          </button>
+        </label>
       )}
       {isLimit && (
-        <Field label="Price (USDC)">
-          <input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ""))} placeholder={mid ? fmtPx(mid) : ""} />
-          <button className="text-brand text-xs ml-2" onClick={() => mid && setPrice(String(Number(mid.toPrecision(7))))}>Mid</button>
-        </Field>
+        <label className="tm-tk-row">
+          <span className="tm-tk-row-label">Limit price</span>
+          <TkNum className="tm-tk-input" inputMode="decimal" value={price} onValue={(v) => setPrice(v.replace(/[^0-9.]/g, ""))} placeholder={mid ? fmtPx(mid) : ""} autoComplete="off" />
+          <button type="button" className="tm-tk-act" onClick={() => mid && setPrice(String(Number(mid.toPrecision(7))))} disabled={!mid}>
+            Mid
+          </button>
+          {pxFlash > 0 && <span key={pxFlash} className="tm-tk-flash" aria-hidden />}
+        </label>
       )}
       {type === "scale" && (
-        <div className="grid grid-cols-2 gap-1.5">
-          <Field label="Start (USDC)"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={scale.start} onChange={(e) => setScale({ ...scale, start: e.target.value })} placeholder={mid ? fmtPx(mid * (side === "LONG" ? 0.99 : 1.01)) : ""} /></Field>
-          <Field label="End (USDC)"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={scale.end} onChange={(e) => setScale({ ...scale, end: e.target.value })} placeholder={mid ? fmtPx(mid * (side === "LONG" ? 0.95 : 1.05)) : ""} /></Field>
-          <Field label="Orders"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="numeric" value={scale.count} onChange={(e) => setScale({ ...scale, count: e.target.value })} /></Field>
-          <Field label="Size skew"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={scale.skew} onChange={(e) => setScale({ ...scale, skew: e.target.value })} /></Field>
+        <div className="tm-tk-grid2">
+          <MiniField label="Start · USDC">
+            <TkNum className="tm-tk-input" inputMode="decimal" value={scale.start} onValue={(v) => setScale({ ...scale, start: v })} placeholder={mid ? fmtPx(mid * (side === "LONG" ? 0.99 : 1.01)) : ""} autoComplete="off" />
+          </MiniField>
+          <MiniField label="End · USDC">
+            <TkNum className="tm-tk-input" inputMode="decimal" value={scale.end} onValue={(v) => setScale({ ...scale, end: v })} placeholder={mid ? fmtPx(mid * (side === "LONG" ? 0.95 : 1.05)) : ""} autoComplete="off" />
+          </MiniField>
+          <MiniField label="Orders">
+            <input className="tm-tk-input" inputMode="numeric" value={scale.count} onChange={(e) => setScale({ ...scale, count: e.target.value })} autoComplete="off" />
+          </MiniField>
+          <MiniField label="Size skew">
+            <input className="tm-tk-input" inputMode="decimal" value={scale.skew} onChange={(e) => setScale({ ...scale, skew: e.target.value })} autoComplete="off" />
+          </MiniField>
         </div>
       )}
       {type === "twap" && (
-        <div className="grid grid-cols-2 gap-1.5 items-center">
-          <Field label="Running time (min)"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="numeric" value={twap.minutes} onChange={(e) => setTwap({ ...twap, minutes: e.target.value })} /></Field>
-          <Toggle on={twap.randomize} onChange={(v) => setTwap({ ...twap, randomize: v })} label="Randomize" />
+        <div className="tm-tk-grid2">
+          <MiniField label="Running time" hint={<span className="tm-tk-hint-k">MIN</span>}>
+            <input className="tm-tk-input" inputMode="numeric" value={twap.minutes} onChange={(e) => setTwap({ ...twap, minutes: e.target.value })} autoComplete="off" />
+          </MiniField>
+          <label className="tm-tk-mini tm-tk-mini-switch">
+            <span className="tm-tk-mini-label">Randomize</span>
+            <span className="tm-tk-mini-body">
+              <span className="tm-tk-mini-val" aria-hidden>
+                {twap.randomize ? "On" : "Off"}
+              </span>
+              <Switch on={twap.randomize} onChange={(v) => setTwap({ ...twap, randomize: v })} />
+            </span>
+          </label>
         </div>
       )}
 
       {/* size */}
-      <Field label="Size">
-        <input className="flex-1 bg-transparent outline-none num text-right text-[15px]" inputMode="decimal" value={size} onChange={(e) => onSize(e.target.value)} placeholder="0" aria-label="size" />
-        <select className="bg-transparent text-fg-2 outline-none ml-2 text-xs cursor-pointer" value={unit} onChange={(e) => switchUnit(e.target.value as "coin" | "usd")} aria-label="size unit">
-          <option value="usd">USD</option>
-          <option value="coin">{coin}</option>
-        </select>
-      </Field>
-      <div className="flex items-center gap-3 px-0.5">
-        <input type="range" min={0} max={100} step={1} value={pct} onChange={(e) => setPctAndSize(Number(e.target.value))} className="slider flex-1" style={{ ["--pct" as string]: `${pct}%` }} aria-label="size percent" disabled={!signedIn} />
-        <span className="card-2 h-8 px-2 inline-flex items-center num text-xs w-16 justify-end">
-          <input className="w-8 bg-transparent outline-none text-right" value={pct} onChange={(e) => setPctAndSize(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} aria-label="percent" />%
-        </span>
+      <div className="tm-tk-size" onClick={() => sizeRef.current?.focus()}>
+        <div className="tm-tk-size-head">
+          <label htmlFor={`${uid}-size`} className="tm-tk-size-label">
+            Size
+          </label>
+          {signedIn && maxCoin > 0 ? (
+            <button
+              type="button"
+              className="tm-tk-max"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPctAndSize(100);
+              }}
+              title="Fill the maximum size"
+            >
+              Max <b>{unit === "usd" ? fmtUsd(maxUsd, { compact: true }) : `${Number(maxCoin.toFixed(szDec))} ${coin}`}</b>
+            </button>
+          ) : refPx ? (
+            <span className="tm-tk-ref" title="Price used to convert between USDC and the coin">
+              @ <b>{fmtPx(refPx)}</b>
+            </span>
+          ) : null}
+        </div>
+        <div className="tm-tk-size-main">
+          {unit === "usd" && (
+            <span className="tm-tk-size-cur" data-on={!!size} aria-hidden>
+              $
+            </span>
+          )}
+          <TkNum id={`${uid}-size`} ref={sizeRef} className="tm-tk-size-input" inputMode="decimal" value={size} onValue={onSize} placeholder="0" aria-label="size" autoComplete="off" />
+          <button
+            type="button"
+            className="tm-tk-unit"
+            onClick={(e) => {
+              e.stopPropagation();
+              switchUnit(unit === "usd" ? "coin" : "usd");
+            }}
+            aria-label={`Size in ${unit === "usd" ? "USDC" : coin}. Switch to ${unit === "usd" ? coin : "USDC"}`}
+            title={`Switch to ${unit === "usd" ? coin : "USDC"}`}
+          >
+            {unit === "usd" ? "USDC" : coin}
+            <TkIcon.swap size={11} sw={2} />
+          </button>
+        </div>
+        <div className="tm-tk-size-sub">{sizeSub}</div>
+        {sizeNudge > 0 && <span key={sizeNudge} className="tm-tk-flash" aria-hidden />}
       </div>
-      <div className="flex justify-between text-[10px] text-dim num px-0.5 -mt-1.5">
-        {[0, 25, 50, 75, 100].map((p) => (
-          <button key={p} onClick={() => setPctAndSize(p)} className="hover:text-fg">{p}%</button>
+
+      <div className="tm-tk-quick" aria-label="Quick size">
+        {QUICK.map((v) => (
+          <button key={v} type="button" className="tm-tk-chip" aria-pressed={unit === "usd" && Number(size) === v} onClick={() => pickUsd(v)}>
+            {fmtQuick(v)}
+          </button>
         ))}
       </div>
 
-      {/* flags */}
-      <div className="flex items-center justify-between gap-3 px-0.5">
-        <Toggle on={reduceOnly} onChange={setReduceOnly} label="Reduce Only" />
-        {isLimit && (
-          <span className="text-xs flex items-center gap-1.5">
-            <span className="text-muted underline decoration-dotted decoration-line-2 underline-offset-4">TIF</span>
-            <select className="bg-transparent text-fg outline-none cursor-pointer" value={tif} onChange={(e) => setTif(e.target.value as "Gtc" | "Ioc" | "Alo")} aria-label="time in force">
-              <option value="Gtc">GTC</option>
-              <option value="Ioc">IOC</option>
-              <option value="Alo">ALO</option>
-            </select>
+      <div className="tm-tk-field tm-tk-pct" data-disabled={!signedIn}>
+        <div className="tm-tk-field-head">
+          <label htmlFor={`${uid}-pct`}>{reduceOnly ? "Of your position" : "Of buying power"}</label>
+          <span className="tm-tk-pctval" data-on={pct > 0}>
+            <input value={pct} onChange={(e) => setPctAndSize(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} aria-label="percent" inputMode="numeric" disabled={!signedIn} />%
           </span>
-        )}
+        </div>
+        <input id={`${uid}-pct`} type="range" min={0} max={100} step={1} value={pct} onChange={(e) => setPctAndSize(Number(e.target.value))} className="slider" style={{ ["--pct" as string]: `${pct}%` }} aria-label={reduceOnly ? "size percent of position" : "size percent of buying power"} disabled={!signedIn} />
+        <div className="tm-tk-ticks">
+          {[0, 25, 50, 75, 100].map((p) => (
+            <button key={p} type="button" onClick={() => setPctAndSize(p)} style={{ "--at": p / 100 } as CSSProperties} data-on={signedIn && pct === p && p > 0} data-past={signedIn && p > 0 && pct > p} disabled={!signedIn}>
+              {p}%
+            </button>
+          ))}
+        </div>
       </div>
-      {(type === "market" || type === "limit") && (
-        <div className="px-0.5">
-          <Toggle on={tpsl} onChange={setTpsl} label="Take Profit / Stop Loss" />
-          {tpsl && (
-            <div className="grid grid-cols-[1fr_auto] gap-1.5 mt-2">
-              <Field label="TP Price"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value.replace(/[^0-9.]/g, ""))} /></Field>
-              <span className={`card-2 h-10 px-2.5 inline-flex items-center num text-xs w-[76px] justify-end ${tpGain === null ? "text-dim" : tpGain >= 0 ? "text-up" : "text-down"}`}>{tpGain === null ? "Gain %" : `${(tpGain * 100).toFixed(1)}%`}</span>
-              <Field label="SL Price"><input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value.replace(/[^0-9.]/g, ""))} /></Field>
-              <span className={`card-2 h-10 px-2.5 inline-flex items-center num text-xs w-[76px] justify-end ${slLoss === null ? "text-dim" : slLoss >= 0 ? "text-up" : "text-down"}`}>{slLoss === null ? "Loss %" : `${(slLoss * 100).toFixed(1)}%`}</span>
-            </div>
-          )}
+
+      {/* flags */}
+      <div className="tm-tk-flags">
+        <Switch on={reduceOnly} onChange={setReduceOnly} label="Reduce only" className="tm-tk-sw" />
+        {isLimit && (
+          <div className="tm-tk-tif">
+            <span id={`${uid}-tif`}>Time in force</span>
+            <span className="seg" role="group" aria-labelledby={`${uid}-tif`}>
+              {(["Gtc", "Ioc", "Alo"] as const).map((t) => (
+                <button key={t} type="button" aria-pressed={tif === t} className={`seg-item ${tif === t ? "seg-active" : ""}`} onClick={() => setTif(t)} title={TIF_HINT[t]}>
+                  {t.toUpperCase()}
+                </button>
+              ))}
+            </span>
+          </div>
+        )}
+        {(type === "market" || type === "limit") && <Switch on={tpsl} onChange={setTpsl} label="Take profit / Stop loss" className="tm-tk-sw" />}
+        {(type === "market" || type === "limit") && tpsl && (
+          <div className="tm-tk-grid2">
+            <MiniField label="Take profit" tone="up" hint={tpGain === null ? null : <Hint v={tpGain} />}>
+              <TkNum className="tm-tk-input" inputMode="decimal" value={tp} onValue={(v) => setTp(v.replace(/[^0-9.]/g, ""))} placeholder="Price" autoComplete="off" aria-label="Take profit price" />
+            </MiniField>
+            <MiniField label="Stop loss" tone="down" hint={slLoss === null ? null : <Hint v={slLoss} />}>
+              <TkNum className="tm-tk-input" inputMode="decimal" value={sl} onValue={(v) => setSl(v.replace(/[^0-9.]/g, ""))} placeholder="Price" autoComplete="off" aria-label="Stop loss price" />
+            </MiniField>
+          </div>
+        )}
+        <Switch on={postThesis} onChange={setPostThesis} label="Post thesis to the feed" className="tm-tk-sw" />
+      </div>
+
+      {/* thesis */}
+      {postThesis && (
+        <div className="tm-tk-why" data-live={thesis.trim().length > 0} onClick={() => thesisRef.current?.focus()}>
+          <div className="tm-tk-why-head">
+            <TkIcon.pen size={13} sw={2} />
+            <label htmlFor={`${uid}-why`}>Why this trade?</label>
+            <span className="tm-tk-why-count" data-level={thesisLevel}>
+              {thesis.length}/280
+            </span>
+          </div>
+          <textarea id={`${uid}-why`} ref={thesisRef} className="tm-tk-why-input" maxLength={280} rows={2} value={thesis} onChange={(e) => setThesis(e.target.value)} placeholder="Optional. Bound to this position." />
         </div>
       )}
 
-      {/* thesis */}
-      <div className="card-2 px-3 py-2">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-thesis font-medium">Why this trade?</span>
-          <span className="num text-dim">{thesis.length}/280</span>
-        </div>
-        <textarea className="w-full bg-transparent outline-none resize-none h-12 mt-1 text-[13px] placeholder:text-dim leading-snug" maxLength={280} value={thesis} onChange={(e) => setThesis(e.target.value)} placeholder="Optional. Posted to the feed, bound to this position." />
-      </div>
-
-      {/* cta */}
-      <button className={`btn w-full h-11 text-[15px] ${ready ? (side === "LONG" ? "btn-up" : "btn-down") : "btn-primary"}`} onClick={onCta} disabled={busy || ob.busy || !!invalid}>
-        {!ready && <Icon.wallet />}
-        {ready ? (busy ? "Placing…" : `${side === "LONG" ? "Buy / Long" : "Sell / Short"} ${coin}`) : ob.cta}
-      </button>
-      {ready && invalid && sizeCoin > 0 && <p className="text-[11px] text-warn text-center -mt-1">{invalid}</p>}
-      {!ready && showStep && ob.Panel && <ob.Panel />}
-      {msg && <p className={`text-xs text-center ${msg.ok ? "text-up" : "text-down"}`}>{msg.text}</p>}
-
       {/* summary */}
-      <dl className="text-xs space-y-1.5 px-0.5 pt-1 border-t border-line">
-        <Row k="Liquidation Price" v={liq && sizeCoin ? fmtPx(liq) : "N/A"} />
-        <Row k="Order Value" v={sizeUsd ? fmtUsd(sizeUsd) : "N/A"} />
-        <Row k="Margin Required" v={sizeUsd ? fmtUsd(margin) : "N/A"} />
-        {(type === "market" || type.endsWith("Market")) && <Row k="Slippage" v={<span>Est: <span className={slip > 0.005 ? "text-warn" : ""}>{(slip * 100).toFixed(2)}%</span> / Max: {(MAX_SLIP * 100).toFixed(2)}%</span>} />}
-        <Row k="Fees" v={<span><span className="text-brand">◆</span> {(TAKER * 100).toFixed(3)}% / {(MAKER * 100).toFixed(3)}% + {(BUILDER * 100).toFixed(2)}% builder{sizeUsd ? ` · ${fmtUsd(sizeUsd * feeRate)}` : ""}</span>} />
+      <dl className="tm-tk-sum">
+        <SumRow k="Order value" tip="Size × price" v={sizeUsd ? fmtUsd(sizeUsd) : null} tone={ready && sizeCoin > 0 && sizeUsd < 10 && !reduceOnly ? "warn" : undefined} />
+        <SumRow k="Margin required" tip="Order value ÷ leverage" v={sizeUsd ? fmtUsd(margin) : null} tone={overMargin ? "warn" : undefined} />
+        <SumRow k="Liq. price" tip="Estimated liquidation price if this order fills" v={liq && sizeCoin ? `≈ ${fmtPx(liq)}` : null} tone={liq && sizeCoin && refPx && Math.abs(liq - refPx) / refPx < 0.05 ? "warn" : undefined} />
+        {isMarketish && (
+          <SumRow
+            k="Slippage"
+            tip="Estimated from the live book · maximum allowed"
+            v={
+              <>
+                Est <span className={slip > 0.005 ? "tm-tk-warn" : ""}>{(slip * 100).toFixed(2)}%</span>
+                <span className="tm-tk-dim"> / </span>Max {(MAX_SLIP * 100).toFixed(2)}%
+              </>
+            }
+          />
+        )}
+        <SumRow
+          k="Fees"
+          tip={`Taker ${(TAKER * 100).toFixed(3)}% · maker ${(MAKER * 100).toFixed(3)}% · builder ${(BUILDER * 100).toFixed(2)}%`}
+          v={
+            <>
+              {(baseFee * 100).toFixed(3)}% + <span className="tm-tk-builder">{(BUILDER * 100).toFixed(2)}% builder</span>
+              {sizeUsd ? <span className="tm-tk-dim"> · {fmtUsd(sizeUsd * feeRate)}</span> : null}
+            </>
+          }
+        />
       </dl>
-      <div className="grid grid-cols-2 gap-1.5">
-        <button className="btn h-9" onClick={() => openFunds("deposit")}>Deposit</button>
-        <button className="btn h-9" onClick={() => openFunds("withdraw")}>Withdraw</button>
+
+      {/* the call to action. it docks to the bottom of the column whenever the ticket runs past the fold,
+          and results land just above it, so the button and what it did are always in view */}
+      <div ref={dockRef} className="tm-tk-dock" data-stuck={stuck || undefined}>
+        {msg && (
+          <div key={`${msg.ok}${msg.text}`} className="tm-tk-toast" data-tone={msg.ok ? "ok" : "err"} role={msg.ok ? "status" : "alert"}>
+            {msg.ok ? <TkIcon.check size={14} sw={2.2} /> : <TkIcon.alert size={14} />}
+            <span className="min-w-0">{msg.text}</span>
+            <button type="button" className="tm-tk-msg-x" onClick={() => setMsg(null)} aria-label="Dismiss">
+              <TkIcon.close size={11} sw={2} />
+            </button>
+            {msg.ok && <span className="tm-tk-toast-timer" aria-hidden onAnimationEnd={() => setMsg((m) => (m === msg ? null : m))} />}
+          </div>
+        )}
+        <button type="button" className={`btn tm-tk-cta ${ctaCls} ${ctaGlow ? "btn-glow" : ""}`} onClick={onCta} disabled={ctaDisabled} aria-busy={busy || ob.busy} aria-expanded={!ready && ob.Panel ? showStep : undefined} data-rest={needSize || undefined}>
+          {ready ? (
+            busy ? (
+              <>
+                <TkIcon.spin size={15} className="tm-tk-spin" />
+                Placing order…
+              </>
+            ) : (
+              <span className="tm-tk-cta-label">
+                {side === "LONG" ? "Long" : "Short"} {coin}
+                {sizeUsd >= 0.01 && (
+                  <>
+                    <span className="tm-tk-cta-sep">·</span>
+                    {fmtCta(sizeUsd)}
+                  </>
+                )}
+              </span>
+            )
+          ) : (
+            <>
+              {ob.busy ? <TkIcon.spin size={15} className="tm-tk-spin" /> : <StageIcon stage={ob.stage} />}
+              {ob.cta}
+              {ob.Panel && <TkIcon.chev size={15} sw={2} className="tm-tk-cta-chev" />}
+            </>
+          )}
+        </button>
+        {ready ? (
+          invalid && sizeCoin > 0 ? (
+            <p className="tm-tk-note" data-tone="warn" role="status">
+              <TkIcon.alert size={11} sw={2} />
+              <span className="min-w-0">{invalidIsMargin ? `Margin exceeds ${fmtUsd(avail)} available` : invalid}</span>
+              {invalidIsMargin && (
+                <button type="button" className="tm-tk-note-act" onClick={() => openFunds("deposit")}>
+                  Deposit
+                </button>
+              )}
+            </p>
+          ) : lowBalance ? (
+            <p className="tm-tk-note" data-tone="info">
+              <TkIcon.down size={11} sw={2} />
+              <span className="min-w-0">{avail < 0.01 ? "No USDC on Hyperliquid yet" : `${fmtUsd(avail)} available to trade`}</span>
+              <button type="button" className="tm-tk-note-act" onClick={() => openFunds("deposit")}>
+                Deposit
+              </button>
+            </p>
+          ) : (
+            <p className="tm-tk-note">
+              <TkIcon.lock size={11} sw={2} />
+              Signed by your agent wallet
+            </p>
+          )
+        ) : stepOpen ? null : ob.stage === "connect" || ob.stage === "signin" ? (
+          <p className="tm-tk-note">
+            <TkIcon.lock size={11} sw={2} />
+            {STAGE_NOTE[ob.stage]}
+          </p>
+        ) : (
+          <p className="tm-tk-note">
+            <span className="tm-tk-dots" aria-hidden>
+              {[1, 2, 3, 4].map((n) => (
+                <i key={n} data-on={n <= step} />
+              ))}
+            </span>
+            Step {step} of 4 · {STAGE_NOTE[ob.stage]}
+          </p>
+        )}
       </div>
+      <span ref={dockEndRef} className="tm-tk-dock-end" aria-hidden />
+      {stepOpen && ob.Panel && (
+        <div ref={stepRef} className="tm-tk-stepwrap">
+          <ob.Panel />
+        </div>
+      )}
+
+      {/* funds: only once a wallet is connected (the modal needs one) */}
+      {ob.stage !== "connect" && (
+        <div className="tm-tk-funds">
+          <button type="button" className={`btn tm-tk-fund ${nudgeDeposit ? "btn-primary" : ""}`} onClick={() => openFunds("deposit")}>
+            <TkIcon.down size={14} />
+            Deposit
+          </button>
+          <button type="button" className="btn tm-tk-fund" onClick={() => openFunds("withdraw")}>
+            <TkIcon.up size={14} />
+            Withdraw
+          </button>
+        </div>
+      )}
     </section>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function StageIcon({ stage }: { stage: Stage }) {
+  if (stage === "connect") return <Icon.wallet />;
+  if (stage === "signin") return <TkIcon.key size={15} />;
+  if (stage === "invite") return <TkIcon.ticket size={15} />;
+  if (stage === "handle") return <TkIcon.at size={15} />;
+  return <TkIcon.bolt size={15} />;
+}
+
+/** roe at the tp / sl price, coloured by sign */
+function Hint({ v }: { v: number }) {
   return (
-    <label className="card-2 h-10 px-3 flex items-center gap-2">
-      <span className="text-xs text-muted whitespace-nowrap">{label}</span>
-      {children}
+    <span className="tm-tk-hint" data-tone={v >= 0 ? "up" : "down"}>
+      <span className="tm-tk-hint-k">ROE</span>
+      {v > 0 ? "+" : ""}
+      {(v * 100).toFixed(1)}%
+    </span>
+  );
+}
+
+function MiniField({ label, hint, tone, children }: { label: string; hint?: ReactNode; tone?: "up" | "down"; children: ReactNode }) {
+  return (
+    <label className="tm-tk-mini" data-tone={tone}>
+      <span className="tm-tk-mini-label">{label}</span>
+      <span className="tm-tk-mini-body">
+        {children}
+        {hint}
+      </span>
     </label>
   );
 }
 
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
+function SumRow({ k, v, tip, tone }: { k: string; v: ReactNode; tip?: string; tone?: "warn" }) {
+  const empty = v === null || v === undefined;
   return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="text-muted underline decoration-dotted decoration-line-2 underline-offset-4">{k}</dt>
-      <dd className="num text-right text-fg-2">{v}</dd>
+    <div>
+      <dt title={tip}>{k}</dt>
+      <dd data-empty={empty} data-tone={tone}>
+        {empty ? "–" : v}
+      </dd>
     </div>
   );
 }

@@ -1,13 +1,15 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import "./ticket.css";
+import { useEffect, useId, useMemo, useState, type CSSProperties } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { api } from "@/lib/client";
 import { fmtPx, fmtUsd } from "@/lib/format";
 import type { MarketSummary } from "@/lib/hl-types";
-import { Icon, Toggle } from "../ui";
+import { Icon, Switch } from "../ui";
 import { DepositBox, useOnboarding } from "./onboarding";
+import { TkIcon } from "./funds";
 
 const QUICK = [10, 100, 500, 1000];
 
@@ -16,13 +18,20 @@ type OrderResponse = { order: { status: "filled" | "resting"; avgPx?: number; to
 export function TradePanel({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
   const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
   return (
-    <section className="card p-3">
+    <section className="card tm-tk" data-tone={side === "LONG" ? "long" : "short"} aria-label={`Trade ${coin}`}>
+      <span className="tm-tk-spec" aria-hidden />
       <div className="flex items-center gap-2">
-        <div className="grid grid-cols-2 gap-1 flex-1 p-1 rounded-[12px] bg-panel-2 border border-line">
-          <button className={`h-10 rounded-[9px] text-[15px] font-semibold transition-colors ${side === "LONG" ? "bg-up/15 text-up" : "text-muted hover:text-fg"}`} onClick={() => setSide("LONG")}>Long</button>
-          <button className={`h-10 rounded-[9px] text-[15px] font-semibold transition-colors ${side === "SHORT" ? "bg-down/15 text-down" : "text-muted hover:text-fg"}`} onClick={() => setSide("SHORT")}>Short</button>
+        <div className="tm-tk-side flex-1" role="radiogroup" aria-label="Side" data-side={side}>
+          <span className="tm-tk-side-thumb" aria-hidden />
+          {(["LONG", "SHORT"] as const).map((s) => (
+            <button key={s} type="button" role="radio" aria-checked={side === s} data-v={s} className="tm-tk-side-btn" onClick={() => setSide(s)}>
+              {s === "LONG" ? "Long" : "Short"}
+            </button>
+          ))}
         </div>
-        <span className="btn btn-ghost h-10 w-10 px-0 text-muted" title="settings"><Icon.gear /></span>
+        <span className="btn btn-ghost h-10 w-10 px-0 text-muted" title="settings">
+          <Icon.gear />
+        </span>
       </div>
       <OrderForm coin={coin} market={market} mid={mid} side={side} />
     </section>
@@ -45,6 +54,7 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
   const [thesis, setThesis] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const uid = useId();
   const maxLev = market?.maxLeverage ?? 50;
   useEffect(() => setLev((l) => Math.min(l, maxLev)), [maxLev]);
   useEffect(() => setMsg(null), [coin]);
@@ -115,125 +125,188 @@ function OrderForm({ coin, market, mid, side }: { coin: string; market?: MarketS
     if (ob.act) return ob.act();
     setShowStep((v) => !v);
   };
+  const levTicks = [1, Math.round(maxLev / 4), Math.round(maxLev / 2), Math.round((3 * maxLev) / 4), maxLev].filter((v, i, a) => a.indexOf(v) === i);
+  const levAt = (v: number) => (v - 1) / Math.max(1, maxLev - 1);
 
   return (
-    <div className="mt-3 space-y-3 text-[13px]">
+    <>
       {/* amount */}
-      <div className="card-2 px-4 py-3 flex items-center gap-2">
-        <span className={`num text-[28px] font-semibold leading-none ${usdNum ? "text-fg" : "text-dim"}`}>$</span>
-        <input
-          className="flex-1 min-w-0 bg-transparent outline-none num text-[28px] font-semibold leading-none placeholder:text-dim"
-          inputMode="decimal"
-          placeholder="0"
-          value={usd}
-          onChange={(e) => setUsd(e.target.value.replace(/[^0-9.]/g, ""))}
-          aria-label="order size in usd"
-        />
-        <span className="text-dim text-xs text-right leading-tight shrink-0">
-          {usdNum ? <span className="num">≈ {sz.toFixed(market?.szDecimals ?? 4)} {coin}</span> : "Enter amount"}
+      <label className="tm-tk-size block" htmlFor={`${uid}-usd`}>
+        <span className="tm-tk-size-head">
+          <span className="tm-tk-size-label">Size</span>
+          {signedIn && <span className="tm-tk-ref">Avail <b>{fmtUsd(avail).replace("$", "")}</b></span>}
         </span>
-      </div>
-      <div className="grid grid-cols-4 gap-1.5">
+        <span className="tm-tk-size-main">
+          <span className="tm-tk-size-cur" data-on={!!usdNum} aria-hidden>
+            $
+          </span>
+          <input id={`${uid}-usd`} className="tm-tk-size-input" inputMode="decimal" placeholder="0" value={usd} onChange={(e) => setUsd(e.target.value.replace(/[^0-9.]/g, ""))} aria-label="order size in usd" autoComplete="off" />
+          <span className="tm-tk-unit" aria-hidden>
+            USDC
+          </span>
+        </span>
+        <span className="tm-tk-size-sub block">{usdNum ? `≈ ${sz.toFixed(market?.szDecimals ?? 4)} ${coin}` : "Enter amount"}</span>
+      </label>
+      <div className="tm-tk-quick">
         {QUICK.map((qv) => (
-          <button key={qv} className={`btn h-9 px-0 num ${usdNum === qv ? "border-brand/60 text-brand bg-brand/10" : ""}`} onClick={() => setUsd(String(qv))}>
-            ${qv}
+          <button key={qv} type="button" className="tm-tk-chip" aria-pressed={usdNum === qv} onClick={() => setUsd(String(qv))}>
+            {qv >= 1000 ? `$${qv / 1000}K` : `$${qv}`}
           </button>
         ))}
       </div>
 
       {/* leverage */}
-      <div className="card-2 px-3 py-2.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted">Leverage</span>
-          <span className="num font-semibold text-fg">{lev}x</span>
+      <div className="tm-tk-field">
+        <div className="tm-tk-field-head">
+          <label htmlFor={`${uid}-lev`}>Leverage</label>
+          <span className="tm-tk-levval">{lev}x</span>
         </div>
-        <input type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} className="slider mt-2" style={{ ["--pct" as string]: `${((lev - 1) / Math.max(1, maxLev - 1)) * 100}%` }} aria-label="leverage" />
-        <div className="flex justify-between text-[10px] text-dim num mt-1">
-          {[1, Math.round(maxLev / 4), Math.round(maxLev / 2), Math.round((3 * maxLev) / 4), maxLev].map((v, i) => (
-            <button key={i} onClick={() => setLev(v)} className="hover:text-fg">{v}x</button>
+        <input id={`${uid}-lev`} type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} className="slider" style={{ ["--pct" as string]: `${levAt(lev) * 100}%` }} aria-label="leverage" />
+        <div className="tm-tk-ticks">
+          {levTicks.map((v) => (
+            <button key={v} type="button" onClick={() => setLev(v)} style={{ "--at": levAt(v) } as CSSProperties} data-on={lev === v} data-past={v > 1 && lev > v}>
+              {v}x
+            </button>
           ))}
         </div>
       </div>
 
       {/* order type + tp/sl */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <span className="seg">
           {(["market", "limit"] as const).map((t) => (
-            <button key={t} className={`seg-item capitalize ${type === t ? "seg-active" : ""}`} onClick={() => setType(t)}>{t}</button>
+            <button key={t} type="button" aria-pressed={type === t} className={`seg-item capitalize ${type === t ? "seg-active" : ""}`} onClick={() => setType(t)}>
+              {t}
+            </button>
           ))}
         </span>
-        <span className="ml-auto"><Toggle on={tpsl} onChange={setTpsl} label="Take profit / Stop loss" /></span>
+        <Switch on={tpsl} onChange={setTpsl} label="TP / SL" className="tm-tk-sw ml-auto" />
       </div>
       {type === "limit" && (
-        <div className="card-2 flex items-center px-3 h-10">
-          <span className="text-muted text-xs mr-2">Limit price</span>
-          <input className="flex-1 bg-transparent outline-none num text-right" inputMode="decimal" value={limitPx} onChange={(e) => setLimitPx(e.target.value)} placeholder={mid ? fmtPx(mid) : ""} />
-          <button className="text-brand text-xs ml-2" onClick={() => mid && setLimitPx(String(Number(mid.toPrecision(6))))}>Mid</button>
-        </div>
+        <label className="tm-tk-row">
+          <span className="tm-tk-row-label">Limit price</span>
+          <input className="tm-tk-input" inputMode="decimal" value={limitPx} onChange={(e) => setLimitPx(e.target.value)} placeholder={mid ? fmtPx(mid) : ""} autoComplete="off" />
+          <button type="button" className="tm-tk-act" onClick={() => mid && setLimitPx(String(Number(mid.toPrecision(6))))} disabled={!mid}>
+            Mid
+          </button>
+        </label>
       )}
       {tpsl && (
-        <div className="grid grid-cols-2 gap-2">
-          <div className="card-2 px-3 py-1.5">
-            <div className="text-[11px] text-up">Take profit</div>
-            <input className="w-full bg-transparent outline-none num" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="price" />
-          </div>
-          <div className="card-2 px-3 py-1.5">
-            <div className="text-[11px] text-down">Stop loss</div>
-            <input className="w-full bg-transparent outline-none num" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value)} placeholder="price" />
-          </div>
+        <div className="tm-tk-grid2">
+          <label className="tm-tk-mini" data-tone="up">
+            <span className="tm-tk-mini-label">Take profit</span>
+            <input className="tm-tk-input" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="Price" autoComplete="off" />
+          </label>
+          <label className="tm-tk-mini" data-tone="down">
+            <span className="tm-tk-mini-label">Stop loss</span>
+            <input className="tm-tk-input" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value)} placeholder="Price" autoComplete="off" />
+          </label>
         </div>
       )}
 
       {/* thesis */}
-      <div className="card-2 px-3 py-2">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-thesis font-medium">Why this trade?</span>
-          <span className="num text-dim">{thesis.length}/280</span>
-        </div>
-        <textarea className="w-full bg-transparent outline-none resize-none h-14 mt-1 text-[13px] placeholder:text-dim leading-snug" maxLength={280} value={thesis} onChange={(e) => setThesis(e.target.value)} placeholder="Optional. Goes on the feed bound to this position. Close inside an hour and it's tagged Dumped." />
-      </div>
+      <label className="tm-tk-why block" htmlFor={`${uid}-why`}>
+        <span className="tm-tk-why-head">
+          <TkIcon.pen size={13} sw={2} />
+          Why this trade?
+          <span className="tm-tk-why-count">{thesis.length}/280</span>
+        </span>
+        <textarea id={`${uid}-why`} className="tm-tk-why-input" maxLength={280} rows={2} value={thesis} onChange={(e) => setThesis(e.target.value)} placeholder="Optional. Goes on the feed bound to this position. Close inside an hour and it's tagged Dumped." />
+      </label>
 
       {/* summary */}
-      <dl className="text-xs space-y-1.5 px-1">
-        <Row k="Liquidation price" v={liq && usdNum ? fmtPx(liq) : "N/A"} />
-        <Row k="Order value" v={usdNum ? fmtUsd(usdNum) : "N/A"} />
-        <Row k="Margin required" v={usdNum ? fmtUsd(margin) : "N/A"} warn={tooBig} />
-        <Row k="Fees" v={<span><span className="text-brand">◆</span> 0.045% + 0.05% builder{usdNum ? ` · ${fmtUsd(fee)}` : ""}</span>} />
+      <dl className="tm-tk-sum">
+        <Row k="Order value" v={usdNum ? fmtUsd(usdNum) : null} />
+        <Row k="Margin required" v={usdNum ? fmtUsd(margin) : null} warn={tooBig} />
+        <Row k="Liq. price" v={liq && usdNum ? `≈ ${fmtPx(liq)}` : null} />
+        <Row
+          k="Fees"
+          v={
+            <>
+              0.045% + <span className="tm-tk-builder">0.05% builder</span>
+              {usdNum ? <span className="tm-tk-dim"> · {fmtUsd(fee)}</span> : null}
+            </>
+          }
+        />
       </dl>
 
-      <button className={`btn w-full h-11 text-[15px] ${ready ? (side === "LONG" ? "btn-up" : "btn-down") : "btn-primary"}`} onClick={onCta} disabled={disabled || ob.busy}>
+      <button type="button" className={`btn tm-tk-cta ${ready ? (side === "LONG" ? "btn-up" : "btn-down") : "btn-primary"} ${disabled || ob.busy ? "" : "btn-glow"}`} onClick={onCta} disabled={disabled || ob.busy}>
         {!ready && <Icon.wallet />}
         {ready ? (busy ? "Sending…" : `${side === "LONG" ? "Long" : "Short"} ${coin}${usdNum ? ` · ${fmtUsd(usdNum)}` : ""}`) : ob.cta}
       </button>
-      {!ready && <p className="text-[11px] text-dim text-center num">Fee 0.045% taker + 0.05% builder · routes to Hyperliquid</p>}
+      {!ready && (
+        <p className="tm-tk-note">
+          <TkIcon.lock size={11} sw={2} />
+          Non-custodial · routes to Hyperliquid
+        </p>
+      )}
+      {ready && (
+        <p className="tm-tk-note">
+          <TkIcon.lock size={11} sw={2} />
+          Signed by your agent wallet
+        </p>
+      )}
       {!ready && showStep && ob.Panel && <ob.Panel />}
-      {ready && usdNum > 0 && usdNum < 10 && <p className="text-dim text-[11px] text-center">Minimum order is $10</p>}
-      {ready && tooBig && <p className="text-warn text-[11px] text-center">Margin exceeds your available {fmtUsd(avail)}. Lower size or raise leverage.</p>}
-      {msg && <p className={`text-xs text-center ${msg.ok ? "text-up" : "text-down"}`}>{msg.text}</p>}
+      {ready && usdNum > 0 && usdNum < 10 && (
+        <p className="tm-tk-msg" data-tone="warn">
+          <TkIcon.alert size={13} />
+          <span>Minimum order is $10</span>
+        </p>
+      )}
+      {ready && tooBig && (
+        <p className="tm-tk-msg" data-tone="warn">
+          <TkIcon.alert size={13} />
+          <span>Margin exceeds your available {fmtUsd(avail)}. Lower size or raise leverage.</span>
+        </p>
+      )}
+      {msg && (
+        <p className="tm-tk-msg" data-tone={msg.ok ? "ok" : "err"} role={msg.ok ? "status" : "alert"}>
+          {msg.ok ? <TkIcon.check size={13} sw={2.2} /> : <TkIcon.alert size={13} />}
+          <span>{msg.text}</span>
+        </p>
+      )}
 
       {ready && address && <DepositBox address={address} />}
 
       {myPos && (
-        <div className="card-2 px-3 py-2.5 space-y-1 text-xs">
+        <div className="tm-tk-box">
           <div className="flex justify-between">
-            <span className="text-muted">Current position</span>
-            <span className={`font-semibold ${myPos.szi > 0 ? "text-up" : "text-down"}`}>{myPos.szi > 0 ? "Long" : "Short"} {Math.abs(myPos.szi)} {coin}</span>
+            <span>Current position</span>
+            <span className={`font-semibold ${myPos.szi > 0 ? "tm-tk-up" : "tm-tk-down"}`}>
+              {myPos.szi > 0 ? "Long" : "Short"} {Math.abs(myPos.szi)} {coin}
+            </span>
           </div>
-          <div className="flex justify-between num"><span className="text-muted">Entry</span><span>{fmtPx(myPos.entryPx)}</span></div>
-          <div className="flex justify-between num"><span className="text-muted">Unrealised</span><span className={myPos.unrealizedPnl >= 0 ? "text-up" : "text-down"}>{fmtUsd(myPos.unrealizedPnl, { sign: true })} ({(myPos.returnOnEquity * 100).toFixed(2)}%)</span></div>
-          <div className="flex justify-between num"><span className="text-muted">Liq. price</span><span>{myPos.liquidationPx ? fmtPx(myPos.liquidationPx) : "–"}</span></div>
-          <button className="btn w-full h-9 mt-1" onClick={close} disabled={busy}>Close position</button>
+          <div className="flex justify-between num">
+            <span>Entry</span>
+            <span className="text-fg-2">{fmtPx(myPos.entryPx)}</span>
+          </div>
+          <div className="flex justify-between num">
+            <span>Unrealised</span>
+            <span className={myPos.unrealizedPnl >= 0 ? "tm-tk-up" : "tm-tk-down"}>
+              {fmtUsd(myPos.unrealizedPnl, { sign: true })} ({(myPos.returnOnEquity * 100).toFixed(2)}%)
+            </span>
+          </div>
+          <div className="flex justify-between num">
+            <span>Liq. price</span>
+            <span className="text-fg-2">{myPos.liquidationPx ? fmtPx(myPos.liquidationPx) : "–"}</span>
+          </div>
+          <button type="button" className="btn w-full h-9 mt-1" onClick={close} disabled={busy}>
+            Close position
+          </button>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
 function Row({ k, v, warn }: { k: string; v: React.ReactNode; warn?: boolean }) {
+  const empty = v === null || v === undefined;
   return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="text-muted underline decoration-dotted decoration-line-2 underline-offset-4">{k}</dt>
-      <dd className={`num text-right ${warn ? "text-warn" : "text-fg-2"}`}>{v}</dd>
+    <div>
+      <dt>{k}</dt>
+      <dd data-empty={empty} data-tone={warn ? "warn" : undefined}>
+        {empty ? "–" : v}
+      </dd>
     </div>
   );
 }

@@ -1,0 +1,727 @@
+/* =====================================================================
+   market header (.tm-head-*): the landing mock's header, made real.
+   a lit coin and the symbol on the left, boxed glass chips on the right,
+   mark as the hero chip. layout follows the header's own width through
+   container queries: narrow = identity over one scrolling chip row,
+   mid = identity + hero over a full-width chip row, wide = one row.
+   js (useFit) steps a layout down through data-fit when the live numbers
+   would not fit it, so the symbol never truncates and one row never scrolls.
+   ===================================================================== */
+
+@layer components {
+  .tm-head {
+    /* rgb triplets so every glow can carry its own alpha (times --glow) */
+    --tm-head-up: 34 211 107;
+    --tm-head-down: 255 77 79;
+    --tm-head-mint: 77 227 193;
+    --tm-head-gold: 255 196 77;
+    --tm-head-amber: 245 178 54;
+    /* text in the mock's luminous tints on dark; plain tokens on paper */
+    --tm-head-up-text: color-mix(in srgb, var(--color-up) 68%, #e9fff3);
+    --tm-head-down-text: color-mix(in srgb, var(--color-down) 74%, #fff0f0);
+    position: relative;
+    /* the symbol search must sit over the chart card below; stays under the sticky top bar (z-30) */
+    z-index: 25;
+  }
+  [data-theme="light"] .tm-head {
+    --tm-head-up: 31 157 85;
+    --tm-head-down: 217 68 74;
+    --tm-head-mint: 15 159 152;
+    --tm-head-gold: 222 146 18;
+    --tm-head-amber: 168 114 28;
+    --tm-head-up-text: var(--color-up);
+    --tm-head-down-text: var(--color-down);
+  }
+
+  .tm-head-cq { container: tm-head / inline-size; }
+
+  /* ---------- layout: narrow by default ---------- */
+  .tm-head-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 10px;
+  }
+  .tm-head-id { position: relative; display: flex; align-items: center; min-width: 0; }
+  .tm-head-stats {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    /* bleed to the card edges and leave room for the hero's halo inside the scroll clip */
+    margin: -10px -12px -10px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .tm-head-stats::-webkit-scrollbar,
+  .tm-head-rest::-webkit-scrollbar { display: none; }
+  .tm-head-hero,
+  .tm-head-rest { display: flex; align-items: center; gap: 6px; flex: none; }
+  .tm-head-id .tm-head-star { margin-left: auto; }
+
+  /* soft fades on whichever edge still has chips to scroll to (set from js) */
+  .tm-head-stats,
+  .tm-head-rest { --tm-head-fl: 0px; --tm-head-fr: 0px; }
+  .tm-head-stats[data-fade-l],
+  .tm-head-rest[data-fade-l] { --tm-head-fl: 30px; }
+  .tm-head-stats[data-fade-r],
+  .tm-head-rest[data-fade-r] { --tm-head-fr: 30px; }
+  .tm-head-stats:is([data-fade-l], [data-fade-r]),
+  .tm-head-rest:is([data-fade-l], [data-fade-r]) {
+    -webkit-mask: linear-gradient(90deg, transparent, #000 var(--tm-head-fl), #000 calc(100% - var(--tm-head-fr)), transparent);
+    mask: linear-gradient(90deg, transparent, #000 var(--tm-head-fl), #000 calc(100% - var(--tm-head-fr)), transparent);
+  }
+
+  /* a row that overflows can be grabbed with a mouse; touch gets gentle snapping */
+  .tm-head-stats[data-scrollable],
+  .tm-head-rest[data-scrollable] { cursor: grab; }
+  .tm-head-stats[data-dragging],
+  .tm-head-rest[data-dragging] { cursor: grabbing; user-select: none; }
+  @media (pointer: coarse) {
+    .tm-head-stats,
+    .tm-head-rest { scroll-snap-type: x proximity; scroll-padding-inline: 12px; }
+    .tm-head-stats .tm-head-chip,
+    .tm-head-rest .tm-head-chip { scroll-snap-align: start; }
+  }
+
+  /* the width offers a layout; data-fit (set from js when the live numbers would not fit) can step it down:
+     "tight" = one row without the 24h change's absolute move, "rows" = the two-row layout, "stack" = the phone one */
+
+  /* mid: identity and the hero share the first row, the other chips fill the second */
+  @container tm-head (min-width: 520px) {
+    :where(.tm-head:not([data-fit="stack"])) .tm-head-grid {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas: "id hero" "rest rest";
+      gap: 10px 14px;
+    }
+    :where(.tm-head:not([data-fit="stack"])) .tm-head-id { grid-area: id; }
+    :where(.tm-head:not([data-fit="stack"])) .tm-head-id .tm-head-star { margin-left: 0; }
+    :where(.tm-head:not([data-fit="stack"])) .tm-head-stats { display: contents; }
+    :where(.tm-head:not([data-fit="stack"])) .tm-head-hero { grid-area: hero; }
+    :where(.tm-head:not([data-fit="stack"])) .tm-head-rest {
+      grid-area: rest;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      overscroll-behavior-x: contain;
+    }
+    /* equal boxes that never squeeze their content; past that, the row scrolls */
+    :where(.tm-head:not([data-fit="stack"])) .tm-head-rest > .tm-head-chip { flex: 1 0 0; min-width: max-content; }
+  }
+
+  /* wide: one row, chips gathered to the right like the mock; the identity never gives up its width */
+  @container tm-head (min-width: 1140px) {
+    :where(.tm-head:not([data-fit="rows"], [data-fit="stack"])) .tm-head-grid { display: flex; align-items: center; gap: 16px; }
+    :where(.tm-head:not([data-fit="rows"], [data-fit="stack"])) .tm-head-id { flex: none; }
+    :where(.tm-head:not([data-fit="rows"], [data-fit="stack"])) .tm-head-stats {
+      display: flex;
+      flex: 0 1 auto;
+      margin: -10px 0 -10px auto;
+      padding: 10px 0 10px 12px;
+    }
+    :where(.tm-head:not([data-fit="rows"], [data-fit="stack"])) .tm-head-rest { overflow: visible; }
+    :where(.tm-head:not([data-fit="rows"], [data-fit="stack"])) .tm-head-rest > .tm-head-chip { flex: none; min-width: 84px; }
+    /* tight: the 24h change keeps its percentage, as plain lit text like the mock's 24H chip
+       (full specificity on purpose: these override the chip rules further down) */
+    .tm-head[data-fit="tight"] .tm-head-change { min-width: 84px; }
+    .tm-head[data-fit="tight"] .tm-head-abs { display: none; }
+    .tm-head[data-fit="tight"] .tm-head-pct {
+      height: auto;
+      padding: 0;
+      font-size: 13px;
+      background: none;
+      box-shadow: none;
+      text-shadow: 0 0 14px rgb(var(--tm-head-dir) / calc(0.45 * var(--glow)));
+    }
+  }
+
+  /* ---------- identity ---------- */
+  .tm-head-sel {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    height: 44px;
+    margin-left: -6px;
+    padding: 0 8px 0 6px;
+    border-radius: 12px;
+    color: var(--color-fg);
+    cursor: pointer;
+    transition: background-color 0.2s, box-shadow 0.3s var(--ease-out);
+  }
+  .tm-head-sel:hover {
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair);
+  }
+  .tm-head-sel[aria-expanded="true"] {
+    background: linear-gradient(180deg, rgb(var(--tm-head-mint) / 0.11), rgb(var(--tm-head-mint) / 0.035));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px rgb(var(--tm-head-mint) / 0.32), 0 0 22px -8px rgb(var(--tm-head-mint) / calc(0.65 * var(--glow)));
+  }
+  .tm-head-sel:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  .tm-head-sym {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+  }
+  .tm-head-chev {
+    display: inline-flex;
+    flex: none;
+    margin-left: -4px;
+    color: var(--color-muted);
+    transition: transform 0.35s var(--ease-out), color 0.2s;
+  }
+  .tm-head-sel:hover .tm-head-chev { color: var(--color-fg); }
+  .tm-head-sel[aria-expanded="true"] .tm-head-chev { transform: rotate(180deg); color: var(--color-brand-2); }
+  [data-theme="light"] .tm-head-sel[aria-expanded="true"] .tm-head-chev { color: var(--color-brand); }
+  .tm-head-lev { flex: none; height: 22px; padding-inline: 8px; font-size: 11.5px; }
+
+  /* the coin as a lit orb: its own colour as a soft ring and halo, a glass highlight on top */
+  .tm-head-coin {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    border-radius: 50%;
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.38),
+      0 0 16px -3px rgb(var(--tm-head-coin) / calc(0.8 * var(--glow))),
+      0 0 34px -6px rgb(var(--tm-head-coin) / calc(0.28 * var(--glow)));
+  }
+  .tm-head-coin::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle at 34% 24%, rgb(255 255 255 / 0.32), rgb(255 255 255 / 0) 46%);
+    /* a lit inner rim, so a dark logo (eth, xrp) still reads as a glass orb on the dark panel */
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4), inset 0 -2px 4px rgb(0 0 0 / 0.22), inset 0 0 0 1px rgb(255 255 255 / 0.13);
+  }
+  [data-theme="light"] .tm-head-coin::after { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), inset 0 -2px 4px rgb(0 0 0 / 0.12); }
+  [data-theme="light"] .tm-head-coin {
+    box-shadow:
+      0 0 0 1px rgb(28 29 33 / 0.1),
+      0 4px 14px -3px rgb(var(--tm-head-coin) / 0.5);
+  }
+
+  .tm-head-star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    color: var(--color-dim);
+    transition: color 0.2s, background-color 0.2s, filter 0.35s var(--ease-out);
+  }
+  .tm-head-star:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-head-star[data-on] {
+    color: rgb(var(--tm-head-gold));
+    filter: drop-shadow(0 0 6px rgb(var(--tm-head-gold) / calc(0.75 * var(--glow))));
+  }
+  .tm-head-star[data-on]:hover { background: rgb(var(--tm-head-gold) / 0.09); }
+  .tm-head-star:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+
+  /* ---------- chips ---------- */
+  .tm-head-chip { position: relative; min-width: 84px; transition: box-shadow 0.25s var(--ease-out); }
+  /* each chip explains itself on hover: its rim brightens to say so */
+  @media (hover: hover) {
+    .tm-head-chip:not(.tm-head-mark):hover { box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--color-line-2); }
+  }
+  /* every value sits in the same 16px line, so labels line up across a row whatever the value holds */
+  .tm-head-chip .chip-value { display: inline-flex; align-items: center; height: 16px; }
+  [data-theme="light"] .tm-head-chip .chip-label { color: var(--color-muted); }
+  .tm-head-quiet .chip-value { color: var(--color-fg-2); font-weight: 550; }
+
+  .tm-head-skel { display: inline-block; height: 12px; border-radius: 4px; vertical-align: middle; }
+  /* on the dark glass the shared recess colour is darker than the chip itself: lift it so loading reads as loading */
+  .tm-head .tm-head-skel { background-color: rgb(255 255 255 / 0.05); }
+  [data-theme="light"] .tm-head .tm-head-skel { background-color: var(--recess); }
+  .tm-head-mark-px .tm-head-skel { height: 16px; }
+
+  /* mark, the hero: taller, bigger, tinted by the day, lit from the corner */
+  .tm-head-mark {
+    --tm-head-dir: var(--tm-head-up);
+    --tm-head-dir-text: var(--tm-head-up-text);
+    height: 44px;
+    min-width: 128px;
+    padding-inline: 12px 14px;
+    /* 2px taller than its neighbours on each side: start lower so its label shares their line */
+    justify-content: flex-start;
+    padding-top: 7.75px;
+    background:
+      radial-gradient(120% 150% at 0% 0%, rgb(var(--tm-head-dir) / 0.13), rgb(var(--tm-head-dir) / 0) 62%),
+      linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow:
+      inset 0 1px 0 var(--inset-hi),
+      inset 0 0 0 1px rgb(var(--tm-head-dir) / 0.26),
+      0 0 18px -10px rgb(var(--tm-head-dir) / calc(0.6 * var(--glow)));
+  }
+  /* the live price breathes: a slow halo, compositor-only */
+  .tm-head-mark::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 26px -6px rgb(var(--tm-head-dir) / calc(0.55 * var(--glow)));
+    animation: ui-breathe 5.2s ease-in-out infinite;
+  }
+  .tm-head-mark[data-dir="down"] { --tm-head-dir: var(--tm-head-down); --tm-head-dir-text: var(--tm-head-down-text); }
+  @media (hover: hover) {
+    .tm-head-mark[data-dir]:hover {
+      box-shadow:
+        inset 0 1px 0 var(--inset-hi),
+        inset 0 0 0 1px rgb(var(--tm-head-dir) / 0.42),
+        0 0 18px -10px rgb(var(--tm-head-dir) / calc(0.6 * var(--glow)));
+    }
+  }
+  .tm-head-mark:not([data-dir]) {
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair);
+  }
+  .tm-head-mark:not([data-dir])::before { display: none; }
+  .tm-head-mark:not([data-dir]) .tm-head-mark-px { color: var(--color-fg); text-shadow: none; }
+  .tm-head-mark > .chip-label,
+  .tm-head-mark > .chip-value { position: relative; }
+  .tm-head-mark-label { display: inline-flex; align-items: center; gap: 6px; }
+  /* "live" is the brand's teal (the mock's live dot), never up or down: the chip around it already says which way */
+  .tm-head-live {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #d9fff6, rgb(var(--tm-head-mint)) 60%);
+    box-shadow: 0 0 8px rgb(var(--tm-head-mint) / calc(0.9 * var(--glow)));
+  }
+  .tm-head-chip .tm-head-mark-px {
+    height: 20px;
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: var(--tm-head-dir-text);
+    text-shadow: 0 0 18px rgb(var(--tm-head-dir) / calc(0.42 * var(--glow)));
+  }
+
+  /* a tick: light blooms behind the digits in the chip's own colour, holds a beat, then lets go. one hue only:
+     a red bloom over a green day (or the reverse) mixes into a muddy brown */
+  .tm-head-flash {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(70% 120% at 34% 70%, rgb(var(--tm-head-dir) / 0.3), rgb(var(--tm-head-dir) / 0.08) 58%, rgb(var(--tm-head-dir) / 0) 88%);
+    box-shadow: 0 0 26px -5px rgb(var(--tm-head-dir) / calc(0.8 * var(--glow)));
+    animation: tm-head-flash 1.2s linear;
+  }
+  /* the tick's direction: the arrow pops in from the side it moved toward, and stays until the next tick */
+  .tm-head-tick {
+    display: inline-flex;
+    margin-left: 6px;
+    color: var(--tm-head-up-text);
+    opacity: 0.9;
+    animation: tm-head-tick-up 0.55s var(--ease-out);
+  }
+  .tm-head-tick[data-dir="down"] { color: var(--tm-head-down-text); animation-name: tm-head-tick-down; }
+  .tm-head-tick[data-dir="down"] svg { transform: rotate(180deg); }
+  .tm-head-tick:not([data-dir]) { visibility: hidden; animation: none; }
+
+  /* 24h change: the absolute move, then the percentage as a small lit tag */
+  .tm-head-change { --tm-head-dir: var(--tm-head-up); --tm-head-dir-text: var(--tm-head-up-text); min-width: 122px; }
+  .tm-head-change[data-dir="down"] { --tm-head-dir: var(--tm-head-down); --tm-head-dir-text: var(--tm-head-down-text); }
+  .tm-head-change .chip-value { gap: 7px; }
+  .tm-head-abs { color: var(--tm-head-dir-text); }
+  .tm-head-pct {
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    padding-inline: 5px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--tm-head-dir-text);
+    background: linear-gradient(180deg, rgb(var(--tm-head-dir) / 0.2), rgb(var(--tm-head-dir) / 0.07));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-head-dir) / 0.28), 0 0 12px -4px rgb(var(--tm-head-dir) / calc(0.6 * var(--glow)));
+  }
+  .tm-head-mark[data-dir],
+  .tm-head-change[data-dir] { transition: box-shadow 0.6s var(--ease-out); }
+
+  /* funding: the rate, then the hour as a small lit ring that fills toward the payment, then the clock */
+  .tm-head-fund { --tm-head-ring: var(--tm-head-mint); min-width: 150px; }
+  .tm-head-fund-row { gap: 9px; }
+  .tm-head-fund-rate { color: var(--color-brand-2); }
+  [data-theme="light"] .tm-head-fund-rate { color: var(--color-brand); }
+  .tm-head-fund[data-neg] .tm-head-fund-rate { color: var(--tm-head-down-text); }
+  .tm-head-cd {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--color-muted);
+  }
+  .tm-head-cd-ring {
+    position: relative;
+    flex: none;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    /* the glow follows the lit arc only (a drop shadow of the masked ring, not a halo around the whole dial) */
+    filter: drop-shadow(0 0 2.5px rgb(var(--tm-head-ring) / calc(0.9 * var(--glow))));
+  }
+  /* a countdown, not a spinner: what is left of the hour is lit and drains clockwise into twelve o'clock,
+     the moment of payment; the hour already gone is a quiet track */
+  .tm-head-cd-ring::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: conic-gradient(var(--tm-head-track, var(--hair-2)) 0 calc(var(--tm-head-p, 0) * 1turn), rgb(var(--tm-head-ring) / 0.7) calc(var(--tm-head-p, 0) * 1turn), rgb(var(--tm-head-ring)) 1turn);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.25px), #000 calc(100% - 1.75px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2.25px), #000 calc(100% - 1.75px));
+  }
+  /* the last minute: the whole dial turns amber and breathes with the clock */
+  .tm-head-fund[data-soon] { --tm-head-ring: var(--tm-head-amber); --tm-head-track: rgb(var(--tm-head-amber) / 0.4); }
+  .tm-head-fund[data-soon] .tm-head-cd { color: var(--color-warn); animation: tm-head-soon 1.6s ease-in-out infinite; }
+
+  /* long / short: both shares and a split bar that glows in each side's colour */
+  .tm-head-ls { min-width: 138px; }
+  .tm-head-ls-row { gap: 8px; font-size: 12px; }
+  .tm-head-ls-l { color: var(--tm-head-up-text); }
+  .tm-head-ls-s { color: var(--tm-head-down-text); }
+  .tm-head-ls-bar { display: flex; gap: 2px; width: 56px; height: 4px; flex: none; }
+  .tm-head-ls-bar > i { display: block; flex-basis: 0; min-width: 3px; height: 100%; border-radius: 999px; }
+  .tm-head-ls-seg-l {
+    background: linear-gradient(90deg, rgb(var(--tm-head-up) / 0.55), rgb(var(--tm-head-up)));
+    box-shadow: 0 0 9px -1px rgb(var(--tm-head-up) / calc(0.85 * var(--glow)));
+  }
+  .tm-head-ls-seg-s {
+    background: linear-gradient(90deg, rgb(var(--tm-head-down)), rgb(var(--tm-head-down) / 0.55));
+    box-shadow: 0 0 9px -1px rgb(var(--tm-head-down) / calc(0.75 * var(--glow)));
+  }
+  .tm-head-ls :is(.tm-head-ls-l, .tm-head-ls-s)[data-zero] { color: var(--color-dim); }
+  .tm-head-ls-seg-none { flex-grow: 1; background: var(--hair-2); }
+  .tm-head-ls[data-empty] :is(.tm-head-ls-l, .tm-head-ls-s) { color: var(--color-dim); }
+
+  /* ---------- chip tooltip ---------- */
+  .tm-head-tip {
+    position: absolute;
+    z-index: 26;
+    width: max-content;
+    max-width: 248px;
+    padding: 9px 11px 10px;
+    border-radius: 10px;
+    pointer-events: none;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--color-fg-2);
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+    border: 1px solid var(--hair-2);
+    border-top-color: var(--edge-top);
+    box-shadow: inset 0 1px 0 var(--inset-hi), var(--shadow-pop);
+    transform: translateX(-50%);
+    animation: tm-head-tip-in 0.18s var(--ease-out);
+  }
+  .tm-head-tip b {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 3px;
+    font-family: var(--font-label);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-brand-2);
+  }
+  [data-theme="light"] .tm-head-tip b { color: var(--color-brand); }
+  .tm-head-tip .kbd { height: 17px; padding-inline: 5px; margin-left: auto; letter-spacing: 0; text-transform: none; }
+  .tm-head-tip::before {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: calc(50% + var(--tm-head-tip-arrow, 0px) - 4.5px);
+    width: 9px;
+    height: 9px;
+    background: var(--surface-top);
+    border-left: 1px solid var(--edge-top);
+    border-top: 1px solid var(--edge-top);
+    border-top-left-radius: 2px;
+    transform: rotate(45deg);
+  }
+
+  /* ---------- the symbol search ---------- */
+  .tm-head-pop {
+    position: absolute;
+    z-index: 25;
+    top: 52px;
+    left: -6px;
+    width: min(560px, calc(100cqw + 12px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    container: tm-head-pop / inline-size;
+    transform-origin: 30px 0;
+    animation: tm-head-pop-in 0.22s var(--ease-out);
+  }
+  .tm-head-pop-top {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 10px 10px 9px;
+    border-bottom: 1px solid var(--hair);
+    background: radial-gradient(70% 120% at 0% 0%, rgb(var(--tm-head-mint) / 0.07), transparent 60%);
+  }
+  .tm-head-pop-field { display: flex; align-items: center; gap: 9px; height: 40px; padding-inline: 12px 7px; cursor: text; }
+  .tm-head-pop-field input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    font-size: 14px;
+    color: var(--color-fg);
+  }
+  .tm-head-pop-field input::placeholder { color: var(--color-dim); }
+  .tm-head-pop-glass { flex: none; color: var(--color-dim); transition: color 0.2s; }
+  .tm-head-pop-field:focus-within .tm-head-pop-glass { color: var(--color-brand-2); }
+  [data-theme="light"] .tm-head-pop-field:focus-within .tm-head-pop-glass { color: var(--color-brand); }
+  .tm-head-pop-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    color: var(--color-muted);
+  }
+  .tm-head-pop-clear:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-head-pop-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .tm-head-pop-bar .seg-item { display: inline-flex; align-items: center; gap: 6px; }
+  .tm-head-pop-bar .seg-item:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+  .tm-head-pop-n { font-size: 10.5px; font-weight: 500; color: var(--color-dim); }
+  .tm-head-pop-favtab svg { color: rgb(var(--tm-head-gold)); }
+  .tm-head-pop-sort { white-space: nowrap; }
+
+  .tm-head-pop {
+    --tm-head-cols: minmax(0, 1fr) 96px 72px 64px;
+    --tm-head-star-w: 22px;
+  }
+  .tm-head-pop-cols {
+    display: grid;
+    grid-template-columns: var(--tm-head-star-w) var(--tm-head-cols);
+    align-items: center;
+    gap: 10px;
+    height: 30px;
+    padding-inline: 12px 14px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .tm-head-pop-cols > span:first-child { grid-column: 1 / 3; padding-left: calc(var(--tm-head-star-w) + 10px); }
+  .tm-head-pop-cols > span:nth-child(n + 2) { text-align: right; }
+
+  .tm-head-pop-list {
+    position: relative;
+    margin: 0;
+    padding: 5px 6px;
+    list-style: none;
+    max-height: min(408px, calc(100dvh - 310px));
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .tm-head-pop-skel { padding: 4px 0; }
+  .tm-head-pop-skel .skeleton { display: block; height: 38px; }
+
+  .tm-head-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--tm-head-star-w) minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    height: 46px;
+    padding-inline: 6px 8px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .tm-head-row[data-active] { background: var(--row); box-shadow: inset 0 0 0 1px var(--hair); }
+  .tm-head-row[data-current] {
+    background: linear-gradient(90deg, rgb(var(--tm-head-mint) / 0.13), rgb(var(--tm-head-mint) / 0.035) 62%, transparent);
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-head-mint) / 0.14);
+  }
+  .tm-head-row[data-current][data-active] {
+    background: linear-gradient(90deg, rgb(var(--tm-head-mint) / 0.17), rgb(var(--tm-head-mint) / 0.06) 62%, var(--row));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-head-mint) / 0.24);
+  }
+  .tm-head-row[data-current]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: linear-gradient(180deg, var(--color-brand-2), var(--color-brand));
+    box-shadow: 0 0 10px 1px rgb(var(--tm-head-mint) / calc(0.7 * var(--glow)));
+  }
+  .tm-head-row-star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--tm-head-star-w);
+    height: var(--tm-head-star-w);
+    border-radius: 6px;
+    color: var(--color-dim);
+    opacity: 0.5;
+    transition: opacity 0.2s, color 0.2s, filter 0.3s;
+  }
+  .tm-head-row:hover .tm-head-row-star,
+  .tm-head-row[data-active] .tm-head-row-star { opacity: 1; }
+  .tm-head-row-star:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-head-row-star[data-on] {
+    opacity: 1;
+    color: rgb(var(--tm-head-gold));
+    filter: drop-shadow(0 0 4px rgb(var(--tm-head-gold) / calc(0.7 * var(--glow))));
+  }
+  .tm-head-row-link {
+    display: grid;
+    grid-template-columns: var(--tm-head-cols);
+    align-items: center;
+    gap: 10px;
+    height: 100%;
+    min-width: 0;
+    color: inherit;
+  }
+  .tm-head-row-mkt { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  /* every coin gets a lit rim (dark logos would vanish without it); the row under the cursor lights its coin */
+  .tm-head-row-ico {
+    display: inline-flex;
+    flex: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--hair-2);
+    transition: box-shadow 0.3s var(--ease-out);
+  }
+  .tm-head-row[data-active] .tm-head-row-ico {
+    box-shadow: 0 0 0 1px var(--hair-2), 0 0 14px -2px rgb(var(--tm-head-coin) / calc(0.75 * var(--glow)));
+  }
+  .tm-head-row-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.1; }
+  .tm-head-row-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+  .tm-head-row-name small { font-size: 10px; letter-spacing: 0.02em; color: var(--color-dim); white-space: nowrap; }
+  .tm-head-row-here {
+    flex: none;
+    margin-left: 2px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-brand-2);
+    background: rgb(var(--tm-head-mint) / 0.1);
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-head-mint) / 0.25);
+  }
+  [data-theme="light"] .tm-head-row-here { color: var(--color-brand); }
+  .tm-head-row-px { text-align: right; font-size: 13px; font-weight: 500; }
+  .tm-head-row-chg { display: flex; justify-content: flex-end; }
+  .tm-head-row-chg .pill { height: 20px; padding-inline: 6px; font-size: 11px; }
+  .tm-head-row-vol { text-align: right; font-size: 12px; color: var(--color-muted); }
+
+  .tm-head-pop-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 26px 24px 30px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--color-dim);
+  }
+  .tm-head-pop-empty b { font-size: 13px; font-weight: 600; color: var(--color-fg-2); }
+  .tm-head-pop-empty-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    margin-bottom: 8px;
+    border-radius: 50%;
+    color: var(--color-muted);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair-2);
+  }
+
+  .tm-head-pop-foot {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 36px;
+    padding-inline: 12px;
+    border-top: 1px solid var(--hair);
+    font-size: 11px;
+    color: var(--color-dim);
+    background: linear-gradient(180deg, transparent, var(--inset-bot));
+    white-space: nowrap;
+  }
+  .tm-head-pop-foot > span { display: inline-flex; align-items: center; gap: 4px; }
+  .tm-head-pop-foot .kbd { justify-content: center; min-width: 18px; height: 18px; padding-inline: 4px; }
+  .tm-head-pop-foot-n { margin-left: auto; }
+
+  @container tm-head-pop (max-width: 470px) {
+    .tm-head-pop-vol, .tm-head-row-here { display: none; }
+    .tm-head-pop-cols,
+    .tm-head-row { --tm-head-cols: minmax(0, 1fr) 84px 68px; }
+    .tm-head-pop-sort, .tm-head-pop-foot-tabs { display: none; }
+  }
+  @container tm-head-pop (max-width: 380px) {
+    .tm-head-pop-foot > span:not(.tm-head-pop-foot-n) { display: none; }
+  }
+  @media (pointer: coarse) {
+    .tm-head-pop { --tm-head-star-w: 30px; }
+    .tm-head-row { height: 50px; padding-left: 2px; }
+    .tm-head-row-star { opacity: 1; }
+    .tm-head-pop-field .kbd,
+    .tm-head-pop-foot > span:not(.tm-head-pop-foot-n) { display: none; }
+  }
+
+  /* ---------- motion ---------- */
+  @keyframes tm-head-pop-in {
+    from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes tm-head-tip-in {
+    from { opacity: 0; transform: translate(-50%, -3px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+  }
+  @keyframes tm-head-flash {
+    0% { opacity: 0; }
+    7% { opacity: 1; }
+    30% { opacity: 0.78; }
+    100% { opacity: 0; }
+  }
+  @keyframes tm-head-soon {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  @keyframes tm-head-tick-up {
+    from { opacity: 0; transform: translateY(4px) scale(0.6); }
+  }
+  @keyframes tm-head-tick-down {
+    from { opacity: 0; transform: translateY(-4px) scale(0.6); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tm-head-pop, .tm-head-tip, .tm-head-cd, .tm-head-tick, .tm-head-live, .tm-head-live::after, .tm-head-mark::before { animation: none !important; }
+    .tm-head-flash { display: none; }
+    .tm-head-chev, .tm-head-sel, .tm-head-star, .tm-head-chip, .tm-head-row-ico { transition: none; }
+  }
+}
