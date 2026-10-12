@@ -10,20 +10,35 @@ import { useAuth } from "@/hooks/use-auth";
 import { FeedCard } from "./feed-card";
 import { Avatar, CoinIcon, Empty, Icon, Pnl, Skeleton, Toggle } from "../ui";
 
-type Tab = "alerts" | "tokens" | "leaderboard" | "feed";
+type Tab = "tokens" | "feed" | "leaderboard" | "alerts";
+const TABS: Tab[] = ["tokens", "feed", "leaderboard", "alerts"];
+const TAB_KEY = "sl:rail-tab";
 const MIN_SIZES = [0, 1000, 10_000, 100_000];
 
 export function FeedColumn({ onNavigate, onCollapse }: { onNavigate?: () => void; onCollapse?: () => void }) {
-  const [tab, setTab] = useState<Tab>("feed");
+  // markets first: a new visitor has no alerts and nobody followed yet
+  const [tab, setTab_] = useState<Tab>("tokens");
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem(TAB_KEY) as Tab | null;
+      if (t && TABS.includes(t)) setTab_(t);
+    } catch {}
+  }, []);
+  const setTab = (t: Tab) => {
+    setTab_(t);
+    try {
+      localStorage.setItem(TAB_KEY, t);
+    } catch {}
+  };
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-0.5 px-2 h-12 border-b border-line shrink-0">
         {(
           [
-            ["alerts", "Alerts", <Icon.bell key="b" />],
             ["tokens", "Tokens", null],
-            ["leaderboard", "Leaderboard", null],
             ["feed", "Feed", null],
+            ["leaderboard", "Leaderboard", null],
+            ["alerts", "Alerts", <Icon.bell key="b" />],
           ] as [Tab, string, React.ReactNode][]
         ).map(([t, label, icon]) => (
           <button key={t} className={`tab h-8 px-2.5 ${tab === t ? "tab-active" : ""}`} onClick={() => setTab(t)}>
