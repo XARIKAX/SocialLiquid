@@ -472,7 +472,7 @@ input[type="range"].slider::-moz-range-thumb {
   object-position: 70% 60%;
 }
 @media (max-width: 640px) {
-  .hero-img { object-position: 58% 72%; }
+  .hero-img { object-position: 92% 72%; }
 }
 .hero-shade {
   position: absolute;
