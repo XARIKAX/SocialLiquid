@@ -82,6 +82,10 @@ connecting a wallet reads the address; signing the nonce claims it. a claimed ac
 
 wallets: every extension that announces itself over eip-6963 gets its own row (metamask, phantom's evm account, rabby, and anything else installed), with install links for the big three when they are missing, plus walletconnect (needs `NEXT_PUBLIC_WALLETCONNECT_ID`, free at cloud.reown.com, covers phantom mobile, rainbow, trust, ledger and 400+ others) and coinbase wallet. hyperliquid accounts are evm addresses, so phantom connects with its ethereum account.
 
+## alerts and replies
+
+signed-in users get a bell in the top bar: the latest events from the traders they follow, an unread badge counted from `alertsSeenAt`, and mark-read on open (`/api/alerts`). while a page is open, new events from followed traders slide in as toasts bottom-right. every thesis has a reply thread (`ThesisReply`, 280 chars, claimed accounts only) under its card in the feed and on its share page; feed and profile payloads carry the reply count.
+
 ## copy trading
 
 every open position on the feed and on a profile has a copy button. it opens `/m/[coin]?copy=<positionId>&from=<address>&side=&lev=` and the ticket prefills side and leverage (pushed to the exchange once trading is enabled), shows a "copying <trader>" chip and leaves the size to you. the order goes through the normal route with `copyOf`; after the fill the resulting position records `copiedFromAddress` / `copiedFromPositionId` (only when the source is someone else's position in the same coin). the feed shows "copied <trader>" on the copy and "n traders copied this" on the original.

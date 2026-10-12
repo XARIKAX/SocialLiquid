@@ -5,12 +5,13 @@ import { prisma } from "@/lib/db";
 import { fmtPx, fmtUsd, shortAddr, timeAgo } from "@/lib/format";
 import { Avatar, CoinIcon, OutcomePill, Pnl, SidePill } from "@/components/ui";
 import { Icon } from "@/components/icons";
+import { ThesisThread } from "@/components/feed/thesis-thread";
 
 export const dynamic = "force-dynamic";
 type Props = { params: Promise<{ handle: string; id: string }> };
 
 async function load(id: string) {
-  return prisma.thesis.findUnique({ where: { id }, include: { user: true, position: true, _count: { select: { likes: true } } } });
+  return prisma.thesis.findUnique({ where: { id }, include: { user: true, position: true, _count: { select: { likes: true, replies: true } } } });
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -57,9 +58,14 @@ export default async function ThesisPage({ params }: Props) {
           {p?.closedAt && <Pnl value={Number(p.realisedPnl)} className="font-semibold" />}
           {p && !p.closedAt && <Pnl value={Number(p.unrealisedPnl)} className="font-semibold" />}
           <span className="inline-flex items-center gap-1 text-muted num"><Icon.heart /> {t._count.likes}</span>
+          <span className="inline-flex items-center gap-1 text-muted num"><Icon.reply /> {t._count.replies}</span>
           <a className="btn btn-sm ml-auto" href={share} target="_blank" rel="noreferrer"><Icon.x /> Share on X</a>
         </div>
       </article>
+      <section className="card p-4 mt-3">
+        <h2 className="text-[13px] font-semibold">Replies</h2>
+        <ThesisThread thesisId={t.id} />
+      </section>
       <p className="text-[11px] text-dim mt-3 text-center text-balance">Receipts: a thesis is bound to the position at post time. Close within 60 minutes and it is tagged Dumped. Outcomes come from on-chain fills, not self reports.</p>
     </div>
   );

@@ -46,9 +46,13 @@ model User {
   claimedAt DateTime?
   createdAt DateTime @default(now())
 
+  /// when the alerts bell was last opened; events after this count as unread
+  alertsSeenAt DateTime?
+
   agentKey  AgentKey?
   theses    Thesis[]
   likes     Like[]
+  replies   ThesisReply[]
   followers Follow[] @relation("following")
   following Follow[] @relation("follower")
 }
@@ -145,11 +149,25 @@ model Thesis {
   outcome    ThesisOutcome @default(OPEN)
 
   likes      Like[]
+  replies    ThesisReply[]
   feedEvents FeedEvent[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([coin, createdAt(sort: Desc)])
   @@index([positionId])
+}
+
+/// a reply under a thesis. plain text, 280 chars, from a claimed account.
+model ThesisReply {
+  id        String   @id @default(cuid())
+  thesisId  String
+  thesis    Thesis   @relation(fields: [thesisId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String   @db.VarChar(280)
+  createdAt DateTime @default(now())
+
+  @@index([thesisId, createdAt])
 }
 
 model Like {

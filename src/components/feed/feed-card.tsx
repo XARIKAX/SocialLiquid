@@ -7,6 +7,7 @@ import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, timeAgo } from "@/lib/format";
 import { livePnl } from "@/hooks/use-market";
 import { Avatar, CoinIcon, EventPill, Icon, OutcomePill, Pnl, TraderLink } from "../ui";
+import { ThesisThread } from "./thesis-thread";
 
 type Payload = { side?: string; sizeUsd?: number; size?: number; leverage?: number; entryPx?: number; closePx?: number | null; realisedPnl?: number; holdMs?: number; text?: string };
 
@@ -137,6 +138,8 @@ function ThesisBody({ item, signedIn }: { item: FeedItem; signedIn: boolean }) {
   const [likes, setLikes] = useState(t.likes);
   const [liked, setLiked] = useState(t.likedByMe);
   const [busy, setBusy] = useState(false);
+  const [replies, setReplies] = useState(t.replies ?? 0);
+  const [threadOpen, setThreadOpen] = useState(false);
   const pos = item.position;
   const toggleLike = async () => {
     if (!signedIn || busy) return;
@@ -157,12 +160,16 @@ function ThesisBody({ item, signedIn }: { item: FeedItem; signedIn: boolean }) {
         <button onClick={toggleLike} className={`inline-flex items-center gap-1 text-xs num ${liked ? "text-down" : "text-dim hover:text-fg"} ${signedIn ? "" : "cursor-default"}`} title={signedIn ? "like" : "sign in to like"}>
           <Icon.heart filled={liked} /> {likes}
         </button>
+        <button onClick={() => setThreadOpen((v) => !v)} className={`inline-flex items-center gap-1 text-xs num ${threadOpen ? "text-fg" : "text-dim hover:text-fg"}`} title="replies">
+          <Icon.reply /> {replies}
+        </button>
         {t.outcome !== "OPEN" && <OutcomePill outcome={t.outcome} />}
         {t.outcome !== "OPEN" && pos?.closedAt && <Pnl value={pos.realisedPnl} className="text-xs" />}
         <Link href={`/t/${item.user?.handle ?? item.address}/thesis/${t.id}`} className="ml-auto text-dim hover:text-fg" title="permalink">
           <Icon.share />
         </Link>
       </div>
+      {threadOpen && <ThesisThread thesisId={t.id} compact autoFocus onCount={setReplies} />}
     </div>
   );
 }

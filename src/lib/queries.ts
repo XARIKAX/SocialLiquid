@@ -47,7 +47,7 @@ export type FeedItem = {
     /** how many positions copied this one */
     copiers: number;
   } | null;
-  thesis: { id: string; text: string; outcome: string; likes: number; likedByMe: boolean; createdAt: string } | null;
+  thesis: { id: string; text: string; outcome: string; likes: number; likedByMe: boolean; replies: number; createdAt: string } | null;
 };
 
 export type FeedFilters = {
@@ -78,7 +78,7 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
     take: Math.min(200, Math.max(1, (f.limit ?? 50) * (f.minUsd ? 3 : 1))),
     include: {
       position: true,
-      thesis: { include: { _count: { select: { likes: true } }, likes: f.viewerId ? { where: { userId: f.viewerId }, select: { userId: true } } : false } },
+      thesis: { include: { _count: { select: { likes: true, replies: true } }, likes: f.viewerId ? { where: { userId: f.viewerId }, select: { userId: true } } : false } },
     },
   });
   const copiedFromAddrs = rows.map((r) => r.position?.copiedFromAddress).filter((a): a is string => !!a);
@@ -120,6 +120,7 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
           outcome: r.thesis.outcome,
           likes: r.thesis._count.likes,
           likedByMe: Array.isArray(r.thesis.likes) && r.thesis.likes.length > 0,
+          replies: r.thesis._count.replies,
           createdAt: r.thesis.createdAt.toISOString(),
         }
       : null,
