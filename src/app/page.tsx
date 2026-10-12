@@ -14,8 +14,8 @@ export const metadata: Metadata = {
   openGraph: { title: "socialLiquid", description: "the social layer for Hyperliquid. follow the best traders, see every position live, trade alongside them." },
 };
 
-/** drop hero.mp4 (and optionally hero.webm) into public/landing and the hero plays it; otherwise the still gets a slow cinematic drift */
-const heroVideo = existsSync(join(process.cwd(), "public", "landing", "hero.mp4"));
+/** the hero plays public/socialliquid-hero-loop.(webm|mp4) when present; otherwise the still gets a slow cinematic drift */
+const heroVideo = existsSync(join(process.cwd(), "public", "socialliquid-hero-loop.mp4"));
 
 export default async function Home() {
   const [markets, items, traders, tracked, candles, board] = await Promise.all([

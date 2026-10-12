@@ -55,19 +55,19 @@ function Hero({ video }: { video: boolean }) {
   return (
     <section className="hero relative min-h-[100svh] overflow-hidden bg-[#03090b] flex flex-col">
       {/* the school following one glowing fish. a video loop when one is present, otherwise the still with a slow drift */}
-      <div className="hero-media" aria-hidden>
-        {video ? (
-          <video className="hero-img" autoPlay muted loop playsInline preload="auto" poster="/landing/hero.webp">
-            <source src="/landing/hero.webm" type="video/webm" />
-            <source src="/landing/hero.mp4" type="video/mp4" />
+      <div className={`hero-media ${video ? "has-video" : ""}`} aria-hidden>
+        {video && (
+          // the still is the poster so there is no flash before the first frame. prefers-reduced-motion hides this and shows the picture below.
+          <video className="hero-video" autoPlay muted loop playsInline preload="auto" poster="/landing/hero.webp" disablePictureInPicture>
+            <source src="/socialliquid-hero-loop.webm" type="video/webm" />
+            <source src="/socialliquid-hero-loop.mp4" type="video/mp4" />
           </video>
-        ) : (
-          <picture>
-            <source media="(max-width: 640px)" srcSet="/landing/hero-sm.webp" type="image/webp" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/landing/hero.webp" alt="" width={1376} height={768} loading="eager" fetchPriority="high" decoding="async" className="hero-img hero-drift" />
-          </picture>
         )}
+        <picture className="hero-still">
+          <source media="(max-width: 640px)" srcSet="/landing/hero-sm.webp" type="image/webp" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/landing/hero.webp" alt="" width={1376} height={768} loading="eager" fetchPriority="high" decoding="async" className={`hero-img ${video ? "" : "hero-drift"}`} />
+        </picture>
       </div>
       <div className="hero-rays" aria-hidden />
       <div className="hero-motes" aria-hidden />
