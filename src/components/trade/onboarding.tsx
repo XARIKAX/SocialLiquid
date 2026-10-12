@@ -1,6 +1,7 @@
 "use client";
 import { useState, useSyncExternalStore } from "react";
-import { useChainId, useWalletClient } from "wagmi";
+import { useChainId } from "wagmi";
+import { chainLabel, useSigner } from "@/hooks/use-signer";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
@@ -204,7 +205,7 @@ function useEnableState() {
 }
 
 function EnableTradingStep({ onDone }: { onDone: () => void }) {
-  const { data: wallet } = useWalletClient();
+  const { wallet, walletName, phantom, liveChainId } = useSigner();
   const chainId = useChainId();
   const { me, address } = useAuth();
   const { log, err, busy } = useEnableState();
@@ -272,6 +273,11 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
         <li className="flex gap-2"><span className="text-brand">1.</span><span><b>Approve an API wallet</b> so you don't sign every click. <span className="text-dim">approveAgent</span></span></li>
         <li className="flex gap-2"><span className="text-brand">2.</span><span><b>Approve the builder fee</b>, max 0.1%, so our code goes on your fills. <span className="text-dim">approveBuilderFee</span> — skipped while this deployment charges no fee.</span></li>
       </ul>
+      {walletName && (
+        <p className="text-[11px] text-dim mb-2 leading-snug" data-testid="enable-wallet">
+          Signing with <b className="text-fg-2">{walletName}</b> on <b className="text-fg-2">{chainLabel(liveChainId)}</b>. No network switch is needed: Hyperliquid accepts these signatures from any network{phantom ? ", so Phantom on Ethereum, Base or Polygon is fine (Arbitrum is not in Phantom)" : ""}.
+        </p>
+      )}
       <button className="btn btn-primary w-full h-11 text-[15px]" onClick={run} disabled={busy} data-testid="enable-run">{busy ? "Working… check your wallet" : err ? "Try again" : "Approve both"}</button>
       {log.length > 0 && (
         <ol className="mt-3 text-[11px] text-muted space-y-1" data-testid="enable-log">

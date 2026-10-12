@@ -11,7 +11,8 @@ import { Icon, Toggle } from "../ui";
 import { useOnboarding } from "./onboarding";
 import { openFunds } from "./funds";
 import { openConvert } from "./convert";
-import { useChainId, useWalletClient } from "wagmi";
+import { useChainId } from "wagmi";
+import { useSigner } from "@/hooks/use-signer";
 import { setDexAbstractionWithWallet } from "@/lib/hl-client";
 import { startChase } from "@/lib/chase";
 import { fmtQty, spotRows, usdcSpotAvail } from "@/lib/spot";
@@ -46,7 +47,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const qc = useQueryClient();
   const isSpot = market?.kind === "spot";
   const dex = market?.dex ?? "";
-  const { data: walletClient } = useWalletClient();
+  const { wallet: walletClient } = useSigner();
   const walletChainId = useChainId();
   const [dexBusy, setDexBusy] = useState(false);
   const mainBal = useBalance(signedIn && dex ? address : null);

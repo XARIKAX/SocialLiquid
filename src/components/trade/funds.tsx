@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useChainId, useReadContract, useWalletClient } from "wagmi";
+import { isPhantomWallet } from "@/hooks/use-signer";
 import { erc20Abi, formatUnits, parseUnits } from "viem";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -18,6 +19,8 @@ import {
   DEFAULT_ROUTE,
   DEPOSIT_ROUTES,
   PHANTOM_CHAINS,
+  PHANTOM_HINT,
+  markPhantomWallet,
   USDC_SYSTEM_ADDRESS,
   WITHDRAW_ROUTES,
   cctpFastFeeBps,
@@ -65,8 +68,9 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   const { data: wallet } = useWalletClient();
   const chainId = useChainId();
   const { connector } = useAccount();
-  // Phantom's EVM side only shows Ethereum, Base, Polygon and HyperEVM; it refuses to switch anywhere else
-  const phantom = /phantom/i.test(connector?.name ?? "") || (typeof window !== "undefined" && !!(window as unknown as { phantom?: { ethereum?: unknown } }).phantom?.ethereum && !/metamask|rabby|coinbase|walletconnect/i.test(connector?.name ?? ""));
+  // Phantom's EVM side only shows Ethereum, Base and Polygon; asking it for anything else opens its "Unsupported network" screen
+  const phantom = isPhantomWallet(connector?.name);
+  useEffect(() => { markPhantomWallet(phantom); }, [phantom]);
   const canSwitchTo = (id: number) => !phantom || PHANTOM_CHAINS.has(id);
   const qc = useQueryClient();
   const bal = useBalance(address);
@@ -386,7 +390,7 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
               </>
             )}
             {mode === "deposit" && !canSwitchTo(route.chain.id) && (
-              <p className="text-warn text-[11px] mt-1.5" data-testid="phantom-route-warning">Phantom cannot switch to {route.chain.name}. Pick HyperEVM, Ethereum, Base or Polygon, or connect MetaMask or Rabby for this route.</p>
+              <p className="text-warn text-[11px] mt-1.5" data-testid="phantom-route-warning">Phantom cannot switch to {route.chain.name}. {PHANTOM_HINT}: pick Ethereum, Base or Polygon, or connect MetaMask or Rabby for this route.</p>
             )}
             {amt > 0 && amt < min && <p className="text-warn text-[11px] mt-1.5">Minimum {mode === "deposit" ? "deposit" : "withdrawal"} is {min} {symbol}.</p>}
             {max !== null && amt > max + 1e-9 && <p className="text-warn text-[11px] mt-1.5">That is more than you have available.</p>}
