@@ -20,14 +20,19 @@ export type UnitAsset = {
   fee?: string;
   /** the coin the deposit shows up as in the hyperliquid spot balance */
   spotCoin?: string;
+  /**
+   * minimum withdrawal. Unit publishes deposit minimums; its withdrawal floor is not published in the same place, so
+   * these are the larger figures from Unit's lifecycle docs. too strict only inconveniences; too lax loses funds.
+   */
+  withdrawMin?: string;
   confirmations?: string;
 };
 
 /** Hyperliquid's asset dropdown, in its order, minus USDC which has its own routes */
 export const UNIT_ASSETS: UnitAsset[] = [
-  { symbol: "BTC", chain: "bitcoin", chainLabel: "Bitcoin", spotCoin: "UBTC", min: "0.0003 BTC", fee: "network fee, set by Unit", confirmations: "2 blocks (~20 min)" },
-  { symbol: "ETH", chain: "ethereum", chainLabel: "Ethereum", spotCoin: "UETH", min: "0.007 ETH", fee: "network fee, set by Unit", confirmations: "14 blocks (~3 min)" },
-  { symbol: "SOL", chain: "solana", chainLabel: "Solana", spotCoin: "USOL", min: "0.12 SOL", fee: "≈ $1.30, set by Unit", confirmations: "~1 minute" },
+  { symbol: "BTC", chain: "bitcoin", chainLabel: "Bitcoin", spotCoin: "UBTC", min: "0.0003 BTC", withdrawMin: "0.002 BTC", fee: "network fee, set by Unit", confirmations: "2 blocks (~20 min)" },
+  { symbol: "ETH", chain: "ethereum", chainLabel: "Ethereum", spotCoin: "UETH", min: "0.007 ETH", withdrawMin: "0.05 ETH", fee: "network fee, set by Unit", confirmations: "14 blocks (~3 min)" },
+  { symbol: "SOL", chain: "solana", chainLabel: "Solana", spotCoin: "USOL", min: "0.12 SOL", withdrawMin: "0.2 SOL", fee: "≈ $1.30, set by Unit", confirmations: "~1 minute" },
   { symbol: "2Z", chain: "solana", chainLabel: "Solana", confirmations: "32 slots (~15 s)" },
   { symbol: "ANSEM", chain: "solana", chainLabel: "Solana", confirmations: "32 slots (~15 s)" },
   { symbol: "AVAX", chain: "avalanche", chainLabel: "Avalanche" },
@@ -43,6 +48,9 @@ export const UNIT_ASSETS: UnitAsset[] = [
 
 /** assets we can hand an address for: a verified minimum is the condition */
 export const unitDepositable = (a: UnitAsset) => !!a.min;
+/** assets we can withdraw in-app: a spot coin to send and a withdrawal floor */
+export const unitWithdrawable = (a: UnitAsset) => !!a.spotCoin && !!a.withdrawMin;
+export const minNumber = (m: string | undefined) => Number((m ?? "0").split(" ")[0]) || 0;
 export const unitAsset = (symbol: string) => UNIT_ASSETS.find((a) => a.symbol === symbol.toUpperCase()) ?? null;
 export const UNIT_APP_URL = "https://app.hyperunit.xyz";
 /** the browser calls Unit here; the server proxy uses UNIT_API_URL (same default) */
@@ -113,4 +121,42 @@ export function spotEntry(asset: UnitAsset, spot: { coin: string; total: number;
   if (!spot) return null;
   const names = new Set([asset.spotCoin, asset.symbol, `U${asset.symbol}`].filter(Boolean) as string[]);
   return spot.find((b) => names.has(b.coin)) ?? null;
+}
+
+export type UnitWithdrawAddress = { asset: string; chain: string; chainLabel: string; destination: string; address: string; signatures: number; withdrawMin: string; via: "browser" | "server"; mock?: boolean };
+
+/** Unit's generate-address answer for a withdrawal: the hyperliquid address to spotSend the coin to, for `destination` on the native chain */
+export function parseUnitWithdrawResponse(asset: UnitAsset, destination: string, body: UnitGen, via: UnitWithdrawAddress["via"]): UnitWithdrawAddress {
+  if (!asset.withdrawMin || !asset.spotCoin) throw new Error(`no verified minimum withdrawal for ${asset.symbol}`);
+  if (typeof body.address !== "string" || !body.address) throw new Error(typeof body.error === "string" ? body.error : typeof body.message === "string" ? body.message : "no address in Unit's reply");
+  const sigs = body.signatures && typeof body.signatures === "object" ? Object.keys(body.signatures as object).length : 0;
+  if (sigs < UNIT_MIN_SIGNATURES) throw new Error(`Unit returned the address with ${sigs} guardian signature${sigs === 1 ? "" : "s"}; ${UNIT_MIN_SIGNATURES} are required, so it is not used`);
+  if (!/^0x[0-9a-fA-F]{40}$/.test(body.address)) throw new Error("Unit returned something that is not a Hyperliquid address; not using it");
+  return { asset: asset.symbol, chain: asset.chain, chainLabel: asset.chainLabel, destination, address: body.address, signatures: sigs, withdrawMin: asset.withdrawMin, via };
+}
+
+/** browser side: Unit directly, then our server proxy. `destination` is the user's address on the asset's native chain. */
+export async function fetchUnitWithdrawAddress(symbol: string, destination: string, apiFetch: <T>(path: string) => Promise<T>): Promise<UnitWithdrawAddress> {
+  const asset = unitAsset(symbol);
+  if (!asset) throw new Error("unsupported asset");
+  if (!unitWithdrawable(asset)) throw new Error(`no verified minimum withdrawal for ${asset.symbol}; withdraw it through Unit's app instead`);
+  if (!looksLikeAddress(asset.chain, destination)) throw new Error(`that is not a ${asset.chainLabel} address`);
+  const errors: string[] = [];
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 12_000);
+    const res = await fetch(`${UNIT_API_URL_CLIENT}/gen/hyperliquid/${asset.chain}/${asset.symbol.toLowerCase()}/${destination}`, { signal: ctrl.signal, headers: { accept: "application/json" } });
+    clearTimeout(t);
+    const body = (await res.json().catch(() => ({}))) as UnitGen;
+    if (!res.ok && typeof body.address !== "string") throw new Error(`${typeof body.error === "string" ? body.error : "Unit error"} (${res.status})`);
+    return parseUnitWithdrawResponse(asset, destination, body, "browser");
+  } catch (e) {
+    errors.push((e as Error).name === "AbortError" ? "Unit did not answer in time" : (e as Error).message);
+  }
+  try {
+    return await apiFetch<UnitWithdrawAddress>(`/api/funds/unit?asset=${asset.symbol}&direction=withdraw&dest=${encodeURIComponent(destination)}`);
+  } catch (e) {
+    errors.push((e as Error).message);
+  }
+  throw new Error(`Could not get a ${asset.symbol} withdrawal address from Unit: ${errors.join(" · ")}`);
 }

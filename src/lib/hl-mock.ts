@@ -510,12 +510,19 @@ export async function spotBalances(address: string): Promise<{ coin: string; tot
   return withState((s) => Object.entries((s.spot ?? {})[a] ?? {}).map(([coin, total]) => ({ coin, total, hold: 0 })));
 }
 
-/** mock native-asset arrival: credit `amount` of a spot coin */
+/** mock spot token registry */
+export async function spotTokens(): Promise<Record<string, { name: string; tokenId: `0x${string}`; index: number; szDecimals: number; weiDecimals: number }>> {
+  const mk = (name: string, index: number, szDecimals: number, weiDecimals: number) => ({ name, tokenId: `0x${index.toString(16).padStart(32, "0")}` as `0x${string}`, index, szDecimals, weiDecimals });
+  return { USDC: mk("USDC", 0, 2, 8), USOL: mk("USOL", 1, 2, 9), UBTC: mk("UBTC", 2, 5, 8), UETH: mk("UETH", 3, 4, 9) };
+}
+
+/** mock native-asset arrival (positive) or withdrawal (negative) of a spot coin */
 export async function mockSpotDeposit(user: string, coin: string, amount: number) {
   withState((s) => {
     const all = (s.spot ??= {});
     const mine = (all[user.toLowerCase()] ??= {});
-    mine[coin] = (mine[coin] ?? 0) + amount;
+    if ((mine[coin] ?? 0) + amount < -1e-9) throw new Error(`insufficient ${coin}`);
+    mine[coin] = Math.max(0, (mine[coin] ?? 0) + amount);
   });
 }
 

@@ -106,7 +106,18 @@ both happen inside the app and never touch socialLiquid. the deposit modal mirro
 | **BTC · ETH · SOL** | Unit (hyperunit.xyz), the rails hyperliquid's own dialog uses. the browser asks Unit's guardians for the user's deposit address on the native chain (our `/api/funds/unit` is the fallback, since Unit's edge sometimes refuses server-side calls); the answer is only shown with ≥2 guardian signatures and a well-formed address, with a QR and the same red minimum warning as hyperliquid: 0.0003 BTC / 0.007 ETH / 0.12 SOL, below is lost. lands in the hyperliquid **spot** balance (USOL / UBTC / UETH), which `/api/balance` now returns as `spot` and the modal watches live, marking the arrival. | Unit's network fee (≈$1.30 on Solana) |
 | **AVAX, XPL, ZEC, MON, BONK, FARTCOIN, PUMP, SPX, 2Z, ANSEM, VIRTUAL** | listed, but no address in-app until their Unit minimums are verified (a deposit under the minimum is lost): the modal links to Unit's dialog for them. add `min` to the asset in `src/lib/unit.ts` to enable one. | |
 
-addresses and the hook layout live in `src/lib/funds.ts`; `NEXT_PUBLIC_CCTP_FORWARD_FEE` overrides the forwarding fee if Circle changes it, `UNIT_API_URL` / `NEXT_PUBLIC_UNIT_API_URL` the Unit endpoint for the server and the browser. `/api/health` reports whether the server can reach Unit. a withdrawal is hyperliquid's `withdraw3` action signed by the main wallet, never by the agent key ($1 fee, USDC on arbitrum in about five minutes).
+addresses and the hook layout live in `src/lib/funds.ts`; `NEXT_PUBLIC_CCTP_FORWARD_FEE` overrides the forwarding fee if Circle changes it, `UNIT_API_URL` / `NEXT_PUBLIC_UNIT_API_URL` the Unit endpoint for the server and the browser. `/api/health` reports whether the server can reach Unit.
+
+withdrawals mirror hyperliquid's withdrawal dialog the same way. every action is signed by the main wallet, never by the agent key:
+
+| route | what happens | fee · time |
+| --- | --- | --- |
+| **Arbitrum** (default) | hyperliquid's `sendToEvmWithData`: hyperliquid burns the USDC through Circle CCTP and Circle mints it to the destination on Arbitrum (CCTP domain 3) | 0.2 USDC (Circle) · within 5 minutes |
+| **Arbitrum (Legacy Bridge)** | `withdraw3`, the original validator-processed withdrawal | 1 USDC (hyperliquid) · ~5 minutes |
+| **HyperEVM** | `usdClassTransfer` perps→spot, then `spotSend` of USDC to its system address `0x2000…0000`, which lands as USDC at the same address on HyperEVM | free · seconds |
+| **Ethereum · Base · Optimism · Polygon · Avalanche** | `sendToEvmWithData` with that chain's CCTP domain | 1.2 USDC to Ethereum, 0.2 elsewhere · within 5 minutes |
+| **BTC · ETH · SOL** | Unit: `/gen/hyperliquid/<chain>/<asset>/<destination>` names the hyperliquid address for that destination (browser first, server fallback, ≥2 guardian signatures, must be a 0x address), then a `spotSend` of UBTC / UETH / USOL to it (token ids from hyperliquid's `spotMeta` via `/api/funds/tokens`). destination is validated as an address on the native chain; minimums 0.002 BTC / 0.05 ETH / 0.2 SOL (the larger figures in Unit's docs, since below the floor is lost) | Unit's network fee · ~4 minutes |
+| other Unit assets | link to Unit's dialog until their minimums are verified | |
 
 ## receipts
 

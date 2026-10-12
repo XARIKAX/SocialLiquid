@@ -127,6 +127,19 @@ export async function clearinghouseState(address: string): Promise<HlClearinghou
   return (await info().clearinghouseState({ user: address as `0x${string}` })) as unknown as HlClearinghouseState;
 }
 
+export type SpotToken = { name: string; tokenId: `0x${string}`; index: number; szDecimals: number; weiDecimals: number };
+let _tokens: { at: number; map: Record<string, SpotToken> } | null = null;
+/** spot token registry (name → tokenId etc.), the "NAME:tokenId" half of a spotSend. cached 10 min. */
+export async function spotTokens(): Promise<Record<string, SpotToken>> {
+  if (HL_MOCK) return mock.spotTokens();
+  if (_tokens && Date.now() - _tokens.at < 10 * 60_000) return _tokens.map;
+  const m = await info().spotMeta();
+  const map: Record<string, SpotToken> = {};
+  for (const t of m.tokens) map[t.name] = { name: t.name, tokenId: t.tokenId, index: t.index, szDecimals: t.szDecimals, weiDecimals: t.weiDecimals };
+  _tokens = { at: Date.now(), map };
+  return map;
+}
+
 /** spot balances (where native deposits through Unit land): coin, total, amount on hold in orders */
 export async function spotBalances(address: string): Promise<{ coin: string; total: number; hold: number }[]> {
   if (HL_MOCK) return mock.spotBalances(address);

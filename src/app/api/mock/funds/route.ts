@@ -11,8 +11,9 @@ export const POST = handler(async (req: Request) => {
   if (!HL_MOCK) throw new HttpError(404, "not found");
   const s = await getSession();
   if (!s) throw new HttpError(401, "sign in first");
-  const body = z.object({ kind: z.enum(["deposit", "withdraw", "spot"]), amount: z.coerce.number().positive().max(1_000_000), coin: z.string().min(1).max(12).optional() }).parse(await req.json());
+  const body = z.object({ kind: z.enum(["deposit", "withdraw", "spot", "spot-withdraw"]), amount: z.coerce.number().positive().max(1_000_000), coin: z.string().min(1).max(12).optional() }).parse(await req.json());
   if (body.kind === "spot") await mock.mockSpotDeposit(s.address, body.coin ?? "USOL", body.amount);
+  else if (body.kind === "spot-withdraw") await mock.mockSpotDeposit(s.address, body.coin ?? "USOL", -body.amount);
   else await mock.mockFunds(s.address, body.kind === "deposit" ? body.amount : -body.amount);
   return json({ ok: true });
 });

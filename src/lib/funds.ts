@@ -93,6 +93,42 @@ export const DEPOSIT_ROUTES: DepositRoute[] = [
 export const DEFAULT_ROUTE = DEPOSIT_ROUTES[0];
 export const routeById = (id: string) => DEPOSIT_ROUTES.find((r) => r.id === id) ?? DEFAULT_ROUTE;
 
+/* ---------------- withdrawals ---------------- */
+/** HyperCore → HyperEVM: a spotSend of USDC to its system address lands as USDC on HyperEVM at the same address */
+export const USDC_SYSTEM_ADDRESS = "0x2000000000000000000000000000000000000000" as Address;
+/** Circle's fee for a CCTP withdrawal out of hyperliquid, per destination (USDC) */
+export const CCTP_WITHDRAW_FEE_DEFAULT = Number(process.env.NEXT_PUBLIC_CCTP_WITHDRAW_FEE ?? "0.2");
+export const CCTP_WITHDRAW_FEE_ETHEREUM = Number(process.env.NEXT_PUBLIC_CCTP_WITHDRAW_FEE_ETHEREUM ?? "1.2");
+
+export type WithdrawKind = "cctp" | "bridge" | "hyperevm";
+export type WithdrawRoute = { id: string; label: string; chain: Chain; kind: WithdrawKind; domain?: number; fee: number; feeLabel: string; eta: string; min: number; explorer: string };
+
+const wcctp = (id: string, label: string, chain: Chain, domain: number, fee = CCTP_WITHDRAW_FEE_DEFAULT): WithdrawRoute => ({
+  id,
+  label,
+  chain,
+  kind: "cctp",
+  domain,
+  fee,
+  feeLabel: `${fee} USDC · Circle`,
+  eta: "within 5 minutes",
+  min: Math.max(MIN_WITHDRAW, Math.ceil(fee) + 1),
+  explorer: chain.blockExplorers?.default.url ?? "",
+});
+
+/** hyperliquid's withdrawal dialog, in its order: Arbitrum (CCTP) first, then the legacy bridge, HyperEVM and the other CCTP chains */
+export const WITHDRAW_ROUTES: WithdrawRoute[] = [
+  wcctp("arbitrum", "Arbitrum", arbitrum, 3),
+  { id: "arbitrum-bridge", label: "Arbitrum (Legacy Bridge)", chain: arbitrum, kind: "bridge", fee: WITHDRAW_FEE, feeLabel: `${WITHDRAW_FEE} USDC · Hyperliquid`, eta: "about 5 minutes", min: MIN_WITHDRAW, explorer: EXPLORER },
+  { id: "hyperevm", label: "HyperEVM", chain: hyperEvm, kind: "hyperevm", fee: 0, feeLabel: "none", eta: "seconds", min: 1, explorer: hyperEvm.blockExplorers?.default.url ?? "" },
+  wcctp("ethereum", "Ethereum", mainnet, 0, CCTP_WITHDRAW_FEE_ETHEREUM),
+  wcctp("base", "Base", base, 6),
+  wcctp("optimism", "Optimism", optimism, 2),
+  wcctp("polygon", "Polygon", polygon, 7),
+  wcctp("avalanche", "Avalanche", avalanche, 1),
+];
+export const withdrawRouteById = (id: string) => WITHDRAW_ROUTES.find((r) => r.id === id) ?? WITHDRAW_ROUTES[0];
+
 export type Step = (text: string) => void;
 const noop: Step = () => {};
 
