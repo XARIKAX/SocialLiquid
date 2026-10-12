@@ -342,9 +342,20 @@
   }
 
   /* ---------- the summary rows' extras ---------- */
+  /* withdrawals draw on perps and spot together: the total, and under it where it sits */
+  .tm-tk-bal > .tm-fd-avail {
+    align-items: flex-start;
+  }
+  .tm-fd-avail dd {
+    display: grid;
+    justify-items: end;
+    gap: 1px;
+  }
   .tm-fd-split {
-    font-size: 11px;
+    font-family: var(--font-label);
+    font-size: 10px;
     color: var(--tm-fd-label);
+    white-space: nowrap;
   }
   .tm-fd-fast {
     margin-top: 2px;

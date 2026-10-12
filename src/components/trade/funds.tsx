@@ -511,14 +511,13 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
               </>
             ) : (
               <>
-                <div>
+                <div className="tm-fd-avail">
                   <dt>Available to withdraw</dt>
                   <dd>
                     {bal.data ? <b>{fmtUsd(perpsAvail + spotUsdcAvail)}</b> : "…"}
                     {bal.data && spotUsdcAvail > 0.01 && (
                       <span className="tm-fd-split">
-                        {" "}
-                        · perps {fmtUsd(perpsAvail)} + spot {fmtUsd(spotUsdcAvail)}
+                        perps {fmtUsd(perpsAvail)} + spot {fmtUsd(spotUsdcAvail)}
                       </span>
                     )}
                   </dd>
