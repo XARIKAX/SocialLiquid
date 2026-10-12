@@ -516,6 +516,47 @@ export async function spotTokens(): Promise<Record<string, { name: string; token
   return { USDC: mk("USDC", 0, 2, 8), USOL: mk("USOL", 1, 2, 9), UBTC: mk("UBTC", 2, 5, 8), UETH: mk("UETH", 3, 4, 9) };
 }
 
+/** mock spot pairs: every mock token is quoted in USDC at pair index = token index */
+export async function spotPair(base: string) {
+  const t = (await spotTokens())[base];
+  if (!t || base === "USDC") return null;
+  return { assetId: 10000 + t.index, name: `${base}/USDC`, base, szDecimals: t.szDecimals, pairIndex: t.index };
+}
+
+/** mock spot market sell: the coin goes, USDC at the perps mid of the same asset (minus the spot taker fee) arrives in spot */
+export async function mockSpotSell(user: string, coin: string, sz: number): Promise<{ avgPx: number; totalSz: number; usdc: number }> {
+  const perp = coin.startsWith("U") ? coin.slice(1) : coin;
+  const px = priceAt(perp, Date.now());
+  if (!Number.isFinite(px) || px <= 0) throw new Error(`no mock price for ${coin}`);
+  return withState((s) => {
+    const all = (s.spot ??= {});
+    const mine = (all[user.toLowerCase()] ??= {});
+    if ((mine[coin] ?? 0) + 1e-12 < sz) throw new Error(`insufficient ${coin}`);
+    mine[coin] = Math.max(0, mine[coin] - sz);
+    const usdc = sz * px * (1 - 0.0007);
+    mine.USDC = (mine.USDC ?? 0) + usdc;
+    return { avgPx: px, totalSz: sz, usdc };
+  });
+}
+
+/** mock usdClassTransfer: USDC between the spot balance and the perps balance */
+export async function mockClassTransfer(user: string, amount: number, toPerp: boolean) {
+  withState((s) => {
+    const a = user.toLowerCase();
+    const all = (s.spot ??= {});
+    const mine = (all[a] ??= {});
+    const d = (s.deposits ??= {});
+    if (toPerp) {
+      if ((mine.USDC ?? 0) + 1e-9 < amount) throw new Error("insufficient spot USDC");
+      mine.USDC = Math.max(0, (mine.USDC ?? 0) - amount);
+      d[a] = (d[a] ?? 0) + amount;
+    } else {
+      d[a] = (d[a] ?? 0) - amount;
+      mine.USDC = (mine.USDC ?? 0) + amount;
+    }
+  });
+}
+
 /** mock native-asset arrival (positive) or withdrawal (negative) of a spot coin */
 export async function mockSpotDeposit(user: string, coin: string, amount: number) {
   withState((s) => {

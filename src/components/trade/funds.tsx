@@ -32,6 +32,7 @@ import { UNIT_APP_URL, UNIT_ASSETS, fetchUnitAddress, fetchUnitOperations, fetch
 import QRCode from "qrcode";
 import type { wagmiConfig } from "@/lib/wagmi";
 import { Icon } from "../ui";
+import { openConvert } from "./convert";
 
 export type FundsMode = "deposit" | "withdraw";
 const EVT = "sl:funds";
@@ -517,7 +518,7 @@ function UnitPanel({ asset: info, q, spot, copied, onCopy, hlAddress }: { asset:
           ) : (
             <div className="mt-1.5 text-dim animate-pulse">Watching for a deposit… it shows here {q.data.confirmations ? `about ${q.data.confirmations.replace(/^~/, "")} after you send` : "once Unit credits it"}.</div>
           )}
-          <div className="mt-1.5 text-dim leading-snug">To trade perps with it, sell {asset} for USDC on <a className="text-brand hover:underline" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Hyperliquid spot</a> ({asset}/USDC), then it is margin here.</div>
+          <div className="mt-1.5 text-dim leading-snug">To trade perps with it, <button className="text-brand hover:underline" onClick={() => openConvert(info.spotCoin ?? asset)}>sell {asset} for USDC</button>: a market sell on Hyperliquid spot, then the USDC moves to your perps balance.</div>
           {mine.length > 0 && (
             <ul className="mt-2 border-t border-line pt-2 space-y-1" data-testid="unit-ops">
               {mine.map((o) => <OpRow key={o.id} o={o} />)}

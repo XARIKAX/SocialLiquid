@@ -13,6 +13,7 @@ import { useConnectModal } from "./connect-modal";
 import { useTheme } from "@/lib/theme";
 import { AlertsBell } from "./alerts";
 import { openFunds } from "./trade/funds";
+import { openConvert } from "./trade/convert";
 
 type SearchResult = { coins: { coin: string; markPx: number; change24h: number }[]; traders: { address: string; handle: string | null; avatarUrl: string | null }[] };
 
@@ -56,8 +57,8 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
                 {bal.data ? fmtUsd(bal.data.withdrawable) : "…"} <span className="text-muted font-normal">cash</span>
               </span>
               {spot.length > 0 ? (
-                <button onClick={() => openFunds("withdraw")} className="text-[11px] text-fg-2 hover:underline num text-left truncate max-w-[180px]" title={spot.map((r) => `${fmtQty(r.total)} ${r.name}`).join(" · ")} data-testid="topbar-spot">
-                  {fmtQty(spot[0].total)} {spot[0].name}{spot.length > 1 ? ` +${spot.length - 1}` : ""} <span className="text-muted">spot{spotUsd > 0 ? ` ≈ ${fmtUsd(spotUsd)}` : ""}</span>
+                <button onClick={() => openConvert(spot[0].coin)} className="text-[11px] text-fg-2 hover:underline num text-left truncate max-w-[200px]" title="Sell for USDC to trade perps with it" data-testid="topbar-spot">
+                  {fmtQty(spot[0].total)} {spot[0].name}{spot.length > 1 ? ` +${spot.length - 1}` : ""} <span className="text-muted">spot{spotUsd > 0 ? ` ≈ ${fmtUsd(spotUsd)}` : ""}</span> <span className="text-brand">· Sell for USDC</span>
                 </button>
               ) : (
                 <button onClick={() => openFunds("deposit")} className="text-[11px] text-brand font-medium hover:underline">
@@ -67,7 +68,7 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
             </div>
             <Link href={`/t/${me?.user?.handle ?? address}`} className="flex items-center gap-2.5 card pl-3 pr-1.5 h-10 rounded-[10px] hover:bg-panel-2 transition-colors">
               <span className="flex flex-col justify-center leading-tight">
-                <span className="num text-[13px]">{bal.data ? fmtUsd(bal.data.accountValue) : "…"}</span>
+                <span className="num text-[13px]" data-testid="topbar-total" title={spotUsd > 0 ? `perps ${fmtUsd(bal.data?.accountValue ?? 0)} + spot ${fmtUsd(spotUsd)}` : undefined}>{bal.data ? fmtUsd(bal.data.accountValue + spotUsd) : "…"}</span>
                 <span className={`num text-[11px] ${upnl >= 0 ? "text-up" : "text-down"}`}>
                   {fmtUsd(upnl, { sign: true })} <span className="text-dim">open</span>
                 </span>

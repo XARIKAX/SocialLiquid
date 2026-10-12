@@ -140,6 +140,24 @@ export async function spotTokens(): Promise<Record<string, SpotToken>> {
   return map;
 }
 
+export type SpotPair = { assetId: number; name: string; base: string; szDecimals: number; pairIndex: number };
+/** the USDC-quoted spot pair for a spot coin (USOL → USOL/USDC): asset id for orders is 10000 + pair index */
+export async function spotPair(base: string): Promise<SpotPair | null> {
+  if (HL_MOCK) return mock.spotPair(base);
+  const m = await info().spotMeta();
+  const tok = m.tokens.find((t) => t.name === base);
+  if (!tok) return null;
+  const pair = m.universe.find((u) => u.tokens[0] === tok.index && u.tokens[1] === 0);
+  if (!pair) return null;
+  return { assetId: 10000 + pair.index, name: pair.name, base, szDecimals: tok.szDecimals, pairIndex: pair.index };
+}
+
+/** spot prices: 5 significant figures, at most 8 - szDecimals decimals */
+export function formatSpotPx(px: number, szDecimals: number): string {
+  const maxDecimals = Math.max(0, 8 - szDecimals);
+  return String(Number(Number(px.toPrecision(5)).toFixed(maxDecimals)));
+}
+
 /** spot balances (where native deposits through Unit land): coin, total, amount on hold in orders */
 export async function spotBalances(address: string): Promise<{ coin: string; total: number; hold: number }[]> {
   if (HL_MOCK) return mock.spotBalances(address);

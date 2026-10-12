@@ -10,9 +10,9 @@ import type { MarketSummary } from "@/lib/hl-types";
 import { Icon, Toggle } from "../ui";
 import { useOnboarding } from "./onboarding";
 import { openFunds } from "./funds";
+import { openConvert } from "./convert";
 import { fmtQty, spotRows } from "@/lib/spot";
 import { useMids } from "@/hooks/use-market";
-import { HL_APP_URL_CLIENT } from "@/lib/client";
 
 type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap";
 const PRO: [OrderType, string][] = [
@@ -408,7 +408,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
       </div>
       {spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC").length > 0 && (
         <p className="text-[11px] text-muted leading-snug" data-testid="ticket-spot">
-          Spot: {spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC").map((r) => `${fmtQty(r.total)} ${r.name}`).join(" · ")}. <a className="text-brand hover:underline" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Sell for USDC</a> on Hyperliquid to use it as margin here.
+          Spot: {spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC").map((r) => `${fmtQty(r.total)} ${r.name}`).join(" · ")}. <button className="text-brand hover:underline" onClick={() => openConvert()}>Sell for USDC</button> to trade perps with it.
         </p>
       )}
     </section>

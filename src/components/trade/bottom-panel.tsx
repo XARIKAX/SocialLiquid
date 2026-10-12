@@ -6,7 +6,7 @@ import { useBalance } from "@/hooks/use-me";
 import { livePnl, useMids } from "@/hooks/use-market";
 import { fmtQty, spotRows } from "@/lib/spot";
 import { openFunds } from "./funds";
-import { HL_APP_URL_CLIENT } from "@/lib/client";
+import { openConvert } from "./convert";
 import { useAccountFills, useFundingPayments, useOpenOrders, useOrderHistory, useTwaps, type OpenOrder } from "@/hooks/use-account";
 import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, timeAgo } from "@/lib/format";
@@ -147,7 +147,7 @@ function Balances() {
             Spot
             {r.name !== "USDC" && (
               <span className="block text-[11px]">
-                <a className="text-brand hover:underline" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Sell for USDC</a>
+                <button className="text-brand hover:underline" onClick={() => openConvert(r.coin)}>Sell for USDC</button>
                 {" · "}
                 <button className="text-brand hover:underline" onClick={() => openFunds("withdraw")}>Withdraw</button>
               </span>

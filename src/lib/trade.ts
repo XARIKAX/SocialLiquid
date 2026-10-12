@@ -303,3 +303,37 @@ export async function closePosition(userId: string, address: string, coin: strin
   const szi = Number(pos.position.szi);
   return placeOrder(userId, address, { coin, side: szi > 0 ? "SHORT" : "LONG", sz: Math.abs(szi), leverage: pos.position.leverage.value, type: "market", reduceOnly: true });
 }
+
+export type SpotSellResult = { avgPx: number; totalSz: number; usdc: number; sz: string };
+
+/**
+ * sell a spot coin (USOL, UBTC…) for USDC on hyperliquid spot: an IOC order on the coin's USDC pair, signed by the agent,
+ * priced off the perps mid with 2% room. the USDC lands in the spot balance; usdClassTransfer (main wallet) moves it to perps.
+ */
+export async function sellSpotForUsdc(userId: string, address: string, coin: string, size: number): Promise<SpotSellResult> {
+  const pair = await HL.spotPair(coin);
+  if (!pair) throw new HttpError(400, `${coin} has no USDC spot market on Hyperliquid`);
+  const szStr = HL.formatSz(size, pair.szDecimals, "floor");
+  const sz = Number(szStr);
+  if (!(sz > 0)) throw new HttpError(400, `amount too small: ${coin} trades in steps of ${10 ** -pair.szDecimals}`);
+  if (HL_MOCK) {
+    const r = await mock.mockSpotSell(address, coin, sz);
+    return { ...r, sz: szStr };
+  }
+  const perpName = coin.startsWith("U") ? coin.slice(1) : coin;
+  const mids = await HL.allMids();
+  const spotMid = Number(mids[pair.name] ?? mids[`@${pair.pairIndex}`] ?? mids[perpName]);
+  if (!Number.isFinite(spotMid) || spotMid <= 0) throw new HttpError(400, `no price for ${coin}`);
+  const agent = await getOrCreateAgent(userId);
+  const ex = exchangeFor(agent.encryptedPrivKey);
+  const px = HL.formatSpotPx(spotMid * 0.98, pair.szDecimals);
+  const res = await ex.order({ orders: [{ a: pair.assetId, b: false, p: px, s: szStr, r: false, t: { limit: { tif: "Ioc" } } }], grouping: "na", builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } });
+  const first = (res as unknown as { response: { data: { statuses: OrderStatus[] } } }).response.data.statuses[0];
+  if (typeof first === "object" && "error" in first) throw new HttpError(400, first.error);
+  if (typeof first === "object" && "filled" in first) {
+    const avgPx = Number(first.filled.avgPx);
+    const totalSz = Number(first.filled.totalSz);
+    return { avgPx, totalSz, usdc: avgPx * totalSz, sz: szStr };
+  }
+  throw new HttpError(400, "the spot market did not fill the order; try again");
+}

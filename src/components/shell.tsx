@@ -6,6 +6,7 @@ import { Ticker } from "./ticker";
 import { Icon } from "./icons";
 import { useAccount } from "wagmi";
 import { FundsHost } from "./trade/funds";
+import { ConvertHost } from "./trade/convert";
 import { ProfileHost } from "./profile-editor";
 import { AlertToasts } from "./alerts";
 
@@ -45,6 +46,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="min-h-dvh flex flex-col">
       <TopBar onToggleFeed={() => setTab((t) => (t === "feed" ? "page" : "feed"))} />
       {wallet && <FundsHost address={wallet} />}
+      {wallet && <ConvertHost address={wallet} />}
       <ProfileHost />
       <AlertToasts />
       <div className={`flex-1 grid grid-cols-1 ${collapsed ? "md:grid-cols-[48px_minmax(0,1fr)]" : "md:grid-cols-[320px_minmax(0,1fr)]"} gap-3 px-3 md:px-4 pb-14 md:pb-11 md:h-[calc(100dvh-3.5rem)] transition-[grid-template-columns]`}>
