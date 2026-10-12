@@ -1,6 +1,6 @@
 "use client";
 import { createConfig, http, type CreateConnectorFn } from "wagmi";
-import { arbitrum, arbitrumSepolia, mainnet } from "wagmi/chains";
+import { arbitrum, arbitrumSepolia, avalanche, base, hyperEvm, mainnet, optimism, polygon } from "wagmi/chains";
 import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
 
 export const IS_TESTNET_CLIENT = process.env.NEXT_PUBLIC_HL_NETWORK === "testnet";
@@ -43,7 +43,8 @@ function lazy(create: CreateConnectorFn): CreateConnectorFn {
 }
 
 export const wagmiConfig = createConfig({
-  chains: IS_TESTNET_CLIENT ? [arbitrumSepolia, arbitrum, mainnet] : [arbitrum, mainnet],
+  // arbitrum first (the default deposit chain); the rest are the chains the deposit routes can start from
+  chains: IS_TESTNET_CLIENT ? [arbitrumSepolia, arbitrum, mainnet] : [arbitrum, hyperEvm, mainnet, base, optimism, polygon, avalanche],
   connectors: [
     injected({ shimDisconnect: true }),
     ...(WC_ID
@@ -59,7 +60,7 @@ export const wagmiConfig = createConfig({
       : []),
     lazy(coinbaseWallet({ appName: "socialLiquid", preference: "all" })),
   ],
-  transports: { [arbitrum.id]: http(), [arbitrumSepolia.id]: http(), [mainnet.id]: http() },
+  transports: { [arbitrum.id]: http(), [arbitrumSepolia.id]: http(), [mainnet.id]: http(), [hyperEvm.id]: http(), [base.id]: http(), [optimism.id]: http(), [polygon.id]: http(), [avalanche.id]: http() },
   ssr: true,
 });
 

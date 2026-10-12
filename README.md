@@ -94,7 +94,18 @@ every open position on the feed and on a profile has a copy button. it opens `/m
 
 ## deposits and withdrawals
 
-both happen inside the app and never touch socialLiquid. a deposit is a plain USDC transfer from the connected wallet to hyperliquid's bridge contract on arbitrum (min 5 USDC, credited in about a minute; the modal switches the wallet to arbitrum, shows the wallet's USDC balance and waits for the hyperliquid balance to move). a withdrawal is hyperliquid's `withdraw3` action signed by the main wallet, never by the agent key ($1 fee, USDC on arbitrum in about five minutes). other chains go through hyperliquid's own cross-chain routes; the balance shows up here either way. `HL_MOCK` credits and debits a synthetic ledger through `/api/mock/funds`.
+both happen inside the app and never touch socialLiquid. the deposit modal mirrors hyperliquid's own dialog: pick an asset, then (for USDC) a deposit chain. every route is signed by the user's own wallet and credits the user's own hyperliquid account; `HL_MOCK` credits a synthetic ledger through `/api/mock/funds` instead.
+
+| route | what happens | fee · time |
+| --- | --- | --- |
+| **Arbitrum** (default) | Circle CCTP V2: `TokenMessengerV2.depositForBurnWithHook` burns the USDC with Circle's `CctpForwarder` on HyperEVM as mint recipient and a 56-byte hook naming the user's account and the perps dex. Circle attests and forwards straight into the perps balance. | 0.2 USDC (Circle's forwarding fee, the same one hyperliquid quotes) · seconds with fast transfer (+ a few bps, from Circle's fee api), ~15 min standard |
+| **Arbitrum (Legacy Bridge)** | plain USDC transfer to hyperliquid's Bridge2 | free · ~1 min · min 5 USDC (less is kept by the bridge) |
+| **Arbitrum (Swap USDT for USDC)** | Uniswap v3 `exactInputSingle` USDT→USDC in the user's wallet (quoted through QuoterV2, 0.5% max slippage, 0.01% / 0.05% pools), then the Arbitrum CCTP route with what was received | 0.2 USDC + pool fee · seconds |
+| **HyperEVM** | approve + `CoreDepositWallet.deposit(amount, 0)`: Circle's contract moves USDC from HyperEVM into HyperCore perps | free · seconds |
+| **Ethereum · Base · Optimism · Polygon · Avalanche** | the same CCTP route from the other chains Circle forwards into HyperCore | 0.2 USDC · seconds / ~15 min |
+| **BTC, ETH, SOL, AVAX, XPL, ZEC, MON, BONK, FARTCOIN, PUMP, SPX, 2Z, ANSEM, VIRTUAL** | Unit (hyperunit.xyz): `/api/funds/unit` asks Unit's guardians for the user's deposit address on the native chain and shows it with minimum and confirmations. lands in the hyperliquid **spot** balance. | network gas only |
+
+addresses and the hook layout live in `src/lib/funds.ts`; `NEXT_PUBLIC_CCTP_FORWARD_FEE` overrides the forwarding fee if Circle changes it, `UNIT_API_URL` the Unit endpoint. a withdrawal is hyperliquid's `withdraw3` action signed by the main wallet, never by the agent key ($1 fee, USDC on arbitrum in about five minutes).
 
 ## receipts
 
@@ -118,4 +129,4 @@ positions and fills are mirrored from chain and never written by the client. `li
 
 ## not in the mvp
 
-no custom contracts, no copy trading, no solana deposits (arbitrum usdc through the native bridge only), no spot, no comments, no mobile app. x handle is free text for now; oauth is a follow up.
+no custom contracts, no spot trading (native-asset deposits land in spot; selling them for USDC happens on hyperliquid), no comments, no mobile app. x handle is free text for now; oauth is a follow up.
