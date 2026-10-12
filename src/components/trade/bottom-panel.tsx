@@ -8,7 +8,7 @@ import { fmtQty, spotRows } from "@/lib/spot";
 import { openFunds } from "./funds";
 import { openConvert } from "./convert";
 import { clearFinishedChases, stopChase, useChases } from "@/lib/chase";
-import { useAccountFills, useFundingPayments, useOpenOrders, useOrderHistory, useTwaps, type OpenOrder } from "@/hooks/use-account";
+import { useAccountFills, useFundingPayments, useMyTheses, useOpenOrders, useOrderHistory, useTwaps, type OpenOrder } from "@/hooks/use-account";
 import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, timeAgo } from "@/lib/format";
 import type { FeedItem } from "@/lib/queries";
@@ -216,6 +216,25 @@ function OwnPositions({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
   const orders = useOpenOrders();
   const [busy, setBusy] = useState<string | null>(null);
   const [edit, setEdit] = useState<{ coin: string; tp: string; sl: string } | null>(null);
+  // a thesis can be posted on a position that is already open, not only with the order that opened it
+  const theses = useMyTheses(!!address);
+  const [compose, setCompose] = useState<{ coin: string; text: string; err: string | null } | null>(null);
+  const latestThesis = (c: string) => (theses.data ?? []).find((t) => t.coin === c) ?? null;
+  const postThesis = async () => {
+    if (!compose || !compose.text.trim()) return;
+    setBusy(`thesis:${compose.coin}`);
+    try {
+      await api("/api/thesis", { method: "POST", json: { coin: compose.coin, text: compose.text.trim() } });
+      qc.invalidateQueries({ queryKey: ["my-theses"] });
+      qc.invalidateQueries({ queryKey: ["feed"] });
+      qc.invalidateQueries({ queryKey: ["market"] });
+      setCompose(null);
+    } catch (e) {
+      setCompose({ ...compose, err: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  };
   const list = (bal.data?.positions ?? []).filter((p) => p.szi !== 0 && (!onlyCoin || p.coin === coin));
   const close = async (c: string) => {
     setBusy(c);
@@ -241,7 +260,7 @@ function OwnPositions({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
   };
   return (
     <>
-      <Table head={<><Th>Coin</Th><Th right>Size</Th><Th right>Position Value</Th><Th right>Entry Price</Th><Th right>Mark Price</Th><Th right>PnL (ROE %)</Th><Th right>Liq. Price</Th><Th right>Margin</Th><Th right>TP/SL</Th><Th right>Close</Th></>} empty={!bal.isLoading && list.length === 0}>
+      <Table head={<><Th>Coin</Th><Th right>Size</Th><Th right>Position Value</Th><Th right>Entry Price</Th><Th right>Mark Price</Th><Th right>PnL (ROE %)</Th><Th right>Liq. Price</Th><Th right>Margin</Th><Th right>TP/SL</Th><Th>Thesis</Th><Th right>Close</Th></>} empty={!bal.isLoading && list.length === 0}>
         {list.map((p) => {
           const mid = mids.data?.[p.coin] ? Number(mids.data[p.coin]) : undefined;
           const pnl = livePnl({ side: p.szi > 0 ? "LONG" : "SHORT", size: Math.abs(p.szi), entryPx: p.entryPx }, mid) ?? p.unrealizedPnl;
@@ -264,11 +283,36 @@ function OwnPositions({ coin, onlyCoin }: { coin: string; onlyCoin: boolean }) {
                   {tp || sl ? `${tp ? fmtPx(tp.triggerPx) : "–"} / ${sl ? fmtPx(sl.triggerPx) : "–"}` : "– / –"} <span className="text-brand">✎</span>
                 </button>
               </Td>
+              <Td>
+                {(() => {
+                  const t = latestThesis(p.coin);
+                  return (
+                    <span className="flex items-center gap-2 max-w-[20rem]" data-testid={`thesis-cell-${p.coin}`}>
+                      {t ? <span className="text-fg-2 font-sans truncate" title={t.text}>{t.text}</span> : <span className="text-dim font-sans">No thesis yet</span>}
+                      <button className="text-thesis font-sans font-medium hover:underline whitespace-nowrap" onClick={() => setCompose({ coin: p.coin, text: "", err: null })} data-testid={`thesis-add-${p.coin}`}>{t ? "Add" : "Post thesis"}</button>
+                    </span>
+                  );
+                })()}
+              </Td>
               <Td right><button className="btn btn-sm" onClick={() => close(p.coin)} disabled={busy === p.coin}>Market</button></Td>
             </tr>
           );
         })}
       </Table>
+      {compose && (
+        <div className="m-3 card-2 p-3 text-xs" data-testid="thesis-compose">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold font-sans"><span className="text-thesis">Thesis</span> on your open {compose.coin} position</span>
+            <span className="num text-dim">{compose.text.length}/280</span>
+          </div>
+          <textarea className="w-full bg-transparent outline-none resize-none h-16 mt-2 text-[13px] placeholder:text-dim leading-snug font-sans" maxLength={280} autoFocus value={compose.text} onChange={(e) => setCompose({ ...compose, text: e.target.value, err: null })} placeholder="Why are you in this trade? Posted to the feed, bound to this position, settled when it closes." aria-label="thesis text" />
+          <div className="flex items-center gap-2 mt-2">
+            <button className="btn btn-primary btn-sm" onClick={postThesis} disabled={busy === `thesis:${compose.coin}` || !compose.text.trim()} data-testid="thesis-post">{busy === `thesis:${compose.coin}` ? "Posting…" : "Post thesis"}</button>
+            <button className="btn btn-sm" onClick={() => setCompose(null)}>Cancel</button>
+            {compose.err && <span className="text-down">{compose.err}</span>}
+          </div>
+        </div>
+      )}
       {edit && (
         <div className="m-3 card-2 p-3 flex items-center gap-2 flex-wrap text-xs">
           <span className="font-semibold font-sans">TP/SL for {edit.coin}</span>

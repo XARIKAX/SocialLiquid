@@ -102,6 +102,8 @@ the chart's ƒx menu is a searchable catalogue (`src/lib/indicators.ts`): overla
 
 ## bottom panel
 
+the Positions tab has a Thesis column: a position opened without one (or one that deserves a second) gets a composer right there (`POST /api/thesis` binds it to the open position; `GET /api/thesis` lists your live ones), and it lands in the feed and the market's Thesis tab like one posted with the order.
+
 the tabs under the chart carry live counts (Balances, Positions, Open Orders, TWAP, Chase) and the history tabs have hyperliquid's Type / Side / Market filters next to the "Only this market" toggle.
 
 ## chase orders
