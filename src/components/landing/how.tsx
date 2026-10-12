@@ -13,10 +13,12 @@ const DOCS = "https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-co
 /** an illustrative address, reused across the steps so the story reads as one wallet */
 const ADDR = "0x7a3f4be2d81c6a09f5e3b7d24c1a8e60f2b9c91e";
 const SHORT = "0x7a3f…c91e";
+/** the handle that wallet claims in step 01 and posts under in step 03 (fictional) */
+const HANDLE = "undertow";
 
 export function How({ d }: { d: LandingData }) {
   return (
-    <section id="how" className="lp-how">
+    <section id="how" className="lp-how" aria-labelledby="lp-how-title">
       <div className="lp-how-atmos" aria-hidden>
         <div className="lp-how-glow lp-how-glow-a" />
         <div className="lp-how-glow lp-how-glow-b" />
@@ -30,19 +32,20 @@ export function How({ d }: { d: LandingData }) {
           <div className="lp-how-sticky">
             <SectionHead
               align="left"
+              id="lp-how-title"
               className="lp-how-head"
               eyebrow="How it works"
               title={
                 <>
-                  <span className="lp-how-line">No custody.</span> <span className="lp-how-line">No contracts.</span>{" "}
+                  <span className="lp-how-line">No custody.</span> <span className="lp-how-line">No token.</span>{" "}
                   <em className="lp-grad not-italic lp-how-line">Just your receipts.</em>
                 </>
               }
-              lead="Orders route to Hyperliquid with our builder code. We never hold your main key, and there is no token, pool or custom contract anywhere in the stack."
+              lead="Three steps from wallet to receipt. Every order routes straight to Hyperliquid with our builder code on it."
             />
             <div data-reveal className="lp-how-ctas" style={vars({ "--d": "0.24s" })}>
               <Link href="/trade" className="lp-btn lp-btn-primary">
-                Launch app <Arrow />
+                Start trading <Arrow />
               </Link>
               <a href={DOCS} target="_blank" rel="noreferrer" className="lp-btn lp-btn-ghost lp-how-docs">
                 How builder codes work <ExtArrow />
@@ -78,9 +81,9 @@ export function How({ d }: { d: LandingData }) {
           <ol className="lp-how-steps">
             <Step
               n="01"
-              title="Connect"
-              meta={<><Ico><path d="m9 9 10.5 3.9-4.6 1.5-1.5 4.6z" /><path d="M5.2 5.2 3.6 3.6M9 3.4V2M3.4 9H2M12.6 5.4l1.1-1.1M5.4 12.6l-1.1 1.1" /></Ico>One click</>}
-              body="Any EVM wallet. Hyperliquid signs with the same key. Connecting only reads your address."
+              title="Connect and claim"
+              meta={<><Ico><path d="M5 20.5V5.5a1.5 1.5 0 0 1 1.5-1.5h6A1.5 1.5 0 0 1 14 5.5v15" /><path d="M3.5 20.5h12M5 10h9" /><path d="M14 8h1.6a1.9 1.9 0 0 1 1.9 1.9v5.4a1.35 1.35 0 0 0 2.7 0V8.6L17.7 6" /></Ico>No gas</>}
+              body="Any EVM wallet. Sign one message to log in, then claim the handle your receipts will carry."
             >
               <ConnectVignette />
             </Step>
@@ -88,7 +91,7 @@ export function How({ d }: { d: LandingData }) {
               n="02"
               title="Approve once"
               meta={<><Ico><path d="M15.5 4.5 19.5 8.5 9 19H5v-4z" /><path d="m13 7 4 4" /><path d="M13 20h7" /></Ico>Never per trade</>}
-              body="Two signatures: an API wallet so you never sign per click, and a 0.1% max builder fee so our code rides your fills."
+              body="Two signatures: an agent wallet so you never sign per click, and a 0.1% max builder fee so our code rides your fills."
             >
               <ApproveVignette />
             </Step>
@@ -96,7 +99,7 @@ export function How({ d }: { d: LandingData }) {
               n="03"
               title="Trade and post"
               meta={<><Ico><path d="M4 16 9.5 10.5l3.5 3.5L20 7" /><path d="M15 7h5v5" /></Ico>Every trade</>}
-              body="Market or limit, up to the market's max leverage, TP and SL. Add a thesis if you dare. Deposit USDC from Arbitrum."
+              body="Deposit USDC from Arbitrum, then trade any order type up to each market's max leverage, TP and SL attached. Add a thesis if you dare."
             >
               <TradeVignette px={d.btc?.markPx} />
             </Step>
@@ -107,15 +110,17 @@ export function How({ d }: { d: LandingData }) {
       <div className="lp-container lp-how-foot">
         <div data-reveal className="lp-how-fine" style={vars({ "--d": "0s" })}>
           <span className="lp-how-fine-rule" aria-hidden />
-          <span className="lp-mono">The fine print, in large print</span>
+          <span id="lp-how-fine" className="lp-mono">
+            The fine print, in large print
+          </span>
           <span className="lp-how-fine-rule lp-how-fine-rule-r" aria-hidden />
         </div>
-        <ul className="lp-how-trust">
+        <ul className="lp-how-trust" aria-labelledby="lp-how-fine">
           <Trust
             d="0.05s"
             tone="teal"
-            title="Your keys stay in your wallet"
-            body="An agent wallet signs your orders. Your main key never leaves, and the agent can't withdraw."
+            title="Your main key stays in your wallet"
+            body={"Orders are signed by an agent key we keep encrypted. It can trade for you. It\u00a0can't withdraw."}
             icon={
               <>
                 <path d="M12 3.2 19 6v5.3c0 4.4-2.9 8-7 9.5-4.1-1.5-7-5.1-7-9.5V6z" />
@@ -128,7 +133,7 @@ export function How({ d }: { d: LandingData }) {
             d="0.15s"
             tone="blue"
             title="No token, no pool, no contract"
-            body="Nothing to hack, nothing to rug. Every order is a plain Hyperliquid order with our builder code on it."
+            body="Nothing to rug. Your funds sit in your own Hyperliquid account, never in a contract of ours."
             icon={
               <>
                 <path d="M12 3.5 19.5 7.7v8.6L12 20.5l-7.5-4.2V7.7z" />
@@ -281,13 +286,23 @@ function ConnectVignette() {
           </span>
         </span>
       </div>
+      <div className="lp-how-claim">
+        <span className="lp-how-claim-k lp-mono">Handle</span>
+        <span className="lp-how-claim-v">
+          <span className="lp-how-claim-at">@</span>
+          {HANDLE}
+        </span>
+        <span className="lp-pill lp-pill-brand lp-how-claimed">
+          <Check size={10} /> Claimed
+        </span>
+      </div>
       <div className="lp-how-vig-foot">
         <span>
           <Ico size={13}>
-            <path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z" />
-            <circle cx="12" cy="12" r="2.6" />
+            <path d="M3.5 17.5c2.2 0 3-6.5 5.2-6.5 1.9 0 .4 5 2.3 5 1.4 0 2.1-2.6 3.4-2.6.9 0 1.1 1.6 2.1 1.6.8 0 1.5-.7 2.1-1.4" />
+            <path d="M3.5 20.5h17" />
           </Ico>
-          Reads your address only
+          Login signature, no permissions
         </span>
         <span className="lp-how-vig-foot-r">Same key signs on Hyperliquid</span>
       </div>
@@ -306,7 +321,7 @@ function ApproveVignette() {
         <Sig
           tone="teal"
           title="Approve agent wallet"
-          sub={<>API wallet · <span className="lp-how-nw">can trade, can&apos;t withdraw</span></>}
+          sub={<><span>Kept encrypted</span><span>can trade, can&apos;t withdraw</span></>}
           d="0.55s"
           icon={
             <>
@@ -322,7 +337,7 @@ function ApproveVignette() {
               Approve builder fee <span className="lp-how-cap lp-num">≤&nbsp;0.1%</span>
             </>
           }
-          sub={<>Max rate · <span className="lp-how-nw">we charge 0.05% per side</span></>}
+          sub={<><span>Max rate</span><span>we charge 0.05% per side</span></>}
           d="1.05s"
           icon={
             <>
@@ -347,7 +362,7 @@ function ApproveVignette() {
         <span className="lp-how-progress">
           <i />
         </span>
-        <span className="lp-how-vig-foot-r">No more pop-ups</span>
+        <span className="lp-how-vig-foot-r">No pop-ups per trade</span>
       </div>
     </>
   );
@@ -361,7 +376,7 @@ function Sig({ tone, title, sub, icon, d }: { tone: string; title: ReactNode; su
       </span>
       <span className="lp-how-sig-copy">
         <b>{title}</b>
-        <small>{sub}</small>
+        <small className="lp-how-sub">{sub}</small>
       </span>
       <span className="lp-how-sig-state">
         <span className="lp-how-check">
@@ -395,7 +410,7 @@ function TradeVignette({ px }: { px?: number }) {
           <b><span className="lp-how-side">Long</span> BTC</b>
           <span className="lp-how-order-sep"> · </span>
           <span className="lp-how-order-amt lp-num">$100 · 5x</span>
-          <small className="lp-mono">Market · BTC-PERP</small>
+          <small className="lp-mono">Market · BTC-USD</small>
         </span>
         <span className="lp-pill lp-pill-up lp-how-filled">
           <Check size={11} /> Filled
@@ -428,7 +443,7 @@ function TradeVignette({ px }: { px?: number }) {
       <div className="lp-how-thesis">
         <span className="lp-how-thesis-k lp-mono">Thesis</span>
         <p>
-          Range high reclaimed on rising OI, funding flat. I&apos;m out below <span className="lp-num">{(sl / 1000).toFixed(1)}k</span>.
+          Bought the retest of the breakout. No averaging down, I&apos;m out below <span className="lp-num">{(sl / 1000).toFixed(1)}k</span>.
         </p>
       </div>
       <div className="lp-how-posted">
@@ -437,7 +452,7 @@ function TradeVignette({ px }: { px?: number }) {
         </span>
         <span className="lp-how-posted-by">
           <Disc a={ADDR} size={16} />
-          <span className="lp-mono lp-num">{SHORT}</span>
+          <span className="lp-how-posted-h">@{HANDLE}</span>
           <span className="lp-how-posted-ago">· just now</span>
         </span>
       </div>

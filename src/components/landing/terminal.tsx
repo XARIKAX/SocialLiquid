@@ -165,8 +165,9 @@ function model(d: LandingData) {
     livePos.push({ id: p.id, addr: it.address, name: nameOf(it), coin: it.coin, side: p.side, lev: p.leverage, sizeUsd: p.sizeUsd, entry: p.entryPx, pnl: p.unrealisedPnl, ago: timeAgo(p.openedAt) });
   }
   const pnlAt = (side: string, size: number, entry: number, now: number) => size * (now / entry - 1) * (side === "LONG" ? 1 : -1);
+  const livePositions = livePos.length >= 2;
   const positions: PosRow[] =
-    livePos.length >= 2
+    livePositions
       ? livePos.slice(0, 3)
       : [
           { id: "p1", addr: A.nightowl, name: "@nightowl", coin: "BTC", side: "LONG", lev: 20, sizeUsd: 184_200, entry: thesisPx, pnl: pnlAt("LONG", 184_200, thesisPx, mark), ago: thesisAgo },
@@ -185,7 +186,18 @@ function model(d: LandingData) {
     }
   }
 
-  return { candles, mark, change, funding, maxLev, oi: d.btc?.openInterestUsd ?? null, feed, positions, marker, thesisLow };
+  /* say plainly what is live and what is illustrative */
+  const liveMarket = real && !!d.btc;
+  const sampleTraders = !liveFeed || !livePositions;
+  const note = sampleTraders
+    ? liveMarket
+      ? "Product preview · market data live from Hyperliquid · traders illustrative"
+      : "Product preview · illustrative data"
+    : liveMarket
+      ? null
+      : "Product preview · market data illustrative";
+
+  return { candles, mark, change, funding, maxLev, oi: d.btc?.openInterestUsd ?? null, feed, positions, marker, thesisLow, note };
 }
 
 /* ---------- icons (inline, stroke 1.8, rounded) ---------- */
@@ -233,13 +245,13 @@ const CAPS: { icon: keyof typeof ICONS; title: string; body: string }[] = [
   { icon: "layers", title: "Every order type", body: "Market, limit, stop, take profit, scale and TWAP." },
   { icon: "candles", title: "Charts that keep up", body: "Indicators, drawings and funding history on every market." },
   { icon: "book", title: "The live book", body: "Grouped by tick. Click a level to fill the ticket." },
-  { icon: "code", title: "Builder code on every fill", body: "0.05% per side, capped at 0.1%. Shown on every ticket." },
+  { icon: "pen", title: "Thesis in the ticket", body: "Write the why before you click. It posts to the feed with your order." },
 ];
 
 export function Terminal({ d }: { d: LandingData }) {
   const m = model(d);
   return (
-    <section id="terminal" className="lp-term">
+    <section id="terminal" className="lp-term" aria-labelledby="lp-term-title">
       <div className="lp-term-atmos" aria-hidden>
         <div className="lp-term-atmos-halo" />
         <div className="lp-term-atmos-glow" />
@@ -248,10 +260,11 @@ export function Terminal({ d }: { d: LandingData }) {
       <div className="lp-container relative">
         <SectionHead
           eyebrow="The terminal"
+          id="lp-term-title"
           className="max-w-[1000px]!"
           title={
             <>
-              <span className="whitespace-nowrap">Hyperliquid-grade</span> execution. <em className="lp-grad not-italic block">With a social layer.</em>
+              <span className="whitespace-nowrap">Native Hyperliquid</span> execution. <em className="lp-grad not-italic block">With a social layer.</em>
             </>
           }
           lead="A full perps terminal on the Hyperliquid API: real candles, the live book, every order type, and the traders behind the flow."
@@ -260,6 +273,7 @@ export function Terminal({ d }: { d: LandingData }) {
         <figure className="lp-term-stage">
           <figcaption className="sr-only">
             Preview of the socialLiquid terminal: the BTC perpetual market with hourly candles, a live feed of traders&apos; positions and theses, open positions with unrealised PnL, and an order ticket with a thesis field.
+            {m.note && ` ${m.note}.`}
           </figcaption>
           <div className="lp-term-window lp-spot" data-spotlight data-reveal aria-hidden>
             <span className="lp-term-spec" />
@@ -283,10 +297,16 @@ export function Terminal({ d }: { d: LandingData }) {
             <span className="lp-term-floor-line" />
           </div>
         </figure>
+        {/* outside the figure so the stage (and the light anchored to it) keeps the window's size */}
+        {m.note && (
+          <p className="lp-term-sample lp-mono" data-reveal="fade" style={vars({ "--d": "0.5s" })} aria-hidden>
+            {m.note}
+          </p>
+        )}
 
-        <ul className="lp-term-caps" role="list">
+        <ul className="lp-term-caps" role="list" data-reveal="fade">
           {CAPS.map((c, i) => (
-            <li key={c.title} className="lp-term-cap" data-reveal style={vars({ "--d": `${0.06 + i * 0.08}s`, "--b": `${i * 1.3}s` })}>
+            <li key={c.title} className="lp-term-cap" style={vars({ "--d": `${0.14 + i * 0.08}s`, "--b": `${i * 1.3}s` })}>
               <span className="lp-term-cap-ico" aria-hidden>
                 <Ico n={c.icon} size={18} sw={1.7} />
               </span>
@@ -378,9 +398,8 @@ function AppBar() {
       </span>
       <span className="lp-term-nav">
         <span data-on="">Trade</span>
-        <span>Feed</span>
+        <span>Tokens</span>
         <span>Leaderboard</span>
-        <span>Portfolio</span>
       </span>
       <span className="lp-term-search">
         <Ico n="search" size={13} />
@@ -577,16 +596,19 @@ function Chart({ candles, mark, marker }: { candles: Candle[]; mark: number; mar
   const bw = slot * 0.6;
   let lo = Math.min(...candles.map((c) => c.l));
   let hi = Math.max(...candles.map((c) => c.h));
-  const span0 = Math.max(1e-9, hi - lo);
+  /* relative floor: an absolute epsilon vanishes below float precision at large prices */
+  const span0 = Math.max(hi - lo, Math.abs(hi) * 1e-3, 1e-6);
   hi += span0 * 0.24; // room for the legend
   lo -= span0 * 0.26; // room for the thesis flag under the lows
   const y = (p: number) => ((hi - p) / (hi - lo)) * VH;
   const x = (i: number) => slot * (i + 0.5);
   const step = niceStep((hi - lo) / 5);
   const ticks: number[] = [];
-  for (let v = Math.ceil(lo / step) * step; v < hi; v += step) {
-    const yy = y(v);
-    if (yy > 16 && yy < VH - 10) ticks.push(v);
+  if (step > 0) {
+    for (let v = Math.ceil(lo / step) * step, i = 0; v < hi && i < 24; v += step, i++) {
+      const yy = y(v);
+      if (yy > 16 && yy < VH - 10) ticks.push(v);
+    }
   }
   const times = candles
     .map((c, i) => ({ i, d: new Date(c.t) }))
@@ -795,11 +817,11 @@ function Ticket({ mark, maxLev, floor }: { mark: number; maxLev: number; floor: 
   const size = 100;
   const qty = size / mark;
   const liq = mark * (1 - 1 / lev + 1 / (2 * maxLev));
-  const at = (v: number) => `${((v - 1) / (maxLev - 1)) * 100}%`;
+  const at = (v: number) => `${((v - 1) / Math.max(1, maxLev - 1)) * 100}%`;
   /* invalidation just under the swing low on the chart */
   const invalid = `${(Math.floor((Math.min(floor, mark) * 0.997) / 100) / 10).toFixed(1)}k`;
   const ticks = [1, 10, 20, 30, maxLev].filter((v, i, a) => v <= maxLev && a.indexOf(v) === i);
-  const text = `Swept the lows, reclaimed the range on rising OI. Invalid below ${invalid}.`;
+  const text = `Lows swept and bought back inside the hour. Invalid below ${invalid}.`;
   return (
     <div className="lp-term-ticket">
       <div className="lp-term-side">

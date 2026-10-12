@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { Mark, Wordmark, vars } from "./parts";
+import { FooterTop } from "./footer-top";
 import type { LandingData } from "./types";
 
 type FooterLinkT = { label: string; href: string };
+const HL_DOCS = "https://hyperliquid.gitbook.io/hyperliquid-docs";
+/* product routes, on-page explainers, and the venue underneath. no placeholder links:
+   legal pages and the brand's X account get a column when they exist */
 const COLS: { title: string; links: FooterLinkT[] }[] = [
   {
     title: "Product",
@@ -18,26 +22,21 @@ const COLS: { title: string; links: FooterLinkT[] }[] = [
       { label: "How it works", href: "#how" },
       { label: "Receipts", href: "#receipts" },
       { label: "Terminal", href: "#terminal" },
-      { label: "Builder codes", href: "https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes" },
     ],
   },
   {
-    title: "Social",
+    title: "Ecosystem",
     links: [
-      { label: "X / Twitter", href: "https://x.com" },
-      { label: "Hyperliquid", href: "https://app.hyperliquid.xyz" },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      { label: "Privacy", href: "#" },
-      { label: "Terms", href: "#" },
+      { label: "Hyperliquid app", href: "https://app.hyperliquid.xyz" },
+      { label: "Hyperliquid docs", href: HL_DOCS },
+      { label: "Builder codes", href: `${HL_DOCS}/trading/builder-codes` },
     ],
   },
 ];
 
 export function Footer({ d }: { d: LandingData }) {
+  // same signal the tape uses: no markets back from hyperliquid means the feed is down
+  const up = d.stats.markets > 0;
   return (
     <footer id="footer" className="lp-footer" aria-label="Site footer">
       <FooterLight />
@@ -49,13 +48,13 @@ export function Footer({ d }: { d: LandingData }) {
               <Wordmark size={24} id="footer-mark" />
             </Link>
             <p className="lp-footer-tag">
-              <span className="lp-lit">where traders show</span> <em className="lp-grad not-italic">their receipts.</em>
+              <span className="lp-lit">Where traders show</span> <em className="lp-grad not-italic">their receipts.</em>
             </p>
-            <span className="lp-footer-status">
-              <span className="lp-live" aria-hidden />
+            <span className={up ? "lp-footer-status" : "lp-footer-status lp-footer-status-down"}>
+              <span className={up ? "lp-live" : "lp-footer-status-idle"} aria-hidden />
               <span>Hyperliquid{d.testnet ? " testnet" : ""}</span>
               <span className="lp-footer-status-sep" aria-hidden>·</span>
-              <span className="lp-footer-status-ok">operational</span>
+              <span className={up ? "lp-footer-status-ok" : "lp-footer-status-warn"}>{up ? "operational" : "reconnecting"}</span>
             </span>
           </div>
 
@@ -82,19 +81,20 @@ export function Footer({ d }: { d: LandingData }) {
         </div>
 
         <div className="lp-footer-legal" data-reveal="fade">
-          <p className="lp-footer-copy">
-            © 2026 socialLiquid. Not an exchange. <span className="lp-footer-copy-2">All trades execute on Hyperliquid.</span>
-          </p>
+          <div className="lp-footer-fine">
+            <p className="lp-footer-copy">
+              © {new Date().getUTCFullYear()} socialLiquid. Not an exchange. <span className="lp-footer-copy-2">All trades execute on Hyperliquid.</span>
+            </p>
+            <p className="lp-footer-risk">
+              Perps are leveraged. You can lose your whole margin, fast. <span className="lp-footer-risk-2">Nothing here is financial advice.</span>
+            </p>
+          </div>
           <div className="lp-footer-legal-end">
             <span className="lp-footer-built">
               <Mark size={15} id="footer-built" />
               Built on Hyperliquid
             </span>
-            <a href="#" className="lp-footer-up" aria-label="Back to top">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 19V5M6 11l6-6 6 6" />
-              </svg>
-            </a>
+            <FooterTop />
           </div>
         </div>
 

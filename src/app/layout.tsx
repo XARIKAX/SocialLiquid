@@ -3,7 +3,7 @@ import localFont from "next/font/local";
 import { THEME_INIT } from "@/lib/theme";
 import "./globals.css";
 
-// geist sans, self hosted. not preloaded: text paints in the system fallback and swaps, which keeps first paint off the font's critical path
+// geist sans, self hosted and preloaded (every route's text uses it); display swap paints the metric-matched fallback until it lands
 const geist = localFont({
   src: "../../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2",
   variable: "--font-geist-sans",
@@ -26,7 +26,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: { default: "socialLiquid", template: "%s · socialLiquid" },
-  description: "the first social trading platform for perps. post a thesis, open the position on hyperliquid, let everyone watch you hold or dump.",
+  description: "Social trading for perpetuals. Post a thesis, open the position on Hyperliquid, and let everyone watch you hold or dump.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
 };
 

@@ -17,4 +17,8 @@ export type LandingData = {
   items: FeedItem[];
   traders: { address: string; displayName: string | null }[];
   testnet: boolean;
+  /** mainnet sign-ups need an invite code (env INVITE_CODE) */
+  inviteOnly: boolean;
+  /** builder fee per side in percent, from env (0.05 = 0.05%). render `${d.builderFeePct}%` instead of a literal */
+  builderFeePct: number;
 };

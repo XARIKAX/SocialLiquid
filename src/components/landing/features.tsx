@@ -1,8 +1,12 @@
 import type { ReactNode } from "react";
 import type { FeedItem } from "@/lib/queries";
 import { fmtPx, fmtUsd, shortAddr, timeAgo } from "@/lib/format";
+import { FeedPause } from "./features-pause";
 import { CountUp } from "./motion";
 import { Check, Disc, Mark, SectionHead, vars } from "./parts";
+
+/** signed whole dollars, like every other pnl on the page: +$12,805 */
+const wholeUsd = (v: number) => `${v > 0 ? "+" : v < 0 ? "-" : ""}$${Math.abs(Math.round(v)).toLocaleString("en-US")}`;
 import type { LandingData } from "./types";
 
 /* =====================================================================
@@ -12,25 +16,32 @@ import type { LandingData } from "./types";
    ===================================================================== */
 
 export function Features({ d }: { d: LandingData }) {
+  /* sample prices follow the live market, so the mocks never sit next to a very different tape */
+  const mark = d.btc?.markPx && d.btc.markPx > 0 ? d.btc.markPx : undefined;
+  const px = (coin: string) => {
+    const v = d.tape.find((t) => t.coin === coin)?.markPx;
+    return v && v > 0 ? v : undefined;
+  };
   return (
-    <section id="receipts" className="lp-feat">
+    <section id="receipts" className="lp-feat" aria-labelledby="lp-feat-title">
       <div className="lp-feat-atmos" aria-hidden>
         <div className="lp-feat-halo" />
         <div className="lp-grain" />
       </div>
       <div className="lp-container relative">
         <SectionHead
+          id="lp-feat-title"
           eyebrow="The social layer"
           title={
             <>
-              Never miss a <em className="lp-grad not-italic">move.</em>
+              Every move, <em className="lp-grad not-italic">on the record.</em>
             </>
           }
-          lead="The only social-first perps terminal. Every position mirrored from chain, every thesis bound to its trade, every outcome on the record."
+          lead={<span className="lp-feat-lead">A perps terminal built social-first. Positions mirrored straight from chain, every thesis bound to its trade, every outcome stamped for good.</span>}
         />
         <div className="lp-feat-bento">
-          <FeedCard items={d.items} />
-          <ThesisCard />
+          <FeedCard items={d.items} mark={mark} px={px} />
+          <ThesisCard mark={mark} />
           <BoardCard />
           <ReceiptCard />
         </div>
@@ -80,15 +91,24 @@ const PILL: Record<Kind, [string, string]> = {
   LIQUIDATED: ["Liquidated", "lp-pill-liq"],
 };
 
-/* illustrative traders (fictional handles). listed oldest first: the log scrolls up, the newest arrives at the bottom */
+/* illustrative traders (fictional handles). listed oldest first: the log scrolls up, the newest arrives at the bottom.
+   exactly six rows: the hold-and-advance keyframes step one row in six */
 const SAMPLE_FEED: Row[] = [
-  { id: "s1", a: "0xc2ba36f1d07e9a4b", h: "@lastcall", k: "LIQUIDATED", coin: "HYPE", usd: 38_520, lev: 25, pnl: -4_912.3, ago: "4m" },
-  { id: "s2", a: "0xd73400a9c1e85f2d", h: "@meanrev", k: "CLOSED", coin: "ETH", usd: 96_400, lev: 10, pnl: 12_804.55, ago: "3m" },
+  { id: "s1", a: "0xc2ba36f1d07e9a4b", h: "@lastcall", k: "LIQUIDATED", coin: "HYPE", usd: 38_520, lev: 25, pnl: -4_912, ago: "4m" },
+  { id: "s2", a: "0xd73400a9c1e85f2d", h: "@meanrev", k: "CLOSED", coin: "ETH", usd: 96_400, lev: 10, pnl: 12_805, ago: "3m" },
   { id: "s3", a: "0x111eec6c17c28d28", h: "@0xkoi", k: "SHORT", coin: "SOL", usd: 62_800, px: 171.32, lev: 10, ago: "2m" },
   { id: "s4", a: "0xcf3d0e47b2a91c06", h: "@thetafarmer", k: "THESIS", coin: "ETH", lev: 15, text: "shorts paying 0.03%/h into the weekly open. squeeze first, questions later.", ago: "58s" },
   { id: "s5", a: "0xac17248e5d03b7f9", h: "@basisboy", k: "LONG", coin: "SUI", usd: 21_350, px: 3.4127, lev: 5, ago: "31s" },
-  { id: "s6", a: "0xe9c7d8a1f04b62ce", h: "@nightowl", k: "LONG", coin: "BTC", usd: 184_200, px: 82_410, lev: 20, ago: "now" },
+  { id: "s6", a: "0x6279f4b0c35e18da", h: "@sendit", k: "LONG", coin: "BTC", usd: 184_200, px: 82_410, lev: 20, ago: "now" },
 ];
+/* the entry each sample row sat at relative to the mark (a short filled a touch above, a long a touch below) */
+const SAMPLE_OFF: Record<string, number> = { s3: 1.0034, s5: 0.9991, s6: 0.9997 };
+const SAMPLE_ROWS = 6;
+/* round a derived sample price to a believable tick */
+const tick = (v: number) => {
+  const dp = v >= 1000 ? 0 : v >= 100 ? 2 : v >= 10 ? 3 : 4;
+  return Math.round(v * 10 ** dp) / 10 ** dp;
+};
 
 const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 
@@ -110,10 +130,15 @@ function fromItem(it: FeedItem): Row {
   };
 }
 
-function FeedCard({ items }: { items: FeedItem[] }) {
-  const live = items.length >= 5;
+function FeedCard({ items, mark, px }: { items: FeedItem[]; mark?: number; px: (coin: string) => number | undefined }) {
+  const live = items.length >= SAMPLE_ROWS;
   // newest last, so fresh rows rise in from below
-  const rows = live ? items.slice(0, 6).map(fromItem).reverse() : SAMPLE_FEED;
+  const rows = live
+    ? items.slice(0, SAMPLE_ROWS).map(fromItem).reverse()
+    : SAMPLE_FEED.map((r) => {
+        const m = r.coin === "BTC" ? mark : px(r.coin);
+        return m && r.px !== undefined ? { ...r, px: tick(m * (SAMPLE_OFF[r.id] ?? 1)) } : r;
+      });
   const loop = [...rows, ...rows];
   return (
     <Card
@@ -126,23 +151,33 @@ function FeedCard({ items }: { items: FeedItem[] }) {
           <path d="M3 12h3.6l2.6-6.5 4.6 13 2.6-6.5H21" />
         </Ico>
       }
-      title="Every long, short and liquidation, the second it hits chain."
-      body="We mirror positions straight from Hyperliquid for the top traders and anyone who signs up. Nothing is self-reported."
+      title="Longs, shorts and liquidations, straight from chain."
+      body="We mirror positions from Hyperliquid for its top traders and everyone who signs up. Nothing is self-reported."
     >
-      <div className="lp-feat-viz lp-feat-feedviz" aria-hidden>
+      <div className="lp-feat-viz lp-feat-feedviz">
         <div className="lp-feat-panel">
           <div className="lp-feat-panel-head">
-            <span className="lp-feat-panel-title">
-              <span className="lp-live" /> Streaming
-              <span className="lp-feat-panel-src lp-mono">Hyperliquid L1</span>
-            </span>
-            <span className="lp-feat-seg">
-              <span data-on="">All</span>
-              <span>Theses</span>
-              <span>Closes</span>
+            {live ? (
+              <span className="lp-feat-panel-title" aria-hidden>
+                <span className="lp-live" /> Streaming
+                <span className="lp-feat-panel-src lp-mono">Hyperliquid L1</span>
+              </span>
+            ) : (
+              <span className="lp-feat-panel-title" aria-hidden>
+                <span className="lp-feat-sample-dot" /> Sample feed
+                <span className="lp-feat-panel-src lp-mono">Illustrative</span>
+              </span>
+            )}
+            <span className="lp-feat-panel-tools">
+              <span className="lp-feat-seg" aria-hidden>
+                <span data-on="">All</span>
+                <span>Theses</span>
+                <span>Following</span>
+              </span>
+              <FeedPause />
             </span>
           </div>
-          <div className="lp-feat-window">
+          <div className="lp-feat-window" aria-hidden>
             <div className="lp-feat-track" style={vars({ "--t": `${rows.length * 6.4}s` })}>
               {loop.map((r, i) => (
                 <FeedRow key={`${r.id}-${i}`} r={r} fresh={i % rows.length === rows.length - 1} dup={i >= rows.length} />
@@ -172,7 +207,9 @@ function FeedRow({ r, fresh, dup }: { r: Row; fresh: boolean; dup: boolean }) {
   const closed = r.k === "CLOSED" || r.k === "LIQUIDATED";
   return (
     <div className={`lp-feat-row ${fresh ? "lp-feat-row-new" : ""}`} data-dup={dup ? "" : undefined}>
-      <Disc a={r.a} size={32} />
+      <span className="lp-feat-row-av">
+        <Disc a={r.a} size={32} />
+      </span>
       <div className="min-w-0">
         <div className="lp-feat-row-top">
           <span className="lp-feat-handle">{r.h}</span>
@@ -184,11 +221,11 @@ function FeedRow({ r, fresh, dup }: { r: Row; fresh: boolean; dup: boolean }) {
             <span className="lp-feat-row-quote">“{r.text}”</span>
           ) : (
             <>
-              {r.usd !== undefined && <span className="text-[var(--lp-text-2)]">{fmtUsd(r.usd, { compact: true })}</span>}
+              {r.usd !== undefined && <span className="lp-feat-usd">{fmtUsd(r.usd, { compact: true })}</span>}
               {!closed && r.px !== undefined && (
                 <>
                   <span className="lp-feat-at">at</span>
-                  <span>{fmtPx(r.px)}</span>
+                  <span className="lp-feat-px">{fmtPx(r.px)}</span>
                 </>
               )}
               {r.lev !== undefined && <span className="lp-feat-lev">{r.lev}x</span>}
@@ -204,18 +241,29 @@ function FeedRow({ r, fresh, dup }: { r: Row; fresh: boolean; dup: boolean }) {
         ) : (
           <span className="lp-feat-ago lp-mono">{r.ago}</span>
         )}
-        {closed && r.pnl !== undefined ? <span className={`lp-feat-pnl-v ${r.pnl >= 0 ? "lp-feat-up" : "lp-feat-down"}`}>{fmtUsd(r.pnl, { sign: true })}</span> : <span />}
+        {closed && r.pnl !== undefined ? (
+          <span className={`lp-feat-pnl-v ${r.pnl >= 0 ? "lp-feat-up" : "lp-feat-down"}`}>
+            <span className="lp-feat-pnl-full">{wholeUsd(r.pnl)}</span>
+            <span className="lp-feat-pnl-short">{fmtUsd(r.pnl, { sign: true, compact: true })}</span>
+          </span>
+        ) : (
+          <span />
+        )}
       </div>
     </div>
   );
 }
 
 /* ---------- B. the thesis ---------- */
-const THESIS = "funding flat, reclaiming the range high. invalidated below 81.4k.";
+/* illustrative btc path since entry: a scare toward the invalidation, then the reclaim.
+   drawn in these units; the labels are rescaled to the live mark (the shape is scale-free) */
 const ENTRY = 81_920;
 const INVALID = 81_400;
-/* illustrative btc path since entry: a scare toward the invalidation, then the reclaim */
 const PX = [81_920, 81_884, 81_802, 81_846, 81_712, 81_628, 81_566, 81_652, 81_736, 81_694, 81_842, 81_968, 81_912, 82_084, 82_196, 82_142, 82_296, 82_352, 82_428];
+const PX_NOW = PX[PX.length - 1];
+/* a fictional trader of its own: @nightowl's btc long already lives in the terminal below */
+const POSTER = { a: "0x4b08d6e39a1c57f2", h: "@slowhands", rank: 6 };
+const int = (v: number) => Math.round(v).toLocaleString("en-US");
 
 /** catmull-rom through points, as cubic beziers */
 function smooth(pts: [number, number][]) {
@@ -231,7 +279,12 @@ function smooth(pts: [number, number][]) {
   return d;
 }
 
-function ThesisCard() {
+function ThesisCard({ mark }: { mark?: number }) {
+  const k = mark ? mark / PX_NOW : 1;
+  const entry = int(ENTRY * k);
+  const invalid = `${((INVALID * k) / 1000).toFixed(1)}k`;
+  const target = `${Math.round((83_000 * k) / 1000)}k`;
+  const thesis = `swept the lows and the bids held. first stop ${target}, invalid below ${invalid}.`;
   const W = 400;
   const H = 96;
   const lo = 81_180;
@@ -243,7 +296,7 @@ function ThesisCard() {
   const line = smooth(pts);
   const last = pts[pts.length - 1];
   const pct = (y: number) => `${((y / H) * 100).toFixed(2)}%`;
-  const used = THESIS.length;
+  const used = thesis.length;
   const C = 2 * Math.PI * 7;
   return (
     <Card
@@ -263,21 +316,21 @@ function ThesisCard() {
       <div className="lp-feat-viz" aria-hidden>
         <div className="lp-feat-post">
           <div className="lp-feat-post-head">
-            <Disc a="0xe9c7d8a1f04b62ce" size={36} />
+            <Disc a={POSTER.a} size={36} />
             <div className="min-w-0">
               <div className="lp-feat-post-who">
-                <b>@nightowl</b>
-                <span className="lp-feat-rank lp-mono">#1</span>
+                <b>{POSTER.h}</b>
+                <span className="lp-feat-rank lp-mono">#{POSTER.rank}</span>
                 <span className="lp-feat-post-time lp-mono">· 3h</span>
               </div>
               <div className="lp-feat-post-pos lp-num">
-                <span className="lp-feat-up">BTC long</span> · 20x · entry {ENTRY.toLocaleString("en-US")}
+                <span className="lp-feat-up">BTC long</span> · 20x · entry {entry}
               </div>
             </div>
             <span className="lp-pill lp-pill-blue ml-auto">Thesis</span>
           </div>
 
-          <p className="lp-feat-quote">{THESIS}</p>
+          <p className="lp-feat-quote">{thesis}</p>
 
           <div className="lp-feat-pos">
             <div className="lp-feat-pos-top">
@@ -294,7 +347,7 @@ function ThesisCard() {
               </div>
               <div className="lp-feat-pos-px lp-num">
                 <small className="lp-mono">Mark</small>
-                <b>82,428</b>
+                <b>{int(PX_NOW * k)}</b>
               </div>
             </div>
             <div className="lp-feat-plot">
@@ -327,10 +380,10 @@ function ThesisCard() {
                 <rect x={last[0] - 0.5} y={last[1]} width="1" height={H - last[1]} fill="url(#lp-feat-plot-drop)" />
               </svg>
               <span className="lp-feat-plot-tag lp-mono lp-num" style={{ top: pct(sy(ENTRY)) }}>
-                Entry 81,920
+                Entry {entry}
               </span>
               <span className="lp-feat-plot-tag lp-feat-plot-tag-inv lp-mono lp-num" style={{ top: pct(sy(INVALID)) }}>
-                Invalid &lt; 81.4k
+                Invalid &lt; {invalid}
               </span>
               <span className="lp-feat-plot-now" style={{ left: `${((last[0] / W) * 100).toFixed(2)}%`, top: pct(last[1]) }} />
             </div>
@@ -403,11 +456,13 @@ function BoardCard() {
       <div className="lp-feat-viz" aria-hidden>
         <div className="lp-feat-board">
           <div className="lp-feat-board-head lp-mono">
-            <span>Trader</span>
+            <span>
+              Sample<span className="lp-feat-board-cap"> standings</span>
+            </span>
             <span className="lp-feat-seg lp-feat-seg-sm">
-              <span data-on="">7D</span>
-              <span>30D</span>
-              <span>All</span>
+              <span data-on="">7d PnL</span>
+              <span>Win rate</span>
+              <span>Accuracy</span>
             </span>
           </div>
           {BOARD.map((t, i) => (
@@ -494,7 +549,7 @@ function ReceiptCard() {
         </Ico>
       }
       title="Close inside an hour and it says so. Forever."
-      body="Every thesis gets an outcome the moment the position closes. Hold, profit, loss, liquidation, or the one nobody wants on their profile."
+      body="When the position closes, its thesis gets an outcome straight from the fills: profit, loss, liquidation, or the one nobody wants on their profile."
       extra={
         <div className="lp-feat-outs">
           <span className="lp-feat-outs-label lp-mono">Five outcomes · one record</span>
@@ -533,7 +588,7 @@ function ReceiptCard() {
               <p className="lp-feat-paper-quote">“not selling this one.”</p>
               <div className="lp-feat-perf" />
               <div className="lp-feat-tl">
-                <span>BTC-PERP</span>
+                <span>BTC-USD</span>
                 <b>Long 20x</b>
               </div>
               <div className="lp-feat-tl">

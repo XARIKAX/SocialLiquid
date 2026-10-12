@@ -10,7 +10,11 @@
   --how-gap: 22px;    /* node column → card */
   --how-orb-y: 26px;  /* orb top offset inside a step, lines it up with the card head */
   position: relative;
-  padding-block: clamp(96px, 11vw, 168px);
+  /* page rhythm: the shared section token (88 on phones, 128 at 1440), never under 120 on desktop */
+  padding-block: var(--lp-section-y);
+}
+@media (min-width: 1024px) {
+  .lp-how { padding-block: max(120px, var(--lp-section-y)); }
 }
 
 /* ---------- atmosphere ---------- */
@@ -69,10 +73,12 @@
 }
 
 /* ---------- left column ---------- */
+/* 58 is the most this column holds: at 64 "Just your receipts." (~490px) breaks inside a ~457px column.
+   three stacked lines at 58 carry more mass than the two-line 64px heads elsewhere, so it still reads as a peer */
 .lp-how-head .lp-h2 { font-size: clamp(36px, 4vw, 58px); line-height: 1.03; }
 .lp-how-line { display: block; }
 .lp-how-head em { padding-bottom: 0.06em; }
-.lp-how-head .lp-lead { max-width: 440px; }
+.lp-how-head .lp-lead { max-width: 440px; text-wrap: balance; }
 
 .lp-how-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: clamp(28px, 2.6vw, 36px); }
 .lp-how-docs .lp-how-ext { color: var(--lp-mint); transition: transform 0.4s var(--lp-ease-out); }
@@ -93,11 +99,12 @@
 }
 .lp-how-stack-i { display: inline-flex; align-items: center; gap: 10px; padding-inline: 10px; }
 .lp-how-stack-i + .lp-how-stack-i { border-left: 1px solid rgb(255 255 255 / 0.08); }
-.lp-how-stack-k { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--lp-dim); }
+.lp-how-stack-k { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--lp-muted); }
 .lp-how-stack-v { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--lp-text-2); white-space: nowrap; }
 /* narrow column: the two facts stack as rows */
 .lp-how-aside { container-type: inline-size; }
 @container (max-width: 444px) {
+  .lp-how-ctas { flex-direction: column; align-items: stretch; max-width: 400px; }
   .lp-how-stack { display: flex; flex-direction: column; align-items: stretch; max-width: 400px; padding: 4px 14px; }
   .lp-how-stack-i { justify-content: space-between; padding: 9px 0; }
   .lp-how-stack-i + .lp-how-stack-i { border-left: 0; border-top: 1px solid rgb(255 255 255 / 0.06); }
@@ -305,7 +312,7 @@
 }
 .lp-how-step:nth-child(3) .lp-how-orb::before { background: radial-gradient(closest-side, rgb(110 170 240 / 0.34), rgb(107 147 255 / 0.1) 60%, transparent 100%); }
 .lp-how-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 22px; }
-.lp-how-kicker { font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--lp-mint); opacity: 0.9; }
+.lp-how-kicker { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--lp-mint); opacity: 0.9; }
 .lp-how-meta { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--lp-dim); white-space: nowrap; }
 .lp-how-meta svg { color: var(--lp-teal); opacity: 0.85; }
 .lp-how-h3 { margin-top: 12px; padding-bottom: 0.04em; font-size: clamp(21px, 1.75vw, 25px); line-height: 1.15; letter-spacing: -0.032em; font-weight: 460; }
@@ -421,7 +428,7 @@
   background: linear-gradient(180deg, rgb(28 42 48 / 0.95), rgb(12 18 22 / 0.95));
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 10px 26px -10px rgb(0 0 0 / 0.95), 0 0 24px -10px rgb(34 211 107 / 0.35);
 }
-.lp-how-addr-a { font-size: 12.5px; color: var(--lp-text); letter-spacing: -0.01em; }
+.lp-how-addr-a { font-size: 12.5px; color: var(--lp-text); letter-spacing: -0.01em; white-space: nowrap; }
 .lp-how-addr-state {
   display: inline-flex;
   align-items: center;
@@ -434,6 +441,25 @@
   color: #7dfcae;
 }
 .lp-how-addr-state .lp-live { width: 6px; height: 6px; }
+/* the handle the wallet claims: a lit field with the name it will post under */
+.lp-how-claim {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  margin-top: 10px;
+  padding: 0 8px 0 13px;
+  border-radius: 12px;
+  background:
+    radial-gradient(60% 120% at 0% 50%, rgb(77 227 193 / 0.07), transparent 70%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.012));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), inset 0 0 0 1px rgb(151 252 228 / 0.14);
+}
+.lp-how-claim-k { padding-right: 10px; border-right: 1px solid rgb(255 255 255 / 0.08); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--lp-dim); line-height: 18px; }
+.lp-how-claim-v { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 500; letter-spacing: -0.01em; color: var(--lp-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-how-claim-at { margin-right: 1px; color: var(--lp-mint); text-shadow: 0 0 12px rgb(77 227 193 / 0.6); }
+.lp-how-claimed { flex-shrink: 0; height: 24px; padding-inline: 8px 9px; transition: opacity 0.7s var(--lp-ease-out) 1.2s, transform 0.7s var(--lp-ease-out) 1.2s; }
+.lp-js .lp-how-vig:not([data-in]) .lp-how-claimed { opacity: 0; transform: translateX(-6px); }
 
 /* 02 · approve once */
 .lp-how-sigs { display: grid; gap: 8px; margin-top: 12px; }
@@ -452,7 +478,19 @@
 .lp-how-sig-ico-blue { color: #b9caff; background: linear-gradient(180deg, rgb(107 147 255 / 0.28), rgb(107 147 255 / 0.07)); box-shadow: inset 0 1px 0 rgb(214 225 255 / 0.22), inset 0 0 0 1px rgb(107 147 255 / 0.3); }
 .lp-how-sig-copy { min-width: 0; }
 .lp-how-sig-copy b { display: block; font-size: 13.5px; font-weight: 500; color: var(--lp-text); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lp-how-sig-copy small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--lp-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the sub line is two phrases. each carries its own "·" in a fixed slot to its left, and the line is
+   shifted left by that slot and clipped, so the dot only shows between phrases sharing a line: a phrase
+   that wraps starts its new line clean, and no line ever ends on a dangling "·" */
+.lp-how-sub {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 2px 0 0 -1.1em;
+  clip-path: inset(0 0 0 1.1em);
+  font-size: 11.5px;
+  color: var(--lp-dim);
+}
+.lp-how-sub > span { white-space: nowrap; }
+.lp-how-sub > span::before { content: "\00b7"; display: inline-block; width: 1.1em; text-align: center; }
 .lp-how-sig-state { display: inline-flex; align-items: center; gap: 8px; }
 .lp-how-cap {
   display: inline-flex;
@@ -617,6 +655,7 @@
 .lp-how-posted-pill .lp-live { width: 6px; height: 6px; }
 .lp-js .lp-how-vig:not([data-in]) .lp-how-posted-pill { opacity: 0; transform: translateY(4px); }
 .lp-how-posted-by { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--lp-text-2); white-space: nowrap; }
+.lp-how-posted-h { color: var(--lp-text); font-weight: 500; }
 .lp-how-posted-ago { color: var(--lp-dim); font-family: inherit; }
 
 /* compact vignettes on narrow cards */
@@ -630,10 +669,8 @@
   .lp-how-signed { display: none; }
   .lp-how-sig { align-items: start; }
   .lp-how-sig-state { padding-top: 6px; }
-  .lp-how-sig-copy b, .lp-how-sig-copy small { white-space: normal; overflow: visible; }
-  .lp-how-sig-copy small { line-height: 1.4; }
-  /* break after the "·", never inside the phrase */
-  .lp-how-nw { white-space: nowrap; }
+  .lp-how-sig-copy b { white-space: normal; overflow: visible; }
+  .lp-how-sub { line-height: 1.4; }
   .lp-how-cap { display: flex; width: fit-content; margin: 5px 0 1px; }
   .lp-how-order { align-items: center; }
   .lp-how-order-sep, .lp-how-order-t small { display: none; }
@@ -645,13 +682,16 @@
   .lp-how-sig-ico { width: 30px; height: 30px; }
   .lp-how-sig-copy b { font-size: 13px; }
   .lp-how-posted-ago { display: none; }
+  .lp-how-addr { gap: 8px; padding-right: 12px; }
+  .lp-how-addr-state { padding-left: 9px; }
+  .lp-how-claim-k { display: none; }
 }
 
 /* ---------- the fine print ---------- */
 .lp-how-foot { position: relative; margin-top: clamp(80px, 9vw, 128px); }
 .lp-how-fine { display: flex; align-items: center; justify-content: center; gap: 16px; }
-.lp-how-fine > .lp-mono { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--lp-mint); white-space: nowrap; }
-.lp-how-fine-rule { flex: 1 1 0; max-width: 360px; height: 1px; background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.1) 50%, rgb(151 252 228 / 0.45)); }
+.lp-how-fine > .lp-mono { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--lp-text-2); white-space: nowrap; }
+.lp-how-fine-rule { flex: 1 1 0; max-width: 200px; height: 1px; background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.1) 50%, rgb(151 252 228 / 0.45)); }
 .lp-how-fine-rule-r { background: linear-gradient(90deg, rgb(151 252 228 / 0.45), rgb(255 255 255 / 0.1) 50%, transparent); }
 
 .lp-how-trust { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin: 32px 0 0; padding: 0; list-style: none; }
@@ -734,7 +774,7 @@
 .lp-how-slash { stroke: #ffffff; stroke-opacity: 0.85; }
 .lp-how-trust-copy { min-width: 0; }
 .lp-how-trust-t { font-size: 16px; line-height: 1.3; font-weight: 500; letter-spacing: -0.015em; color: var(--lp-text); margin-top: 2px; }
-.lp-how-trust-b { margin-top: 6px; font-size: 14px; line-height: 1.55; color: var(--lp-muted); text-wrap: pretty; }
+.lp-how-trust-b { margin-top: 6px; font-size: 15px; line-height: 1.55; color: var(--lp-muted); text-wrap: pretty; }
 
 /* ---------- small screens ---------- */
 @media (max-width: 1023px) {
@@ -751,7 +791,7 @@
   }
   .lp-how-orb { font-size: 10.5px; }
   .lp-how-port { display: none; }
-  .lp-how-head .lp-h2 { font-size: clamp(32px, 10.2vw, 44px); }
+  .lp-how-head .lp-h2 { font-size: clamp(30px, 8.8vw, 40px); }
   .lp-how-orb-ring { inset: -5px; }
   .lp-how-orb::before { inset: -12px; }
   .lp-how-orb { box-shadow: inset 0 1px 0 rgb(214 255 245 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.4), inset 0 0 0 1px rgb(151 252 228 / 0.3), 0 0 0 4px rgb(6 10 12 / 0.96), 0 0 0 5px rgb(151 252 228 / 0.13), var(--how-orb-glow, 0 0 22px 3px rgb(77 227 193 / 0.3)); }
@@ -759,13 +799,23 @@
   .lp-how-card { padding: 18px 16px 18px; border-radius: 20px; }
   .lp-how-meta { font-size: 11.5px; }
   .lp-how-h3 { margin-top: 10px; font-size: 20px; }
-  .lp-how-body { font-size: 14.5px; }
+  .lp-how-body { font-size: 15px; }
   .lp-how-vig { margin-top: 16px; padding: 12px 12px 0; }
   .lp-how-vig-foot, .lp-how-posted { margin-inline: -12px; padding-inline: 12px; }
   .lp-how-ctas .lp-btn { flex: 1 1 auto; }
   .lp-how-fine { gap: 12px; }
-  .lp-how-fine > .lp-mono { font-size: 10px; letter-spacing: 0.18em; }
+  .lp-how-fine > .lp-mono { font-size: 11px; letter-spacing: 0.16em; }
   .lp-how-trust-item { padding: 18px 18px 20px; gap: 14px; }
+}
+/* small phones: the rail slims to a line of lit beads and gives its width back to the cards.
+   the card's own "Step 0n" kicker carries the number */
+@media (max-width: 420px) {
+  .lp-how { --how-node: 20px; --how-orb: 14px; --how-gap: 10px; --how-orb-y: 24px; }
+  .lp-how-orb > .lp-mono { display: none; }
+  .lp-how-orb-ring { inset: -4px; }
+  .lp-how-orb::before { inset: -9px; }
+  .lp-how-orb { box-shadow: inset 0 1px 0 rgb(235 255 251 / 0.75), inset 0 0 0 1px rgb(151 252 228 / 0.5), 0 0 0 3px rgb(6 10 12 / 0.96), 0 0 0 4px rgb(151 252 228 / 0.16), var(--how-orb-glow, 0 0 16px 3px rgb(77 227 193 / 0.45)); }
+  .lp-how-node::after { display: none; }
 }
 
 /* ---------- keyframes ---------- */

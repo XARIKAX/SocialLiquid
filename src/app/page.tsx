@@ -1,27 +1,61 @@
 import type { Metadata } from "next";
 import { Landing } from "@/components/landing/landing";
 import { prisma } from "@/lib/db";
-import { IS_TESTNET } from "@/lib/env";
+import { BUILDER_FEE_TENTHS_BP, INVITE_REQUIRED, IS_TESTNET } from "@/lib/env";
 import * as HL from "@/lib/hl";
 import { feed } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
+const DESCRIPTION = "Social trading for perpetuals. Post a thesis, open the position on Hyperliquid, and let everyone watch you hold or dump.";
+
 export const metadata: Metadata = {
   title: "socialLiquid — where traders show their receipts",
-  description: "The first social trading platform for perpetuals. Post a thesis, open the position on Hyperliquid, and let everyone watch you hold or dump.",
-  openGraph: { title: "socialLiquid", description: "where traders show their receipts. social perps on hyperliquid." },
+  description: DESCRIPTION,
+  openGraph: { title: "socialLiquid", description: "Where traders show their receipts. Social trading for perps on Hyperliquid." },
 };
+
+/** never let a slow upstream hold the landing page: resolve to the fallback after `ms` */
+function within<T>(p: Promise<T>, fb: T, ms = 2500): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((r) => {
+    timer = setTimeout(() => r(fb), ms);
+  });
+  return Promise.race([p.catch(() => fb), late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * module-level memo that stores the promise, so concurrent misses share one upstream call.
+ * an empty or failed result is kept only briefly so the next request retries.
+ */
+function shared<T extends unknown[]>(ttl: number, load: () => Promise<T>) {
+  let c: { at: number; ttl: number; p: Promise<T> } | undefined;
+  return () => {
+    if (c && Date.now() - c.at < c.ttl) return c.p;
+    const entry = { at: Date.now(), ttl, p: load().catch(() => [] as unknown as T) };
+    entry.p.then((v) => {
+      if (!v.length) entry.ttl = 5_000;
+    });
+    c = entry;
+    return entry.p;
+  };
+}
+
+// candleSnapshot weighs 20 of hyperliquid's 1,200/min per-ip budget: one fetch a minute for every visitor
+const btcCandles = shared(60_000, () => HL.candleSnapshot("BTC", "1h", Date.now() - 48 * 3_600_000));
+// markets() caches 10s itself; this only dedupes the concurrent misses at expiry
+const allMarkets = shared(10_000, () => HL.markets());
 
 export default async function Home() {
   const [markets, items, traders, tracked, candles] = await Promise.all([
-    HL.markets().catch(() => []),
-    feed({ limit: 7, minUsd: 0 }).catch(() => []),
-    prisma.trackedAddress.findMany({ select: { address: true, displayName: true }, take: 12, orderBy: { lastPolledAt: "desc" } }).catch(() => []),
-    prisma.trackedAddress.count().catch(() => 0),
-    HL.candleSnapshot("BTC", "1h", Date.now() - 48 * 3_600_000).catch(() => []),
+    within(allMarkets(), []),
+    within(feed({ limit: 7, minUsd: 0 }), []),
+    // only people who signed up count as traders (not leaderboard addresses we mirror)
+    within(prisma.trackedAddress.findMany({ where: { source: "USER" }, select: { address: true, displayName: true }, take: 12, orderBy: { lastPolledAt: "desc" } }), []),
+    within(prisma.trackedAddress.count({ where: { source: "USER" } }), 0),
+    within(btcCandles(), []),
   ]);
-  const btc = markets.find((m) => m.coin === "BTC");
+  const btc = markets.find((m) => m.coin === "BTC" && Number.isFinite(m.markPx) && m.markPx > 0);
   const tape = [...markets]
     .filter((m) => m.markPx > 0)
     .sort((a, b) => b.volume24h - a.volume24h)
@@ -42,6 +76,8 @@ export default async function Home() {
       items={items}
       traders={traders}
       testnet={IS_TESTNET}
+      inviteOnly={INVITE_REQUIRED}
+      builderFeePct={BUILDER_FEE_TENTHS_BP / 1000}
     />
   );
 }

@@ -58,7 +58,7 @@ export function Check({ size = 14 }: { size?: number }) {
 
 /** gradient identity disc derived from an address */
 export function Disc({ a, size = 20, className = "" }: { a: string; size?: number; className?: string }) {
-  const h1 = parseInt(a.slice(2, 8), 16) % 360;
+  const h1 = (parseInt(a.slice(2, 8), 16) || 0) % 360;
   const h2 = (h1 + 60) % 360;
   return (
     <span

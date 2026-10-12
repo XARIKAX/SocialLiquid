@@ -3,7 +3,7 @@ import type { FeedItem } from "@/lib/queries";
 import { fmtUsd } from "@/lib/format";
 import { Globe } from "./globe";
 import { CountUp } from "./motion";
-import { Arrow, Check, TrendArrow, vars } from "./parts";
+import { Arrow, Check, Disc, TrendArrow, vars } from "./parts";
 import type { LandingData } from "./types";
 
 export function Hero({ d }: { d: LandingData }) {
@@ -11,28 +11,29 @@ export function Hero({ d }: { d: LandingData }) {
     <section className="lp-hero" aria-labelledby="lp-hero-title">
       <Sky />
       <div className="lp-hero-copy lp-container">
-        <span className="lp-badge" style={vars({ "--d": "0.6s" })}>
+        {/* the light leads (arch from 0.1s), the words resolve while it is still rising, then the product */}
+        <span className="lp-badge" style={vars({ "--d": "0.42s" })}>
           <span className="lp-badge-tag">
             <span className="lp-live" /> Live
           </span>
-          Now trading on Hyperliquid{d.testnet ? " testnet" : ""}
+          {d.inviteOnly ? "Invite-only on Hyperliquid" : `Now trading on Hyperliquid${d.testnet ? " testnet" : ""}`}
         </span>
         <h1 id="lp-hero-title" className="lp-h1 lp-hero-title" style={vars({ "--d": "0s" })}>
-          <span className="lp-lit" style={vars({ "--d": "0.78s" })}>Where traders show</span>
-          <span className="lp-grad" style={vars({ "--d": "0.96s" })}>their receipts.</span>
+          <span className="lp-lit" style={vars({ "--d": "0.52s" })}>Where traders show</span>
+          <span className="lp-grad" style={vars({ "--d": "0.68s" })}>their receipts.</span>
         </h1>
-        <p className="lp-lead" style={vars({ "--d": "1.14s" })}>
-          The first social trading platform for perpetuals. Post a thesis, open the position on Hyperliquid, and let everyone watch you hold or dump.
+        <p className="lp-lead" style={vars({ "--d": "0.84s" })}>
+          Social trading for perpetuals. Post a thesis, open the position on Hyperliquid, and let everyone watch you hold or dump.
         </p>
-        <div className="lp-hero-ctas" style={vars({ "--d": "1.3s" })}>
+        <div className="lp-hero-ctas" style={vars({ "--d": "0.96s" })}>
           <Link href="/trade" className="lp-btn lp-btn-primary">
             Start trading <Arrow />
           </Link>
-          <Link href="/trade" className="lp-btn lp-btn-ghost">
+          <a href="#receipts" className="lp-btn lp-btn-ghost">
             Watch the feed
-          </Link>
+          </a>
         </div>
-        <div className="lp-hero-trust" style={vars({ "--d": "1.44s" })}>
+        <div className="lp-hero-trust" style={vars({ "--d": "1.06s" })}>
           <span><Check /> Non-custodial</span>
           <span><Check /> Perps only</span>
           <span><Check /> Every fill on-chain</span>
@@ -106,16 +107,22 @@ function Sky() {
 }
 
 /* ---------- product cards ---------- */
+/** the three cards are a picture of the product: screen readers get one caption, not the mock data */
 function Stage({ d }: { d: LandingData }) {
+  const live = liveChips(d.items);
   return (
-    <div className="lp-stage">
-      <div className="lp-stage-glow" />
-      <div className="lp-stage-row">
-        <PositionsCard items={d.items} />
+    <figure className="lp-stage">
+      <figcaption className="sr-only">
+        Product preview: {live ? "live" : "sample"} positions on a globe, the BTC-USD mark price over the last 48 hours
+        {d.btc ? ` (now $${Math.round(d.btc.markPx).toLocaleString("en-US")})` : ""}, and a sample trader&apos;s thesis accuracy with recent receipts.
+      </figcaption>
+      <div className="lp-stage-glow" aria-hidden />
+      <div className="lp-stage-row" aria-hidden>
+        <PositionsCard live={live} />
         <MarketCard d={d} />
         <ReceiptsCard />
       </div>
-    </div>
+    </figure>
   );
 }
 
@@ -124,25 +131,32 @@ const SAMPLE_CHIPS = [
   { side: "SHORT", coin: "ETH", usd: 96_400 },
   { side: "LONG", coin: "SOL", usd: 48_200 },
 ];
-const CHIP_SPOTS = [
-  { left: "6%", top: "34%", d: "2.3s", t: "6.5s" },
-  { left: "54%", top: "17%", d: "2.55s", t: "7.2s" },
-  { left: "40%", top: "74%", d: "2.8s", t: "5.8s" },
+/** the middle chip is anchored from the right so it never runs past a narrow card */
+const CHIP_SPOTS: { left?: string; right?: string; top: string; d: string; t: string }[] = [
+  { left: "6%", top: "34%", d: "2.1s", t: "6.5s" },
+  { right: "5%", top: "17%", d: "2.35s", t: "7.2s" },
+  { left: "40%", top: "74%", d: "2.6s", t: "5.8s" },
 ];
 
-function PositionsCard({ items }: { items: FeedItem[] }) {
+type Chip = { side: string; coin: string; usd: number };
+/** three real open positions from the feed, or null to show the sample */
+function liveChips(items: FeedItem[]): Chip[] | null {
   const live = items
     .filter((i) => (i.type === "LONG" || i.type === "SHORT") && typeof (i.payload as { sizeUsd?: number }).sizeUsd === "number")
     .slice(0, 3)
     .map((i) => ({ side: i.type, coin: i.coin, usd: (i.payload as { sizeUsd: number }).sizeUsd }));
-  const chips = live.length === 3 ? live : SAMPLE_CHIPS;
+  return live.length === 3 ? live : null;
+}
+
+function PositionsCard({ live }: { live: Chip[] | null }) {
+  const chips = live ?? SAMPLE_CHIPS;
   return (
-    <div className="lp-card lp-card-side lp-card-left lp-glass lp-spot" data-spotlight style={vars({ "--d": "1.55s" })}>
+    <div className="lp-card lp-card-side lp-card-left lp-glass lp-spot" data-spotlight style={vars({ "--d": "1.2s" })}>
       <div className="lp-card-head">
         <span className="lp-card-label">
-          <span className="lp-live" /> Live positions
+          <span className="lp-live" /> {live ? "Live positions" : "Open positions"}
         </span>
-        <span className="lp-pill lp-pill-neutral">Worldwide</span>
+        <span className="lp-pill lp-pill-neutral">{live ? "Now" : "Sample"}</span>
       </div>
       <div className="lp-globe">
         <div className="lp-globe-halo" style={{ width: 252, height: 252 }} />
@@ -150,7 +164,7 @@ function PositionsCard({ items }: { items: FeedItem[] }) {
         {chips.map((c, i) => {
           const up = c.side === "LONG";
           return (
-            <span key={i} className={`lp-chip ${up ? "lp-chip-up" : "lp-chip-down"}`} style={vars({ left: CHIP_SPOTS[i].left, top: CHIP_SPOTS[i].top, "--d": CHIP_SPOTS[i].d, "--t": CHIP_SPOTS[i].t })}>
+            <span key={i} className={`lp-chip ${up ? "lp-chip-up" : "lp-chip-down"}`} style={vars({ left: CHIP_SPOTS[i].left ?? "auto", right: CHIP_SPOTS[i].right ?? "auto", top: CHIP_SPOTS[i].top, "--d": CHIP_SPOTS[i].d, "--t": CHIP_SPOTS[i].t })}>
               <span className="lp-chip-ico">
                 <TrendArrow up={up} size={12} />
               </span>
@@ -165,23 +179,6 @@ function PositionsCard({ items }: { items: FeedItem[] }) {
   );
 }
 
-/** a smooth path through points (catmull-rom as cubic beziers) */
-function smooth(pts: [number, number][]) {
-  if (pts.length < 2) return "";
-  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] ?? pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] ?? p2;
-    const t = 0.18;
-    const c1 = [p1[0] + (p2[0] - p0[0]) * t, p1[1] + (p2[1] - p0[1]) * t];
-    const c2 = [p2[0] - (p3[0] - p1[0]) * t, p2[1] - (p3[1] - p1[1]) * t];
-    d += ` C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
-  }
-  return d;
-}
-
 /** a calm, deterministic stand-in if the candle feed is unreachable */
 const FALLBACK = Array.from({ length: 48 }, (_, i) => 100 + Math.sin(i / 4.2) * 2.4 + Math.sin(i / 1.7) * 0.8 + i * 0.09);
 
@@ -191,38 +188,84 @@ function compactPx(v: number) {
   return `$${v.toFixed(2)}`;
 }
 
+/** monotone cubic through points (fritsch–carlson): smooth, but never overshoots the data */
+function monotonePath(p: [number, number][]) {
+  const n = p.length;
+  if (n < 2) return "";
+  const m: number[] = [];
+  for (let i = 0; i < n - 1; i++) m.push((p[i + 1][1] - p[i][1]) / (p[i + 1][0] - p[i][0] || 1));
+  const t = p.map((_, i) => (i === 0 ? m[0] : i === n - 1 ? m[n - 2] : m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2));
+  for (let i = 0; i < n - 1; i++) {
+    if (m[i] === 0) {
+      t[i] = t[i + 1] = 0;
+      continue;
+    }
+    const a = t[i] / m[i];
+    const b = t[i + 1] / m[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const k = 3 / Math.sqrt(s);
+      t[i] = k * a * m[i];
+      t[i + 1] = k * b * m[i];
+    }
+  }
+  const f = (v: number) => v.toFixed(1);
+  let d = `M${f(p[0][0])},${f(p[0][1])}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = (p[i + 1][0] - p[i][0]) / 3;
+    d += ` C${f(p[i][0] + h)},${f(p[i][1] + t[i] * h)} ${f(p[i + 1][0] - h)},${f(p[i + 1][1] - t[i + 1] * h)} ${f(p[i + 1][0])},${f(p[i + 1][1])}`;
+  }
+  return d;
+}
+
+/** 2-4 round price levels inside [lo, hi] */
+function niceTicks(lo: number, hi: number) {
+  const raw = (hi - lo) / 3;
+  const mag = 10 ** Math.floor(Math.log10(raw || 1));
+  const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((s) => s >= raw) ?? 10 * mag;
+  const first = Math.ceil(lo / step) * step;
+  const out: number[] = [];
+  for (let k = 0; first + k * step <= hi && k < 5; k++) out.push(first + k * step);
+  return { step, ticks: out };
+}
+
+function tickLabel(v: number, step: number) {
+  if (v >= 10_000) return `$${(v / 1000).toFixed(step >= 1000 ? 0 : step >= 100 ? 1 : 2)}k`;
+  return `$${v.toLocaleString("en-US", { maximumFractionDigits: step < 1 ? 2 : 0 })}`;
+}
+
 function MarketCard({ d }: { d: LandingData }) {
-  // every other hourly close: the same 48h, calmer to read
-  const raw = d.candles.length > 4 ? d.candles.map((c) => c.c) : FALLBACK;
-  const vals = raw.filter((_, i) => i % 2 === (raw.length - 1) % 2);
   const real = d.candles.length > 4;
+  const vals = real ? d.candles.map((c) => c.c) : FALLBACK;
+  // the plot sits between a fixed px gutter for the y labels and one for the price tag, so nothing collides at any width
   const W = 600;
   const H = 230;
-  const top = 26;
-  const bottom = 18;
-  const left = 78; // clear of the y labels
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const span = Math.max(1e-9, max - min);
-  const right = 92; // room for the last-price tag
-  const sx = (i: number) => left + (i / (vals.length - 1)) * (W - left - right);
-  const sy = (v: number) => top + (1 - (v - min) / span) * (H - top - bottom);
+  const lo = Math.min(...vals);
+  const hi = Math.max(...vals);
+  const pad = (hi - lo) * 0.16 || hi * 0.002 || 1;
+  const min = lo - pad;
+  const max = hi + pad;
+  const sx = (i: number) => (i / (vals.length - 1)) * W;
+  const sy = (v: number) => (1 - (v - min) / (max - min)) * H;
   const pts = vals.map((v, i) => [sx(i), sy(v)] as [number, number]);
-  const line = smooth(pts);
+  const line = monotonePath(pts);
   const last = pts[pts.length - 1];
-  const levels = [0, 1, 2, 3].map((k) => min + (span * (3 - k)) / 3);
+  // labels stay out of the top and bottom bands, clear of the x axis
+  const { step, ticks } = niceTicks(min + (max - min) * 0.1, max - (max - min) * 0.06);
   const btc = d.btc;
   const up = (btc?.change24h ?? 0) >= 0;
+  const lastTop = `${(last[1] / H) * 100}%`;
   return (
-    <div className="lp-card lp-card-center lp-glass lp-spot" data-spotlight style={vars({ "--d": "1.4s" })}>
+    <div className="lp-card lp-card-center lp-glass lp-spot" data-spotlight style={vars({ "--d": "1.08s" })}>
       <div className="lp-card-head">
         <div>
           <span className="lp-card-label">
-            <span className="lp-coin">₿</span> BTC-PERP · Mark price
+            <span className="lp-coin">₿</span> BTC-USD · Mark price
           </span>
           <div className="flex items-center gap-3 flex-wrap">
             <span className="lp-card-figure lp-num">
-              {btc ? <CountUp to={btc.markPx} format="usd0" delay={700} duration={1900} /> : "$—"}
+              {/* ticks up the last half-percent like a live mark, instead of counting from nothing */}
+              {btc ? <CountUp to={btc.markPx} from={btc.markPx * 0.995} format="usd0" delay={500} duration={1700} /> : "$—"}
             </span>
             {btc && (
               <span className={`lp-pill ${up ? "lp-pill-up" : "lp-pill-down"} lp-num mt-1.5`}>
@@ -244,41 +287,43 @@ function MarketCard({ d }: { d: LandingData }) {
         <span>Max <b>{btc?.maxLeverage ?? 40}x</b></span>
       </div>
       <div className="lp-chart" aria-hidden>
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="lp-line-grad" x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0" stopColor="#2aa98f" stopOpacity="0.6" />
-              <stop offset="0.55" stopColor="#4de3c1" />
-              <stop offset="1" stopColor="#c9fff2" />
-            </linearGradient>
-            <linearGradient id="lp-area-grad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0" stopColor="#4de3c1" stopOpacity="0.24" />
-              <stop offset="0.6" stopColor="#4de3c1" stopOpacity="0.04" />
-              <stop offset="1" stopColor="#4de3c1" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          {levels.map((v) => (
-            <line key={v} className="lp-chart-grid" x1="44" x2={W} y1={sy(v)} y2={sy(v)} />
-          ))}
-          <clipPath id="lp-chart-clip">
-            <rect className="lp-chart-sweep" x="0" y="-20" width={W} height={H + 40} />
-          </clipPath>
-          <g clipPath="url(#lp-chart-clip)">
-            <path d={`${line} L${last[0].toFixed(1)},${H} L${left},${H} Z`} fill="url(#lp-area-grad)" />
-            <path className="lp-chart-line" d={line} />
-          </g>
-          <line className="lp-chart-now" x1={last[0]} x2={W} y1={last[1]} y2={last[1]} />
-        </svg>
         {real &&
-          levels.map((v) => (
+          ticks.map((v) => (
             <span key={v} className="lp-chart-y lp-num" style={{ top: `${(sy(v) / H) * 100}%` }}>
-              {compactPx(v)}
+              {tickLabel(v, step)}
             </span>
           ))}
-        <span className="lp-chart-last" style={{ left: `${(last[0] / W) * 100}%`, top: `${(last[1] / H) * 100}%` }} />
+        <div className="lp-chart-plot">
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="lp-line-grad" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0" stopColor="#2aa98f" stopOpacity="0.6" />
+                <stop offset="0.55" stopColor="#4de3c1" />
+                <stop offset="1" stopColor="#c9fff2" />
+              </linearGradient>
+              <linearGradient id="lp-area-grad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stopColor="#4de3c1" stopOpacity="0.22" />
+                <stop offset="0.65" stopColor="#4de3c1" stopOpacity="0.04" />
+                <stop offset="1" stopColor="#4de3c1" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            {ticks.map((v) => (
+              <line key={v} className="lp-chart-grid" x1="0" x2={W} y1={sy(v)} y2={sy(v)} />
+            ))}
+            <clipPath id="lp-chart-clip">
+              <rect className="lp-chart-sweep" x="-4" y="-20" width={W + 8} height={H + 40} />
+            </clipPath>
+            <g clipPath="url(#lp-chart-clip)">
+              <path d={`${line} L${W},${H} L0,${H} Z`} fill="url(#lp-area-grad)" />
+              <path className="lp-chart-line" d={line} />
+            </g>
+          </svg>
+          <span className="lp-chart-last" style={{ left: "100%", top: lastTop }} />
+        </div>
+        <span className="lp-chart-now" style={{ top: lastTop }} />
         {btc && (
-          <span className="lp-chart-tag lp-num" style={{ top: `${(last[1] / H) * 100}%` }}>
-            {compactPx(btc.markPx)}
+          <span className="lp-chart-tag lp-num" style={{ top: lastTop }}>
+            ${Math.round(btc.markPx).toLocaleString("en-US")}
           </span>
         )}
       </div>
@@ -302,17 +347,19 @@ function ReceiptsCard() {
   const from = 205;
   const sweep = 230;
   const on = Math.round((SCORE / 100) * TICKS);
-  const day = (n: number) => new Date(Date.now() - n * 86_400_000).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  // a sample profile: relative ages, so nothing reads as a dated record
   const rows: [string, string, string, string, string][] = [
-    [day(1), "BTC long · 20x", "Closed in profit", "+$4,210", "lp-pill-up"],
-    [day(2), "ETH short · 10x", "Closed inside the hour", "Dumped", "lp-pill-amber"],
-    [day(3), "SOL long · 5x", "Thesis still live", "Holding", "lp-pill-brand"],
+    ["1d ago", "BTC long · 20x", "Closed in profit", "+$4,210", "lp-pill-up"],
+    ["2d ago", "ETH short · 10x", "Closed inside the hour", "Dumped", "lp-pill-amber"],
+    ["3d ago", "SOL long · 5x", "Thesis still live", "Holding", "lp-pill-brand"],
   ];
   return (
-    <div className="lp-card lp-card-side lp-card-right lp-glass lp-spot" data-spotlight style={vars({ "--d": "1.55s" })}>
+    <div className="lp-card lp-card-side lp-card-right lp-glass lp-spot" data-spotlight style={vars({ "--d": "1.2s" })}>
       <div className="lp-card-head">
-        <span className="lp-card-label">Thesis accuracy</span>
-        <span className="lp-pill lp-pill-neutral">30d</span>
+        <span className="lp-card-label">
+          <Disc a="0x7a3fc91e" size={16} /> @nightowl · Thesis accuracy
+        </span>
+        <span className="lp-pill lp-pill-neutral">Sample</span>
       </div>
       <div className="lp-gauge" aria-hidden>
         <svg viewBox="0 0 236 150">
@@ -330,7 +377,7 @@ function ReceiptsCard() {
             return (
               <g key={i}>
                 <line className="lp-tick" x1={x1} y1={y1} x2={x2} y2={y2} />
-                {lit && <line className={`lp-tick lp-tick-on ${i === on - 1 ? "lp-tick-head" : ""}`} x1={x1} y1={y1} x2={x2} y2={y2} style={vars({ "--c": c, "--d": `${1.9 + i * 0.032}s` })} />}
+                {lit && <line className={`lp-tick lp-tick-on ${i === on - 1 ? "lp-tick-head" : ""}`} x1={x1} y1={y1} x2={x2} y2={y2} style={vars({ "--c": c, "--d": `${1.6 + i * 0.032}s` })} />}
               </g>
             );
           })}
@@ -339,7 +386,7 @@ function ReceiptsCard() {
           <b className="lp-num">
             <CountUp to={SCORE} from={0} format="pct" delay={900} duration={1500} />
           </b>
-          <small>of theses closed green</small>
+          <small>of settled theses closed in profit</small>
         </div>
       </div>
       <div className="lp-receipts">

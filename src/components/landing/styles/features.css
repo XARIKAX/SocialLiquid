@@ -1,13 +1,17 @@
 /* =====================================================================
-   features — "never miss a move": the social layer as a lit bento.
+   features — "every move, on the record": the social layer as a lit bento.
    every card is glass with a lit rim and its own coloured aura; every
    mock inside it is a small, living piece of product.
    ===================================================================== */
 
 .lp-feat {
-  --pt: clamp(96px, 11vw, 168px);
+  /* page rhythm: the shared section token (88 on phones, 128 at 1440), never under 120 on desktop */
+  --pt: var(--lp-section-y);
   position: relative;
-  padding-block: var(--pt) clamp(96px, 10vw, 152px);
+  padding-block: var(--pt);
+}
+@media (min-width: 1024px) {
+  .lp-feat { --pt: max(120px, var(--lp-section-y)); }
 }
 
 /* ---------- atmosphere ---------- */
@@ -24,7 +28,15 @@
     radial-gradient(min(720px, 90vw) 300px at 50% calc(var(--pt) + 150px), rgb(77 227 193 / 0.035), transparent 72%);
   animation: lp-breathe 10s ease-in-out infinite;
 }
-.lp-feat-atmos .lp-grain { opacity: 0.04; }
+/* the band above carries no grain, so ours fades in from ink: no line at the seam */
+.lp-feat-atmos .lp-grain {
+  opacity: 0.04;
+  -webkit-mask: linear-gradient(180deg, transparent 0, #000 var(--pt));
+  mask: linear-gradient(180deg, transparent 0, #000 var(--pt));
+}
+
+/* a centred lead: balanced lines, never a two-word tail */
+.lp-feat-lead { display: block; text-wrap: balance; }
 
 /* ---------- bento ---------- */
 .lp-feat-bento {
@@ -198,7 +210,7 @@
 
 /* segmented control (echoes the hero chart's) */
 .lp-feat-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.02)); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06); }
-.lp-feat-seg > span { height: 24px; padding-inline: 10px; border-radius: 999px; display: inline-flex; align-items: center; font-size: 11px; color: var(--lp-dim); letter-spacing: 0; text-transform: none; font-family: var(--font-geist-sans), system-ui, sans-serif; }
+.lp-feat-seg > span { white-space: nowrap; height: 24px; padding-inline: 10px; border-radius: 999px; display: inline-flex; align-items: center; font-size: 11px; color: var(--lp-dim); letter-spacing: 0; text-transform: none; font-family: var(--font-geist-sans), system-ui, sans-serif; }
 .lp-feat-seg > span[data-on] { color: var(--lp-text); background: linear-gradient(180deg, rgb(255 255 255 / 0.13), rgb(255 255 255 / 0.05)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 2px 8px -2px rgb(0 0 0 / 0.6); }
 .lp-feat-seg-sm > span { height: 22px; padding-inline: 9px; font-size: 10.5px; }
 
@@ -207,6 +219,7 @@
    ===================================================================== */
 .lp-feat-feedviz { margin-bottom: calc(var(--pad) * -1); justify-content: stretch; }
 .lp-feat-panel {
+  container: lp-feat-panel / inline-size;
   position: relative;
   flex: 1;
   display: flex;
@@ -238,6 +251,50 @@
   opacity: 0;
 }
 .lp-feat-panel-title { display: inline-flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--lp-text-2); white-space: nowrap; }
+.lp-feat-panel-tools { display: inline-flex; align-items: center; gap: 10px; }
+/* a narrow panel keeps the title and the pause key; the filter mock steps out */
+@container lp-feat-panel (max-width: 420px) {
+  .lp-feat-panel-tools .lp-feat-seg { display: none; }
+}
+/* sample mode: a lit ring, not a live dot (nothing here is streaming) */
+.lp-feat-sample-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgb(214 225 255 / 0.5), rgb(107 147 255 / 0.12) 70%);
+  box-shadow: inset 0 0 0 1px rgb(160 185 255 / 0.75), 0 0 8px rgb(107 147 255 / 0.55);
+}
+
+/* pause: a small glass key in the panel head, 40px of hit area around a 26px face */
+.lp-feat-pause {
+  position: relative;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lp-text-2);
+  cursor: pointer;
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgb(255 255 255 / 0.12), transparent 70%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.025));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 4px 10px -4px rgb(0 0 0 / 0.7);
+  transition: color 0.3s var(--lp-ease-out), box-shadow 0.3s var(--lp-ease-out);
+}
+.lp-feat-pause::before { content: ""; position: absolute; inset: -7px; border-radius: 50%; }
+.lp-feat-pause:hover { color: var(--lp-text); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 0 0 1px rgb(151 252 228 / 0.22), 0 0 14px -4px rgb(77 227 193 / 0.6); }
+.lp-feat-pause[aria-pressed="true"] {
+  color: var(--lp-mint);
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgb(214 255 245 / 0.2), transparent 70%),
+    linear-gradient(180deg, rgb(77 227 193 / 0.22), rgb(77 227 193 / 0.06));
+  box-shadow: inset 0 1px 0 rgb(214 255 245 / 0.24), inset 0 0 0 1px rgb(151 252 228 / 0.3), 0 0 16px -4px rgb(77 227 193 / 0.65);
+}
+.lp-feat-pause:focus-visible { outline: 2px solid var(--lp-mint); outline-offset: 3px; }
+.lp-feat-pause svg { filter: drop-shadow(0 0 3px rgb(151 252 228 / 0.35)); }
 .lp-feat-panel-src { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--lp-dim); padding-left: 10px; background: linear-gradient(180deg, transparent, rgb(255 255 255 / 0.16) 50%, transparent) left / 1px 100% no-repeat; }
 
 .lp-feat-window {
@@ -251,14 +308,21 @@
 }
 .lp-feat-track {
   position: absolute;
-  top: 0;
+  /* inset by top, not padding: the track is exactly two sets of rows, so -50% and
+     each -8.333% step land on whole rows and the loop seam never twitches */
+  top: 10px;
   left: 10px;
   right: 10px;
-  padding-top: 10px;
-  animation: lp-feat-scroll var(--t, 38s) linear infinite;
+  /* hold and advance: a row lands, the feed rests, the next one arrives */
+  animation: lp-feat-scroll var(--t, 38s) var(--lp-ease-io) infinite;
   will-change: transform;
 }
-.lp-feat-panel:hover .lp-feat-track { animation-play-state: paused; }
+@media (hover: hover) {
+  .lp-feat-panel:hover .lp-feat-track { animation-play-state: paused; }
+}
+.lp-feat-panel:has(.lp-feat-pause[aria-pressed="true"]) *,
+.lp-feat-panel:has(.lp-feat-pause[aria-pressed="true"]) *::before,
+.lp-feat-panel:has(.lp-feat-pause[aria-pressed="true"]) *::after { animation-play-state: paused; }
 
 .lp-feat-row {
   position: relative;
@@ -273,13 +337,17 @@
   background: linear-gradient(180deg, rgb(255 255 255 / 0.052), rgb(255 255 255 / 0.018));
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07), inset 0 0 0 1px rgb(255 255 255 / 0.055), 0 10px 22px -16px rgb(0 0 0 / 0.9);
 }
+.lp-feat-row-av { display: block; width: 32px; height: 32px; }
 .lp-feat-row-top { display: flex; align-items: center; gap: 8px; min-width: 0; height: 20px; }
 .lp-feat-handle { font-size: 13.5px; font-weight: 500; letter-spacing: -0.01em; color: var(--lp-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lp-feat-row .lp-pill { height: 20px; font-size: 10.5px; padding-inline: 7px; flex-shrink: 0; }
 .lp-feat-row-sub { display: flex; align-items: center; gap: 7px; height: 18px; margin-top: 6px; min-width: 0; font-size: 12.5px; color: var(--lp-muted); white-space: nowrap; overflow: hidden; }
 .lp-feat-row-quote { color: var(--lp-text-2); overflow: hidden; text-overflow: ellipsis; font-style: italic; }
 .lp-feat-at { color: var(--lp-dim); }
-.lp-feat-lev { height: 18px; padding-inline: 6px; border-radius: 6px; display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 600; color: var(--lp-text-2); background: linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.03)); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08); }
+.lp-feat-usd { color: var(--lp-text-2); }
+.lp-feat-px { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lp-feat-coin, .lp-feat-at, .lp-feat-usd { flex-shrink: 0; }
+.lp-feat-lev { flex-shrink: 0; height: 18px; padding-inline: 6px; border-radius: 6px; display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 600; color: var(--lp-text-2); background: linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.03)); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08); }
 .lp-feat-coin { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--lp-text); }
 .lp-feat-coin i {
   width: 15px;
@@ -300,6 +368,7 @@
 .lp-feat-ago-now { display: inline-flex; align-items: center; gap: 7px; color: var(--lp-mint); }
 .lp-feat-ago-now .lp-live { width: 6px; height: 6px; }
 .lp-feat-pnl-v { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.lp-feat-pnl-short { display: none; }
 .lp-feat-pnl-v.lp-feat-up { text-shadow: 0 0 14px rgb(34 211 107 / 0.45); }
 .lp-feat-pnl-v.lp-feat-down { text-shadow: 0 0 14px rgb(255 77 79 / 0.45); }
 
@@ -324,6 +393,7 @@
    B. thesis
    ===================================================================== */
 .lp-feat-post {
+  container: lp-feat-post / inline-size;
   position: relative;
   padding: 18px 18px 14px;
   border-radius: 18px;
@@ -334,11 +404,16 @@
 }
 .lp-feat-post-head { display: flex; align-items: center; gap: 12px; }
 .lp-feat-post-head .lp-pill { flex-shrink: 0; }
-.lp-feat-post-who { display: flex; align-items: center; gap: 7px; font-size: 14px; white-space: nowrap; }
-.lp-feat-post-who b { font-weight: 550; letter-spacing: -0.01em; color: var(--lp-text); }
+/* a narrow post: the card's own label already says thesis, so the position line gets the room */
+@container lp-feat-post (max-width: 296px) {
+  .lp-feat-post-head > .lp-pill { display: none; }
+}
+.lp-feat-post-who { display: flex; align-items: center; gap: 7px; font-size: 14px; white-space: nowrap; min-width: 0; }
+.lp-feat-post-who b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 550; letter-spacing: -0.01em; color: var(--lp-text); }
+.lp-feat-post-who > span { flex-shrink: 0; }
 .lp-feat-rank { height: 17px; padding-inline: 5px; border-radius: 5px; display: inline-flex; align-items: center; font-size: 9.5px; font-weight: 600; color: #d6fff5; background: linear-gradient(180deg, rgb(77 227 193 / 0.32), rgb(77 227 193 / 0.12)); box-shadow: inset 0 0 0 1px rgb(151 252 228 / 0.3), 0 0 12px -3px rgb(77 227 193 / 0.7); }
 .lp-feat-post-time { font-size: 11px; color: var(--lp-dim); }
-.lp-feat-post-pos { margin-top: 3px; font-size: 12px; color: var(--lp-muted); white-space: nowrap; }
+.lp-feat-post-pos { margin-top: 3px; font-size: 12px; color: var(--lp-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .lp-feat-quote {
   position: relative;
@@ -409,7 +484,7 @@
   position: absolute;
   left: 12px;
   transform: translateY(-120%);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--lp-dim);
@@ -467,7 +542,10 @@
 /* =====================================================================
    C. leaderboard
    ===================================================================== */
-.lp-feat-board { display: flex; flex-direction: column; gap: 6px; }
+.lp-feat-board { container: lp-feat-board / inline-size; display: flex; flex-direction: column; gap: 6px; }
+@container lp-feat-board (max-width: 340px) {
+  .lp-feat-board-cap { display: none; }
+}
 .lp-feat-board-head {
   display: flex;
   align-items: center;
@@ -603,9 +681,17 @@
   .lp-feat-c-receipt .lp-feat-ticketviz { grid-column: 2; grid-row: 1; margin-top: 0; justify-content: center; }
 }
 .lp-feat-c-receipt .lp-feat-copy { height: 100%; }
+/* desktop: the legend follows the copy at a fixed beat and its rows take up
+   whatever height the row gives the card, so there is no dead band anywhere */
+@media (min-width: 1080px) {
+  .lp-feat-c-receipt .lp-feat-outs { flex: 1; display: flex; flex-direction: column; margin-top: 36px; padding-top: 0; }
+  .lp-feat-c-receipt .lp-feat-outs-list { flex: 1; display: flex; flex-direction: column; }
+  .lp-feat-c-receipt .lp-feat-out-row { flex: 1 1 44px; height: auto; min-height: 44px; max-height: 62px; }
+  .lp-feat-c-receipt .lp-feat-ticketviz { align-self: center; }
+}
 
 .lp-feat-outs { width: 100%; margin-top: auto; padding-top: 30px; }
-.lp-feat-outs-label { display: block; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--lp-dim); }
+.lp-feat-outs-label { display: block; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--lp-dim); }
 .lp-feat-outs-list { margin-top: 10px; list-style: none; padding: 0; }
 .lp-feat-out-row {
   position: relative;
@@ -625,7 +711,8 @@
   /* the one nobody wants: lit from the left in amber */
   content: "";
   position: absolute;
-  inset: 4px -10px;
+  inset: calc(50% - 18px) -10px auto;
+  height: 36px;
   z-index: -1;
   border-radius: 12px;
   background: linear-gradient(90deg, rgb(245 178 54 / 0.12), rgb(245 178 54 / 0.02) 70%, transparent);
@@ -776,7 +863,7 @@
   pointer-events: none;
 }
 .lp-feat-stamp-ink b { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 17px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
-.lp-feat-stamp-ink small { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 8px; font-weight: 600; letter-spacing: 0.26em; text-transform: uppercase; opacity: 0.85; white-space: nowrap; }
+.lp-feat-stamp-ink small { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 9.5px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.85; white-space: nowrap; }
 
 .lp-js .lp-feat-card:not([data-in]) .lp-feat-stamp { opacity: 0; }
 .lp-js .lp-feat-card[data-in] .lp-feat-stamp { animation: lp-feat-stamp 0.62s cubic-bezier(0.5, 0, 0.2, 1) 1.15s both; }
@@ -795,15 +882,26 @@
   .lp-feat-panel-src { display: none; }
   .lp-feat-ticketviz { margin-top: 36px; padding-bottom: 6px; }
   .lp-feat-ticket { max-width: 268px; }
+  .lp-feat-bento::after { bottom: -140px; height: 280px; }
 }
 @media (max-width: 420px) {
   .lp-feat-row { padding: 0 12px; column-gap: 10px; }
   .lp-feat-row-sub { font-size: 12px; gap: 6px; }
+  /* phones: coin, size and leverage; the entry price is the part that gives way */
+  .lp-feat-row-sub .lp-feat-at,
+  .lp-feat-row-sub .lp-feat-px { display: none; }
+  .lp-feat-pnl-full { display: none; }
+  .lp-feat-pnl-short { display: inline; }
   .lp-feat-pnl-usd small { display: none; }
   .lp-feat-pos-top { gap: 10px; }
   .lp-feat-post { padding: 16px 14px 12px; }
   .lp-feat-lb { padding: 10px 12px 10px 8px; column-gap: 10px; }
   .lp-feat-lb-wr { width: 58px; }
+}
+@media (max-width: 350px) {
+  /* the smallest phones: the avatar steps aside so the trade keeps every figure */
+  .lp-feat-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .lp-feat-row-av { display: none; }
 }
 
 /* ---------- reduced motion ----------
@@ -817,10 +915,20 @@
     mask: linear-gradient(180deg, transparent 0, #000 34%);
   }
   .lp-feat-gloss { display: none; }
+  .lp-feat-pause { display: none; }
 }
 
 /* ---------- keyframes ---------- */
-@keyframes lp-feat-scroll { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(0, -50%, 0); } }
+/* six rows, one step each sixth of the loop: rest ~78% of a step, glide the rest */
+@keyframes lp-feat-scroll {
+  0%, 13% { transform: translate3d(0, 0, 0); }
+  16.667%, 29.667% { transform: translate3d(0, -8.333%, 0); }
+  33.333%, 46.333% { transform: translate3d(0, -16.667%, 0); }
+  50%, 63% { transform: translate3d(0, -25%, 0); }
+  66.667%, 79.667% { transform: translate3d(0, -33.333%, 0); }
+  83.333%, 96.333% { transform: translate3d(0, -41.667%, 0); }
+  100% { transform: translate3d(0, -50%, 0); }
+}
 @keyframes lp-feat-ambient {
   from { opacity: 0.8; transform: translate3d(-1.5%, 0, 0) scale(1); }
   to { opacity: 1; transform: translate3d(1.5%, -1%, 0) scale(1.04); }
@@ -828,8 +936,8 @@
 @keyframes lp-feat-glint {
   0% { opacity: 0; transform: translateX(-30%); }
   12% { opacity: 1; }
-  40% { opacity: 0; transform: translateX(340%); }
-  100% { opacity: 0; transform: translateX(340%); }
+  40% { opacity: 0; transform: translateX(233%); }
+  100% { opacity: 0; transform: translateX(233%); }
 }
 @keyframes lp-feat-sheen {
   0%, 55% { transform: translate3d(0, 0, 0); }

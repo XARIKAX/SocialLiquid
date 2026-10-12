@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "../components/landing/landing.css";
 
 @theme {
   --color-bg: #050507;

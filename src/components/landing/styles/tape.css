@@ -17,6 +17,7 @@
   left: 0;
   right: 0;
   top: -150px;
+  z-index: -1;
   height: 151px;
   pointer-events: none;
   background: linear-gradient(180deg, rgb(5 5 7 / 0) 0%, rgb(5 5 7 / 0.35) 38%, rgb(5 5 7 / 0.8) 72%, #050507 100%);
@@ -31,6 +32,20 @@
   -webkit-mask: linear-gradient(180deg, transparent 0%, #000 18%, #000 70%, transparent 100%);
   mask: linear-gradient(180deg, transparent 0%, #000 18%, #000 70%, transparent 100%);
 }
+/* the grain is one film, not a masked patch: under the veil it rises exactly as the veil
+   hides the hero's own grain (same stops), and past our bottom edge it falls exactly as
+   the next section's grain fades in from ink (over its top padding). the sum stays level,
+   so neither seam shows a dip or a step. painted over the veil, under the strip. */
+.lp-tape .lp-tape-grain {
+  --tape-next: var(--lp-section-y, 88px);
+  inset: -150px 0 calc(-1 * var(--tape-next));
+  z-index: -1;
+  -webkit-mask: linear-gradient(180deg, transparent 0, rgb(0 0 0 / 0.35) 57px, rgb(0 0 0 / 0.8) 108px, #000 150px, #000 calc(100% - var(--tape-next)), transparent 100%);
+  mask: linear-gradient(180deg, transparent 0, rgb(0 0 0 / 0.35) 57px, rgb(0 0 0 / 0.8) 108px, #000 150px, #000 calc(100% - var(--tape-next)), transparent 100%);
+}
+@media (min-width: 1024px) {
+  .lp-tape .lp-tape-grain { --tape-next: max(120px, var(--lp-section-y, 128px)); }
+}
 .lp-tape-pool {
   position: absolute;
   inset: 0;
@@ -42,6 +57,7 @@
 
 /* ---------- the band ---------- */
 .lp-tape-band {
+  --tape-toggle-r: clamp(12px, 2.2vw, 30px);
   position: relative;
   height: 62px;
   display: flex;
@@ -75,12 +91,12 @@
   content: "";
   position: absolute;
   left: 50%;
-  top: -10px;
-  width: min(760px, 70vw);
-  height: 20px;
+  top: -18px;
+  width: min(800px, 73vw);
+  height: 36px;
   transform: translateX(-50%);
-  background: radial-gradient(closest-side, rgb(77 227 193 / 0.3), transparent);
-  filter: blur(6px);
+  /* soft by its own falloff (no blur filter to recomposite every breathing frame) */
+  background: radial-gradient(closest-side, rgb(77 227 193 / 0.19), rgb(77 227 193 / 0.13) 38%, rgb(77 227 193 / 0.05) 70%, transparent);
   animation: lp-breathe 8s ease-in-out infinite;
 }
 /* the comet: a bright head with a mint trail, crossing the top hairline once every 15s */
@@ -133,8 +149,9 @@
   position: relative;
   width: 100%;
   overflow: hidden;
-  -webkit-mask: linear-gradient(90deg, transparent 0%, #000 11%, #000 89%, transparent 100%);
-  mask: linear-gradient(90deg, transparent 0%, #000 11%, #000 89%, transparent 100%);
+  /* the right fade ends at the pause disc's outer edge, so nothing peeks out beyond it */
+  -webkit-mask: linear-gradient(90deg, transparent 0%, #000 11%, #000 calc(min(89%, 100% - 150px) - var(--tape-toggle-r)), transparent calc(100% - var(--tape-toggle-r)));
+  mask: linear-gradient(90deg, transparent 0%, #000 11%, #000 calc(min(89%, 100% - 150px) - var(--tape-toggle-r)), transparent calc(100% - var(--tape-toggle-r)));
 }
 .lp-tape-track {
   display: flex;
@@ -143,6 +160,46 @@
   will-change: transform;
 }
 .lp-tape-viewport:hover .lp-tape-track { animation-play-state: paused; }
+
+/* pause: a small glass disc parked in the strip's right fade, where the prices already dissolve.
+   pressed, it lights mint and holds the strip and the comet still (wcag 2.2.2) */
+.lp-tape-toggle {
+  position: absolute;
+  right: var(--tape-toggle-r);
+  top: 50%;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lp-muted);
+  cursor: pointer;
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgb(255 255 255 / 0.1), transparent 70%),
+    linear-gradient(180deg, rgb(24 32 38 / 0.94), rgb(9 12 16 / 0.96));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(255 255 255 / 0.085), 0 4px 12px -4px rgb(0 0 0 / 0.8), 0 0 14px 7px rgb(5 6 8 / 0.85);
+  transition: color 0.4s var(--lp-ease), box-shadow 0.4s var(--lp-ease);
+}
+/* a 42px target around the 28px disc */
+.lp-tape-toggle::before { content: ""; position: absolute; inset: -7px; border-radius: 50%; }
+.lp-tape-toggle:hover {
+  color: var(--lp-text);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 0 0 1px rgb(151 252 228 / 0.22), 0 0 14px -4px rgb(77 227 193 / 0.6), 0 0 14px 7px rgb(5 6 8 / 0.85);
+}
+.lp-tape-toggle[aria-pressed="true"] {
+  color: var(--lp-mint);
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgb(214 255 245 / 0.2), transparent 70%),
+    linear-gradient(180deg, rgb(26 66 60 / 0.95), rgb(10 30 28 / 0.96));
+  box-shadow: inset 0 1px 0 rgb(214 255 245 / 0.24), inset 0 0 0 1px rgb(151 252 228 / 0.3), 0 0 16px -4px rgb(77 227 193 / 0.65), 0 0 14px 7px rgb(5 6 8 / 0.85);
+}
+.lp-tape-toggle:focus-visible { outline: 2px solid var(--lp-mint); outline-offset: 3px; }
+.lp-tape-toggle svg { filter: drop-shadow(0 0 3px rgb(151 252 228 / 0.35)); }
+.lp-tape-toggle[aria-pressed="true"] ~ .lp-tape-viewport .lp-tape-track,
+.lp-tape-toggle[aria-pressed="true"] ~ .lp-tape-comet .lp-tape-comet-arm { animation-play-state: paused; }
 .lp-tape-list {
   display: flex;
   align-items: center;
@@ -320,8 +377,7 @@
   width: min(220px, 90%);
   height: 90px;
   transform: translate(-50%, -50%);
-  background: radial-gradient(closest-side, rgb(77 227 193 / 0.09), transparent);
-  filter: blur(8px);
+  background: radial-gradient(closest-side, rgb(77 227 193 / 0.085), rgb(77 227 193 / 0.035) 60%, transparent);
   pointer-events: none;
   animation: lp-breathe 9s ease-in-out calc(var(--i, 0) * -2.2s) infinite;
 }
@@ -453,23 +509,47 @@
   .lp-tape-lev { display: none; }
   .lp-tape-coin { width: 19px; height: 19px; }
   .lp-tape-viewport {
-    -webkit-mask: linear-gradient(90deg, transparent 0%, #000 14%, #000 86%, transparent 100%);
-    mask: linear-gradient(90deg, transparent 0%, #000 14%, #000 86%, transparent 100%);
+    /* a longer right fade: on a phone the disc covers most of a short one */
+    -webkit-mask: linear-gradient(90deg, transparent 0%, #000 14%, #000 calc(80% - var(--tape-toggle-r)), transparent calc(100% - var(--tape-toggle-r)));
+    mask: linear-gradient(90deg, transparent 0%, #000 14%, #000 calc(80% - var(--tape-toggle-r)), transparent calc(100% - var(--tape-toggle-r)));
   }
-  .lp-tape-caption { letter-spacing: 0.16em; gap: 8px 10px; }
+  .lp-tape-caption { font-size: 11px; letter-spacing: 0.16em; gap: 8px 10px; }
   .lp-tape-caption-dot { display: none; }
-  .lp-tape-caption-time { flex-basis: 100%; text-align: center; font-size: 10px; }
+  .lp-tape-caption-time { flex-basis: 100%; text-align: center; font-size: 11px; }
   .lp-tape-caption::before,
   .lp-tape-caption::after { display: none; }
   .lp-tape-fig { font-size: clamp(34px, 10vw, 42px); margin-top: 14px; }
   .lp-tape-note { font-size: 13px; margin-top: 10px; }
-  .lp-tape-label { font-size: 10px; letter-spacing: 0.16em; gap: 7px; }
+  .lp-tape-label { font-size: 11px; letter-spacing: 0.14em; gap: 7px; }
 }
 
-/* reduced motion: the strip holds still, but can still be read by swiping */
+/* reduced motion: the strip holds still. nothing moves, so there is nothing to pause */
 @media (prefers-reduced-motion: reduce) {
+  .lp-tape-band { --tape-toggle-r: 0px; }
   .lp-tape-track { animation: none !important; }
-  .lp-tape-comet { display: none; }
+  .lp-tape-comet,
+  .lp-tape-toggle { display: none; }
+}
+/* wider screens: a still board, the top markets by volume in two centred rows (as many as fit;
+   the rest stay in the screen-reader list). a wrapped row would end on a dangling dot, so the
+   board spaces its markets with air instead of separators */
+@media (prefers-reduced-motion: reduce) and (min-width: 641px) {
+  .lp-tape-band { height: auto; padding-block: 11px; }
+  .lp-tape-viewport { -webkit-mask: none; mask: none; }
+  .lp-tape-track { display: block; width: auto; }
+  .lp-tape-list {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px clamp(36px, 4vw, 56px);
+    max-height: 82px;
+    overflow: hidden;
+    padding-inline: 20px;
+  }
+  .lp-tape-list + .lp-tape-list,
+  .lp-tape-list .lp-tape-sep { display: none; }
+}
+/* phones: one row that holds still and reads by swiping */
+@media (prefers-reduced-motion: reduce) and (max-width: 640px) {
   .lp-tape-list:first-child { padding-left: 12vw; }
   .lp-tape-viewport { overflow-x: auto; scrollbar-width: none; }
   .lp-tape-viewport::-webkit-scrollbar { display: none; }

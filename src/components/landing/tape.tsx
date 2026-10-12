@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { fmtPx } from "@/lib/format";
 import { CountUp } from "./motion";
 import { TrendArrow, vars } from "./parts";
+import { TapeToggle } from "./tape-toggle";
 import type { LandingData } from "./types";
 
 type Mkt = LandingData["tape"][number];
@@ -151,16 +152,21 @@ export function Tape({ d }: { d: LandingData }) {
   const ceiling = d.tape.find((m) => m.coin === "BTC" && m.maxLeverage === s.maxLeverage) ?? d.tape.find((m) => m.maxLeverage === s.maxLeverage);
 
   return (
-    <section id="markets" aria-label="Live markets" className="lp-tape">
-      <h2 className="sr-only">Live markets on {net}</h2>
+    <section id="markets" aria-labelledby="lp-tape-title" className="lp-tape">
+      <h2 id="lp-tape-title" className="sr-only">
+        Live markets on {net}
+      </h2>
       <div className="lp-tape-veil" aria-hidden />
       <div className="lp-tape-atmos" aria-hidden>
         <div className="lp-tape-pool" />
-        <div className="lp-grain" />
       </div>
+      {/* one film of grain from under the veil into the next section: it crossfades at both seams, so the lift never dips */}
+      <div className="lp-grain lp-tape-grain" aria-hidden />
 
       {/* the tape */}
       <div className="lp-tape-band" data-reveal="fade">
+        {/* first in the band: the strip and the comet read its pressed state as later siblings */}
+        <TapeToggle />
         <span className="lp-tape-rule lp-tape-rule-top" aria-hidden />
         {/* now and then a comet runs the top hairline: the hero's orbit light, carried down */}
         <span className="lp-tape-comet" aria-hidden>
@@ -190,9 +196,9 @@ export function Tape({ d }: { d: LandingData }) {
           {s.markets > 0 ? (
             <>
               <span className="lp-live" />
-              <span>Live from {net}</span>
+              <span>Straight from {net}</span>
               <span className="lp-tape-caption-dot" aria-hidden />
-              <span className="lp-tape-caption-time">Snapshot {at} UTC</span>
+              <span className="lp-tape-caption-time">As of {at} UTC</span>
             </>
           ) : (
             <>
@@ -204,16 +210,16 @@ export function Tape({ d }: { d: LandingData }) {
           )}
         </p>
         <dl className="lp-tape-stats">
-          <Stat i={0} icon="markets" label="Perp markets" note="listed on Hyperliquid" sr={s.markets > 0 ? String(s.markets) : "not available"}>
+          <Stat i={0} icon="markets" label="Perp markets" note={`listed on ${d.testnet ? "testnet" : "Hyperliquid"}`} sr={s.markets > 0 ? String(s.markets) : "not available"}>
             {s.markets > 0 ? <CountUp to={s.markets} from={floorOf(s.markets)} format="int" delay={120} duration={1500} /> : <Dash />}
           </Stat>
-          <Stat i={1} icon="volume" label="24h volume" note={btcShare >= 1 && btcShare < 100 ? `BTC is ${btcShare}% of it` : "across every perp"} sr={moneySr(s.volume24h)}>
+          <Stat i={1} icon="volume" label="24h volume" note={btcShare >= 1 && btcShare < 100 ? `${btcShare}% of it in BTC` : "across every perp"} sr={moneySr(s.volume24h)}>
             <Money v={s.volume24h} delay={210} />
           </Stat>
-          <Stat i={2} icon="oi" label="Open interest" note="notional, marked live" sr={moneySr(s.openInterest)}>
+          <Stat i={2} icon="oi" label="Open interest" note="notional, at mark" sr={moneySr(s.openInterest)}>
             <Money v={s.openInterest} delay={300} />
           </Stat>
-          <Stat i={3} icon="lev" label="Max leverage" note={ceiling ? `the ceiling, on ${ceiling.coin}` : "set per market"} sr={s.maxLeverage > 0 ? `${s.maxLeverage}x` : "not available"}>
+          <Stat i={3} icon="lev" label="Max leverage" note={ceiling ? `highest on ${ceiling.coin}-USD` : "set per market"} sr={s.maxLeverage > 0 ? `${s.maxLeverage}x` : "not available"}>
             {s.maxLeverage > 0 ? (
               <>
                 <CountUp to={s.maxLeverage} from={floorOf(s.maxLeverage)} format="int" delay={390} duration={1500} />

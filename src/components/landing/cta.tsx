@@ -10,6 +10,13 @@ import type { LandingData } from "./types";
    traders around it, slowly, in opposite directions.
    ===================================================================== */
 
+/**
+ * stats.traders counts wallets that signed in (source USER), never the leaderboard addresses
+ * we mirror. below this a head count reads as thin rather than social, so the lead
+ * invites them in early instead of printing it.
+ */
+const MIN_HEADCOUNT = 10;
+
 export function Cta({ d }: { d: LandingData }) {
   const n = d.stats.traders;
   return (
@@ -21,20 +28,21 @@ export function Cta({ d }: { d: LandingData }) {
         </span>
         <h2 id="lp-cta-title" className="lp-h2 lp-cta-title">
           <span data-reveal className="lp-lit" style={vars({ "--d": "0.08s" })}>
-            A perps terminal
+            Put your name
           </span>{" "}
           <em data-reveal className="lp-grad not-italic" style={vars({ "--d": "0.2s" })}>
-            for the rest of us.
+            on the trade.
           </em>
         </h2>
         <p data-reveal className="lp-lead lp-cta-lead" style={vars({ "--d": "0.32s" })}>
-          {n > 0 ? (
+          {n >= MIN_HEADCOUNT ? (
             <>
-              Join <CountUp to={n} format="int" duration={1800} delay={400} className="lp-cta-count lp-num" /> traders making their name on socialLiquid.
+              Join <CountUp to={n} format="int" duration={1800} delay={400} className="lp-cta-count lp-num" /> traders already on socialLiquid.
             </>
           ) : (
-            "Be one of the first traders to make their name on socialLiquid."
-          )}
+            "Make a name before everyone else does."
+          )}{" "}
+          Your first receipt is one trade away.
         </p>
         <div data-reveal className="lp-cta-ctas" style={vars({ "--d": "0.44s" })}>
           <Link href="/trade" className="lp-btn lp-btn-primary">
@@ -116,8 +124,8 @@ const MOTES: [number, number, number, number][] = [
 type Pnl = { t: string; tone: "up" | "down" | "brand" | "amber"; delay: number; still?: boolean };
 /**
  * the few satellites that surface a receipt now and then. key = `${ring}-${slot}`.
- * `still` ones stay up when motion is reduced (the orbits then rest at their start angles,
- * where these two sit clear of the copy and the nav).
+ * `still` ones stay up when motion is reduced. the orbits then come to rest (cta.css sets the
+ * rest angle per breakpoint) with these two clear of the copy, the nav and the top fade.
  */
 const PNL: Record<string, Pnl> = {
   "2-0": { t: "+$4.2K", tone: "up", delay: 0, still: true },
@@ -163,10 +171,10 @@ function satellites(traders: LandingData["traders"]) {
     const key = `${ring}-${slot}`;
     return { i, ring, slot, ang, key, pnl: PNL[key], live: LIVE.has(key) };
   });
-  // real traders take the quiet seats first, so the sample receipts and live dots
-  // sit on the illustrative avatars rather than on someone's actual address
-  const order = [...slots].sort((x, y) => Number(!!(x.pnl || x.live)) - Number(!!(y.pnl || y.live)) || x.i - y.i);
-  const addr = new Map(order.map((s, j) => [s.key, real[j] ?? pseudo(s.i)]));
+  // real traders only ever take the quiet seats: the sample receipts and live dots stay on
+  // illustrative avatars, never on someone's actual address (extra traders simply sit out)
+  const quiet = slots.filter((s) => !(s.pnl || s.live));
+  const addr = new Map(quiet.map((s, j) => [s.key, real[j] ?? pseudo(s.i)]));
   return slots.map((s) => ({ ...s, a: addr.get(s.key) ?? pseudo(s.i) }));
 }
 
@@ -197,6 +205,9 @@ function Sky({ traders }: { traders: LandingData["traders"] }) {
           <span key={i} className={phone ? undefined : "lp-cta-star-wide"} style={vars({ left: `${x}%`, top: `${y}%`, width: s, height: s, "--d": `${delay}s`, "--t": `${t}s` })} />
         ))}
       </div>
+
+      {/* under the orbits: it quiets the atmosphere at the hand-over; the orbits carry their own fade */}
+      <div className="lp-cta-haze" />
 
       <div className="lp-cta-anchor">
         <div className="lp-cta-system">
@@ -234,7 +245,7 @@ function Sky({ traders }: { traders: LandingData["traders"] }) {
             {NODES.map(([k, a, bright, delay]) => (
               <span
                 key={`${k}:${a}`}
-                className={`lp-cta-node${bright ? "" : " lp-cta-node-dim"}${Math.abs(a + 90) > 60 ? " lp-cta-node-low" : ""}`}
+                className={`lp-cta-node${bright ? "" : " lp-cta-node-dim"}${k === 1 && a === -90 ? " lp-cta-node-crown" : ""}${Math.abs(a + 90) > 60 ? " lp-cta-node-low" : ""}`}
                 style={vars({ "--r": `var(--r${k})`, "--x": cos(a), "--y": sin(a), "--d": `${delay}s` })}
               />
             ))}
@@ -257,7 +268,7 @@ function Sky({ traders }: { traders: LandingData["traders"] }) {
                         <span className="lp-cta-upright">
                           <span className="lp-cta-bezel">
                             <Disc a={s.a} size={30} className="lp-cta-disc" />
-                            {s.live && <span className="lp-live lp-cta-sat-live" />}
+                            {s.live && <span className="lp-live lp-cta-sat-live" style={vars({ "--ping-d": `${-s.slot * 1.3}s` })} />}
                             {s.pnl && (
                               <span className={`lp-pill lp-pill-${s.pnl.tone} lp-num lp-cta-pnl${s.pnl.still ? " lp-cta-pnl-still" : ""}`} style={vars({ "--pd": `${s.pnl.delay}s` })}>
                                 <PnlIcon tone={s.pnl.tone} />
@@ -275,7 +286,6 @@ function Sky({ traders }: { traders: LandingData["traders"] }) {
         </div>
       </div>
 
-      <div className="lp-cta-haze" />
       <div className="lp-cta-ceiling" />
       {/* the horizon: rises into place as one piece */}
       <div className="lp-cta-horizon">

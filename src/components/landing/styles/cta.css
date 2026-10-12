@@ -10,7 +10,7 @@
   --r1: 480;
   --r2: 584;
   --r3: 688;
-  --stage-h: 880px;   /* section height (min-height; the copy never needs more) */
+  --stage-h: 820px;   /* section height (min-height; the copy never needs more). the outer orbit's crown runs off the top */
   --cy: 174px;        /* core centre, from the section's bottom edge */
   --rim: 104px;       /* horizon crown, from the bottom edge */
   --planet: clamp(1100px, 118vw, 2400px);   /* horizon radius: flatter on wide screens, so it always reads as a horizon */
@@ -88,8 +88,8 @@
   --pad: 110px;
   --top: calc(var(--stage-h) - var(--cy));
   --fade-y: linear-gradient(180deg,
-    transparent calc(50% - var(--top) + 26px),
-    #000 calc(50% - var(--top) + 150px),
+    transparent calc(50% - var(--top) + 8px),
+    #000 calc(50% - var(--top) + 48px),
     #000 calc(50% - var(--fade)),
     rgb(0 0 0 / 0.45) calc(50% - var(--fade) * 0.42),
     transparent calc(50% - 6px));
@@ -146,13 +146,19 @@
   box-shadow: 0 0 8px rgb(151 252 228 / 0.85), 0 0 2px rgb(255 255 255 / 0.9);
   transition: opacity 0.9s var(--lp-ease-out) var(--d, 0s), transform 0.9s var(--lp-ease-out) var(--d, 0s);
 }
+/* the bright nodes breathe a soft halo; only the crown of the inner orbit pings, as the hero's arch does */
 .lp-cta-node::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: -4px;
   border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(151 252 228 / 0.6), rgb(151 252 228 / 0.18) 55%, transparent 100%);
+  animation: lp-breathe 6.5s ease-in-out calc(var(--d, 0s) * -2.3) infinite;
+}
+.lp-cta-node-crown::after {
+  inset: 0;
   background: var(--lp-mint);
-  animation: lp-ping 4.2s var(--lp-ease-out) calc(var(--d, 0s) + 0.8s) infinite;
+  animation: lp-ping 6s var(--lp-ease-out) calc(var(--d, 0s) + 0.8s) infinite;
 }
 .lp-cta-node-dim { width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; background: radial-gradient(circle at 35% 35%, #c9dde4, #8fa7b2 70%); box-shadow: none; }
 .lp-cta-node-dim::after { display: none; }
@@ -168,7 +174,9 @@
   transition: opacity 1.2s ease 3s;
 }
 .lp-js .lp-cta-sky:not([data-in]) .lp-cta-comet { opacity: 0; }
-.lp-cta-comet-arm { position: absolute; inset: 0; animation: lp-spin 26s linear infinite reverse; }
+/* slow enough to read as light travelling the ring, not an object crossing the screen.
+   it starts low on the right, so its first pass over the crown follows the reveal */
+.lp-cta-comet-arm { position: absolute; inset: 0; animation: lp-spin 60s linear -46s infinite reverse; }
 .lp-cta-comet-arm::before {
   content: "";
   position: absolute;
@@ -205,8 +213,9 @@
   height: 0;
   animation: lp-spin var(--t) linear infinite;
 }
-.lp-cta-orbit-2 { --r: var(--r2); --t: 110s; }
-.lp-cta-orbit-3 { --r: var(--r3); --t: 140s; animation-direction: reverse; }
+/* a drift, not a carousel: ~15px/s at the rim on desktop */
+.lp-cta-orbit-2 { --r: var(--r2); --t: 240s; }
+.lp-cta-orbit-3 { --r: var(--r3); --t: 300s; animation-direction: reverse; }
 .lp-cta-sat {
   position: absolute;
   left: calc(var(--x) * var(--r) * 1px);
@@ -262,8 +271,8 @@
   background: radial-gradient(90% 60% at 50% 108%, rgb(151 252 228 / 0.38), rgb(151 252 228 / 0.08) 60%, transparent 76%);
   box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.32), inset 0 -1px 0 rgb(214 255 246 / 0.32);
 }
-.lp-cta-sat-live { position: absolute; z-index: 2; right: 1px; bottom: 2px; width: 7px; height: 7px; box-shadow: 0 0 0 1.5px #0b1418, 0 0 10px rgb(77 227 193 / 0.9); }
-.lp-cta-sat-live::after { animation-duration: 3.2s; }
+/* --ping-d is set per seat in cta.tsx so the three never blink in lockstep */
+.lp-cta-sat-live { --ping-t: 3.6s; position: absolute; z-index: 2; right: 1px; bottom: 2px; width: 7px; height: 7px; box-shadow: 0 0 0 1.5px #0b1418, 0 0 10px rgb(77 227 193 / 0.9); }
 
 /* a result that surfaces now and then beside the trader */
 /* a callout under the trader, so it can never show without its avatar */
@@ -314,7 +323,7 @@
 .lp-cta-haze {
   position: absolute;
   inset: 0 0 auto;
-  height: 170px;
+  height: 120px;
   background: linear-gradient(180deg, #050507 0%, rgb(5 5 7 / 0.7) 40%, transparent 100%);
 }
 /* carries the light pooled at the foot of the section above across the boundary, so there is no seam */
@@ -568,10 +577,10 @@
 
 /* ---------- breakpoints ---------- */
 @media (max-width: 1199px) {
-  .lp-cta { --r1: 430; --r2: 524; --r3: 618; --stage-h: 820px; }
+  .lp-cta { --r1: 430; --r2: 524; --r3: 618; --stage-h: 764px; }
 }
 @media (max-width: 899px) {
-  .lp-cta { --r1: 380; --r2: 462; --r3: 544; --copy-gap: 98px; --stage-h: 760px; }
+  .lp-cta { --r1: 380; --r2: 462; --r3: 544; --copy-gap: 98px; --stage-h: 704px; }
 }
 /* phones: the copy stands above a compact system instead of inside it */
 @media (max-width: 640px) {
@@ -616,8 +625,15 @@
 @media (prefers-reduced-motion: reduce) {
   .lp-cta-comet { display: none; }
   .lp-cta-pnl-still { opacity: 1; }
+  /* the middle orbit rests one seat on (the same picture, seats are 45deg apart), so its
+     receipt sits beside the headline instead of at the crown, where the top fade would eat its avatar */
+  .lp-cta-orbit-2 { transform: rotate(45deg); }
+  .lp-cta-orbit-2 .lp-cta-upright { transform: rotate(-45deg); }
 }
-/* on phones the outer one would rest against the screen edge */
+/* on phones the copy stands above the system, so the crown is clear: no rest offset.
+   the outer receipt would rest against the screen edge, so it goes */
 @media (prefers-reduced-motion: reduce) and (max-width: 640px) {
+  .lp-cta-orbit-2,
+  .lp-cta-orbit-2 .lp-cta-upright { transform: none; }
   .lp-cta-orbit-3 .lp-cta-pnl-still { opacity: 0; }
 }

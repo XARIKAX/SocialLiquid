@@ -65,35 +65,61 @@ export function Globe({ size = 260, className }: { size?: number; className?: st
       return [a[0] * ka + b[0] * kb, a[1] * ka + b[1] * kb, a[2] * ka + b[2] * kb];
     };
 
+    // land dots are drawn in alpha buckets: one fillStyle per bucket instead of ~950 rgba strings a frame
+    const BUCKETS = 12;
+    const bucket: number[][] = Array.from({ length: BUCKETS }, () => []);
+    const bucketStyle = Array.from({ length: BUCKETS }, (_, k) => `rgba(160,252,230,${((k + 0.5) / BUCKETS).toFixed(3)})`);
+    // the city glow, rendered once (a canvas shadowBlur per fill is a gaussian per city per frame)
+    const glow = document.createElement("canvas");
+    const GS = 20;
+    glow.width = GS * dpr;
+    glow.height = GS * dpr;
+    const gctx = glow.getContext("2d");
+    if (gctx) {
+      gctx.scale(dpr, dpr);
+      const g = gctx.createRadialGradient(GS / 2, GS / 2, 0, GS / 2, GS / 2, GS / 2);
+      g.addColorStop(0, "rgba(77,227,193,0.62)");
+      g.addColorStop(0.3, "rgba(77,227,193,0.22)");
+      g.addColorStop(1, "rgba(77,227,193,0)");
+      gctx.fillStyle = g;
+      gctx.fillRect(0, 0, GS, GS);
+    }
+
     const draw = (ms: number) => {
       const rot = 0.35 + ms * 0.00011; // opens over the atlantic, drifts west
       ctx.clearRect(0, 0, size, size);
       // land
+      for (const b of bucket) b.length = 0;
       for (const p of pts) {
         const [x, y, z] = project(p, rot);
         if (z <= 0) continue;
         // lit from the upper left
         const lit = Math.max(0, (x - cx) / R * -0.35 + (cy - y) / R * 0.45 + z * 0.6);
         const a = Math.min(1, 0.22 + lit * 0.85) * Math.min(1, z * 3);
-        ctx.fillStyle = `rgba(160,252,230,${a.toFixed(3)})`;
         const s = 0.9 + z * 0.9;
-        ctx.fillRect(x - s / 2, y - s / 2, s, s);
+        bucket[Math.min(BUCKETS - 1, Math.floor(a * BUCKETS))].push(x - s / 2, y - s / 2, s);
       }
-      // routes
+      for (let k = 0; k < BUCKETS; k++) {
+        const b = bucket[k];
+        if (!b.length) continue;
+        ctx.fillStyle = bucketStyle[k];
+        for (let i = 0; i < b.length; i += 3) ctx.fillRect(b[i], b[i + 1], b[i + 2], b[i + 2]);
+      }
+      // routes: one stroke colour, the fade lives in globalAlpha
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgb(151,252,228)";
       ROUTES.forEach(([ia, ib], k) => {
         const a = cities[ia];
         const b = cities[ib];
         const N = 40;
         const head = ((ms / 2600 + k * 0.37) % 1.6) / 1.2; // 0..1.33, pause after landing
-        ctx.lineWidth = 1;
         let prev: V | null = null;
         for (let i = 0; i <= N; i++) {
           const t = i / N;
           const p = project(slerp(a, b, t), rot, 1 + Math.sin(Math.PI * t) * 0.16);
           if (prev && p[2] > -0.05 && prev[2] > -0.05) {
             const near = Math.max(0, 1 - Math.abs(t - Math.min(head, 1)) * 5);
-            const alpha = (0.12 + near * 0.75) * (head > t ? 1 : 0.35);
-            ctx.strokeStyle = `rgba(151,252,228,${alpha.toFixed(3)})`;
+            ctx.globalAlpha = (0.12 + near * 0.75) * (head > t ? 1 : 0.35);
             ctx.beginPath();
             ctx.moveTo(prev[0], prev[1]);
             ctx.lineTo(p[0], p[1]);
@@ -107,26 +133,30 @@ export function Globe({ size = 260, className }: { size?: number; className?: st
         const [x, y, z] = project(c, rot);
         if (z <= 0.12) return;
         const ph = ((ms / 2800 + i * 0.23) % 1);
-        ctx.strokeStyle = `rgba(151,252,228,${((1 - ph) * 0.7 * z).toFixed(3)})`;
-        ctx.lineWidth = 1;
+        ctx.globalAlpha = (1 - ph) * 0.7 * z;
         ctx.beginPath();
         ctx.arc(x, y, 2 + ph * 11, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillStyle = `rgba(232,255,250,${(0.55 + z * 0.45).toFixed(3)})`;
-        ctx.shadowColor = "rgba(77,227,193,0.9)";
-        ctx.shadowBlur = 8;
+        ctx.globalAlpha = 0.55 + z * 0.45;
+        ctx.drawImage(glow, x - GS / 2, y - GS / 2, GS, GS);
+        ctx.fillStyle = "rgb(232,255,250)";
         ctx.beginPath();
         ctx.arc(x, y, 1.9, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
       });
+      ctx.globalAlpha = 1;
     };
 
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let raf = 0;
     let visible = false;
+    let last = 0;
+    // ~30fps is plenty for a globe that turns 0.11 rad a second
     const loop = (t: number) => {
-      draw(t);
+      if (t - last >= 32) {
+        last = t;
+        draw(t);
+      }
       raf = requestAnimationFrame(loop);
     };
     draw(performance.now());
