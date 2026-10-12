@@ -16,14 +16,14 @@ export function Hero({ d }: { d: LandingData }) {
           <span className="lp-badge-tag">
             <span className="lp-live" /> Live
           </span>
-          {d.inviteOnly ? "Invite-only on Hyperliquid" : `Now trading on Hyperliquid${d.testnet ? " testnet" : ""}`}
+          {d.inviteOnly ? "Invite-only on Hyperliquid" : "Live on Hyperliquid mainnet"}
         </span>
         <h1 id="lp-hero-title" className="lp-h1 lp-hero-title" style={vars({ "--d": "0s" })}>
-          <span className="lp-lit" style={vars({ "--d": "0.52s" })}>Where traders show</span>
-          <span className="lp-grad" style={vars({ "--d": "0.68s" })}>their receipts.</span>
+          <span className="lp-lit" style={vars({ "--d": "0.52s" })}>The social layer</span>
+          <span className="lp-grad" style={vars({ "--d": "0.68s" })}>for Hyperliquid.</span>
         </h1>
         <p className="lp-lead" style={vars({ "--d": "0.84s" })}>
-          Social trading for perpetuals. Post a thesis, open the position on Hyperliquid, and let everyone watch you hold or dump.
+          Follow the best traders on Hyperliquid, see every position the second it opens, and trade alongside them. Post a thesis, put the position behind it, and let everyone watch you hold or dump.
         </p>
         <div className="lp-hero-ctas" style={vars({ "--d": "0.96s" })}>
           <Link href="/trade" className="lp-btn lp-btn-primary">
@@ -35,7 +35,7 @@ export function Hero({ d }: { d: LandingData }) {
         </div>
         <div className="lp-hero-trust" style={vars({ "--d": "1.06s" })}>
           <span><Check /> Non-custodial</span>
-          <span><Check /> Perps only</span>
+          <span><Check /> Copy any trade</span>
           <span><Check /> Every fill on-chain</span>
         </div>
       </div>

@@ -31,13 +31,13 @@ export function Features({ d }: { d: LandingData }) {
       <div className="lp-container relative">
         <SectionHead
           id="lp-feat-title"
-          eyebrow="The social layer"
+          eyebrow="Never miss a move"
           title={
             <>
-              Every move, <em className="lp-grad not-italic">on the record.</em>
+              Follow the best. <em className="lp-grad not-italic">Trade alongside them.</em>
             </>
           }
-          lead={<span className="lp-feat-lead">A perps terminal built social-first. Positions mirrored straight from chain, every thesis bound to its trade, every outcome stamped for good.</span>}
+          lead={<span className="lp-feat-lead">Hyperliquid’s top traders, their positions the second they open, one click to copy, and a thesis bound to every trade so the outcome is on the record for good.</span>}
         />
         <div className="lp-feat-bento">
           <FeedCard items={d.items} mark={mark} px={px} />

@@ -64,7 +64,7 @@ function Item({ m }: { m: Mkt }) {
 }
 
 /* shown when hyperliquid is unreachable: the product, in one line */
-const PHRASES = ["Perps only", "Non-custodial", "Builder code 0.05%", "Receipts forever", "Every fill on-chain", "Hold or dump, in public"];
+const PHRASES = ["The social layer for Hyperliquid", "Follow the best traders", "Copy any trade in one click", "Non-custodial", "Every fill on-chain", "Hold or dump, in public"];
 
 function Phrase({ p }: { p: string }) {
   return (
@@ -142,7 +142,7 @@ const moneySr = (v: number) => {
 export function Tape({ d }: { d: LandingData }) {
   const live = d.tape.length > 0;
   const s = d.stats;
-  const net = `Hyperliquid${d.testnet ? " testnet" : ""}`;
+  const net = "Hyperliquid mainnet";
   const at = new Date().toISOString().slice(11, 16);
   // ~4.4s of travel per market keeps the pace calm (about 60px/s) whatever the count
   const t = `${Math.round(Math.max(48, (live ? d.tape.length : PHRASES.length * 2) * 4.4))}s`;
@@ -210,7 +210,7 @@ export function Tape({ d }: { d: LandingData }) {
           )}
         </p>
         <dl className="lp-tape-stats">
-          <Stat i={0} icon="markets" label="Perp markets" note={`listed on ${d.testnet ? "testnet" : "Hyperliquid"}`} sr={s.markets > 0 ? String(s.markets) : "not available"}>
+          <Stat i={0} icon="markets" label="Perp markets" note="listed on Hyperliquid" sr={s.markets > 0 ? String(s.markets) : "not available"}>
             {s.markets > 0 ? <CountUp to={s.markets} from={floorOf(s.markets)} format="int" delay={120} duration={1500} /> : <Dash />}
           </Stat>
           <Stat i={1} icon="volume" label="24h volume" note={btcShare >= 1 && btcShare < 100 ? `${btcShare}% of it in BTC` : "across every perp"} sr={moneySr(s.volume24h)}>

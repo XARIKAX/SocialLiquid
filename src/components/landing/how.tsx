@@ -38,10 +38,10 @@ export function How({ d }: { d: LandingData }) {
               title={
                 <>
                   <span className="lp-how-line">No custody.</span> <span className="lp-how-line">No token.</span>{" "}
-                  <em className="lp-grad not-italic lp-how-line">Just your receipts.</em>
+                  <em className="lp-grad not-italic lp-how-line">Just Hyperliquid, together.</em>
                 </>
               }
-              lead="Three steps from wallet to receipt. Every order routes straight to Hyperliquid with our builder code on it."
+              lead="Three steps from wallet to your first copied trade. Every order routes straight to Hyperliquid with our builder code on it."
             />
             <div data-reveal className="lp-how-ctas" style={vars({ "--d": "0.24s" })}>
               <Link href="/trade" className="lp-btn lp-btn-primary">

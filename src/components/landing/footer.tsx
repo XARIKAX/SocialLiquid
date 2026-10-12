@@ -48,11 +48,11 @@ export function Footer({ d }: { d: LandingData }) {
               <Wordmark size={24} id="footer-mark" />
             </Link>
             <p className="lp-footer-tag">
-              <span className="lp-lit">Where traders show</span> <em className="lp-grad not-italic">their receipts.</em>
+              <span className="lp-lit">The social layer</span> <em className="lp-grad not-italic">for Hyperliquid.</em>
             </p>
             <span className={up ? "lp-footer-status" : "lp-footer-status lp-footer-status-down"}>
               <span className={up ? "lp-live" : "lp-footer-status-idle"} aria-hidden />
-              <span>Hyperliquid{d.testnet ? " testnet" : ""}</span>
+              <span>Hyperliquid mainnet</span>
               <span className="lp-footer-status-sep" aria-hidden>·</span>
               <span className={up ? "lp-footer-status-ok" : "lp-footer-status-warn"}>{up ? "operational" : "reconnecting"}</span>
             </span>
