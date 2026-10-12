@@ -7,6 +7,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { api } from "@/lib/client";
 import { approveAgentWithWallet, approveBuilderFeeWithWallet, usdClassTransferWithWallet } from "@/lib/hl-client";
+import { fmtUsd } from "@/lib/format";
+import { Icon } from "../ui";
+import { openFunds } from "./funds";
+import { useConnectModal } from "../connect-modal";
 
 /** a wallet prompt that never comes back should not leave the button spinning forever */
 function withTimeout<T>(p: Promise<T>, what: string, ms = 120_000): Promise<T> {
@@ -15,10 +19,31 @@ function withTimeout<T>(p: Promise<T>, what: string, ms = 120_000): Promise<T> {
     p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
   });
 }
-import { fmtUsd } from "@/lib/format";
-import { Icon } from "../ui";
-import { openFunds } from "./funds";
-import { useConnectModal } from "../connect-modal";
+/**
+ * the class transfer is a signed action, not a transaction: hyperliquid credits the perps balance a beat after it
+ * answers. approveAgent from an account with no perps equity is refused ("must deposit before performing actions"),
+ * so the next signature waits for the money to actually land.
+ */
+async function waitForPerps(address: string, push: (s: string) => void) {
+  for (let i = 0; i < 12; i++) {
+    const b = await api<{ accountValue: number }>(`/api/balance?address=${address}`);
+    if (b.accountValue >= 0.5) {
+      push("USDC is in perps");
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error("The USDC left spot but has not shown up in perps yet. Give it a few seconds, then press Approve both again.");
+}
+
+/** viem wraps a dismissed wallet prompt in a long multi-line error; hyperliquid's own refusals are the short ones */
+function explain(e: unknown): string {
+  const msg = (e as Error)?.message ?? String(e);
+  if (/user rejected|user denied|rejected the request/i.test(msg)) return "You dismissed the request in your wallet. Press Approve both to try again.";
+  if (/does not exist|must deposit/i.test(msg)) return "Hyperliquid will not take approvals from an account with no perps balance yet. Move USDC to perps (or deposit), then try again.";
+  return msg.split("\n")[0];
+}
+
 
 type Prepare = { agentAddress: string; agentName: string; needsAgentApproval: boolean; needsBuilderApproval: boolean; builder: string; builderFeeTenthsBp: number; maxFeeRate: string };
 
@@ -190,7 +215,11 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
     if (enableState.busy) return;
     setEnable({ busy: true, err: null, log: [] });
     try {
-      // hyperliquid only registers approvals for accounts that hold USDC in perps. deposits that landed in spot are moved first.
+      // first: the agent record and the deployment's own config. a builder hyperliquid will not accept turns the
+      // second signature into a dead end, so this has to refuse before the wallet is ever opened.
+      push("Creating your agent wallet…");
+      const prep = await api<Prepare>("/api/agent/prepare", { method: "POST" });
+      // hyperliquid only registers approvals for accounts that hold USDC in perps. deposits that landed in spot move first.
       if (!mockMode && address) {
         push("Checking your Hyperliquid balances…");
         const b = await api<{ accountValue: number; spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
@@ -200,7 +229,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
         if (b.accountValue < 0.5 && inSpot >= 0.5) {
           push(`Moving ${inSpot.toFixed(2)} USDC from spot to perps (sign in your wallet)…`);
           await withTimeout(usdClassTransferWithWallet(needWallet(wallet), chainId, (Math.floor(inSpot * 100) / 100).toFixed(2).replace(/\.?0+$/, ""), true), "the wallet did not answer");
-          push("USDC is in perps");
+          await waitForPerps(address, push);
         } else if (b.accountValue < 0.5 && inSpot < 0.5 && spotCoins.length === 0) {
           throw new Error("your Hyperliquid account has no balance yet. Deposit first (any route, including SOL / BTC / ETH), then press this again.");
         } else if (b.accountValue < 0.5 && spotCoins.length > 0) {
@@ -208,8 +237,6 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
           push(`Spot balance found (${spotCoins.map((c) => c.coin.replace(/^U(?=[A-Z]{3,})/, "")).join(", ")}); enabling trading so it can be sold for USDC`);
         }
       }
-      push("Creating your agent wallet…");
-      const prep = await api<Prepare>("/api/agent/prepare", { method: "POST" });
       let agentSigned = false;
       let builderSigned = false;
       if (prep.needsAgentApproval) {
@@ -230,7 +257,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
       push("Done. You can trade.");
       onDone();
     } catch (e) {
-      setEnable({ err: (e as Error).message });
+      setEnable({ err: explain(e) });
     } finally {
       setEnable({ busy: false });
     }
@@ -255,7 +282,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
           ))}
         </ol>
       )}
-      {err && <p className="text-down text-xs mt-2 leading-snug" role="alert" data-testid="enable-error">Hyperliquid said: {err}</p>}
+      {err && <p className="text-down text-xs mt-2 leading-snug" role="alert" data-testid="enable-error">{err}</p>}
       <p className="text-[11px] text-dim mt-2">Stuck? <a className="text-brand hover:underline" href="/api/me/trading-check" target="_blank" rel="noreferrer">Open the trading check</a> and send us what it says.</p>
       <Steps current={4} />
     </Step>
