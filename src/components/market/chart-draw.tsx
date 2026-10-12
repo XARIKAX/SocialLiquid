@@ -43,6 +43,8 @@ type Props = {
   locked: boolean;
   width: () => number;
   axis: () => number;
+  /** the price pane's height: a measure's readout stays inside it */
+  height?: () => number;
   xOf: (t: number) => number | null;
   yOf: (p: number) => number | null;
   colors: Colors;
@@ -58,6 +60,7 @@ export const DrawingLayer = memo(function DrawingLayer(p: Props) {
   useSyncExternalStore(p.vp.subscribe, p.vp.get, p.vp.get);
   const w = p.width();
   const aw = p.axis();
+  const h = p.height?.() ?? 0;
   return (
     <svg
       ref={p.svgRef}
@@ -71,13 +74,13 @@ export const DrawingLayer = memo(function DrawingLayer(p: Props) {
       aria-hidden
     >
       {p.items.map((d) => (
-        <Shape key={d.id} d={d} {...p} w={w} aw={aw} sel={p.selected === d.id} />
+        <Shape key={d.id} d={d} {...p} w={w} aw={aw} h={h} sel={p.selected === d.id} />
       ))}
     </svg>
   );
 });
 
-function Shape({ d, w, aw, sel, xOf, yOf, colors: c, prec, ivSec, onShapeDown }: Props & { d: Drawing; w: number; aw: number; sel: boolean }) {
+function Shape({ d, w, aw, h, sel, xOf, yOf, colors: c, prec, ivSec, onShapeDown }: Props & { d: Drawing; w: number; aw: number; h: number; sel: boolean }) {
   const color = sel ? c.sel : d.type === "ruler" ? c.sel : c.line;
   const down = (part: Part) => (e: ReactPointerEvent) => onShapeDown(e, d.id, part);
   if (d.type === "hline") {
@@ -132,17 +135,22 @@ function Shape({ d, w, aw, sel, xOf, yOf, colors: c, prec, ivSec, onShapeDown }:
   const l2 = `${Math.abs(nBars)} bars · ${fmtSpan(d.b.t - d.a.t)}`;
   const pw = Math.max(l1.length, l2.length) * 6.3 + 20;
   const px = left + bw / 2 - pw / 2;
-  const below = y2 > y1;
-  const py = below ? Math.max(y1, y2) + 8 : top - 44;
+  // the readout sits past the end of the drag, or on the other side when the pane has no room there
+  const under = Math.max(y1, y2) + 8;
+  const over = top - 44;
+  const fitsUnder = !h || under + 36 <= h - 2;
+  const fitsOver = over >= 2;
+  const py = y2 > y1 ? (fitsUnder || !fitsOver ? under : over) : fitsOver || !fitsUnder ? over : under;
+  const pyIn = h ? Math.min(Math.max(py, 2), h - 38) : py;
   return (
     <g className="tm-chart-dw tm-chart-dw-ruler">
       <rect x={left} y={top} width={bw} height={bh} fill={tone} fillOpacity="0.13" stroke={tone} strokeOpacity="0.55" strokeDasharray="4 3" />
       <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={tone} strokeWidth="1.4" strokeOpacity="0.9" />
-      <rect x={px} y={py} width={pw} height="36" rx="9" fill={c.bg} fillOpacity="0.94" stroke={tone} strokeOpacity="0.6" />
-      <text x={px + pw / 2} y={py + 15} textAnchor="middle" fill={tone} fontSize="11" fontWeight="600" fontFamily={c.font}>
+      <rect x={px} y={pyIn} width={pw} height="36" rx="9" fill={c.bg} fillOpacity="0.94" stroke={tone} strokeOpacity="0.6" />
+      <text x={px + pw / 2} y={pyIn + 15} textAnchor="middle" fill={tone} fontSize="11" fontWeight="600" fontFamily={c.font}>
         {l1}
       </text>
-      <text x={px + pw / 2} y={py + 29} textAnchor="middle" fill={c.muted} fontSize="10" fontFamily={c.font}>
+      <text x={px + pw / 2} y={pyIn + 29} textAnchor="middle" fill={c.muted} fontSize="10" fontFamily={c.font}>
         {l2}
       </text>
     </g>

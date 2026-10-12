@@ -204,7 +204,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
                 <ChartPlaceholder coin={coin} closes={initial?.closes} />
               </div>
               <div className="absolute inset-0">
-                <Chart coin={coin} label={chartLabel} markers={markers} lastPx={mid} lines={lines} />
+                <Chart coin={coin} label={chartLabel} kind={m?.kind} markers={markers} lastPx={mid} lines={lines} />
               </div>
             </div>
             <div className="tm-lay-book" id="tm-lay-book" data-tm-lay-book="">

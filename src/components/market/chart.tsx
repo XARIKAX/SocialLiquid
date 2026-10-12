@@ -1507,6 +1507,13 @@ export function Chart({
     }
   }, []);
   const axisWidth = useCallback(() => chartRef.current?.priceScale("right").width() ?? 0, []);
+  const paneHeight = useCallback(() => {
+    try {
+      return chartRef.current?.paneSize().height ?? 0;
+    } catch {
+      return 0;
+    }
+  }, []);
   /**
    * a point under the pointer; with the magnet on it snaps to the nearest o/h/l/c within reach. only the
    * price pane holds drawings: off it there is no point, unless a drag that started on it is clamped back
@@ -1844,7 +1851,7 @@ export function Chart({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const wrap = wrapRef.current;
-      if (!wrap || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.("[role=menu]")) return;
+      if (!wrap || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.("[role=menu], [role=dialog]")) return;
       const ae = document.activeElement;
       const focusFree = !ae || ae === document.body || ae === document.documentElement;
       if (!((ae && wrap.contains(ae)) || (hoverRef.current && focusFree))) return;
@@ -2186,6 +2193,7 @@ export function Chart({
             locked={locked}
             width={paneWidth}
             axis={axisWidth}
+            height={paneHeight}
             xOf={xOf}
             yOf={yOf}
             colors={drawColors}

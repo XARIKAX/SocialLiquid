@@ -2146,7 +2146,13 @@
     outline: none;
     box-shadow: inset 0 0 0 1px rgb(77 227 193 / 0.6);
   }
-  /* the list scrolls between the search and the volume switch */
+  /* the menu proper under the search: the list scrolls, the volume switch stays */
+  .tm-chart-mbody {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
   .tm-chart-ml {
     flex: 1 1 auto;
     min-height: 0;

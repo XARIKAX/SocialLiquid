@@ -736,7 +736,8 @@ export function IndMenu({
     onKeyDown(e);
   };
   return (
-    <div ref={ref} className="pop tm-chart-menu tm-chart-menu-ind" role="menu" aria-label="Indicators" data-testid="indicator-menu" style={style} onKeyDown={onKey}>
+    // a dialog: the search field, then the menu proper (a text field cannot be a menu's child)
+    <div ref={ref} className="pop tm-chart-menu tm-chart-menu-ind" role="dialog" aria-label="Indicators" data-testid="indicator-menu" style={style} onKeyDown={onKey}>
       <div className="tm-chart-menu-head">
         <span className="label-caps">Indicators</span>
         {inds.length > 0 && <span className="tm-chart-menu-n">{inds.length} on</span>}
@@ -750,56 +751,58 @@ export function IndMenu({
           </button>
         )}
       </div>
-      <div ref={listRef} className="tm-chart-ml">
-        {groups.map(({ pane, list }) =>
-          list.length ? (
-            <div key={pane} role="group" aria-label={pane === "price" ? "Overlays" : "Oscillators · own pane"}>
-              <div className="tm-chart-mg label-caps" aria-hidden>
-                <span>{pane === "price" ? "Overlays" : "Oscillators · own pane"}</span>
-                <span className="tm-chart-mg-n">{list.length}</span>
+      <div className="tm-chart-mbody" role="menu" aria-label="Indicators">
+        <div ref={listRef} className="tm-chart-ml" role="none">
+          {groups.map(({ pane, list }) =>
+            list.length ? (
+              <div key={pane} role="group" aria-label={pane === "price" ? "Overlays" : "Oscillators · own pane"}>
+                <div className="tm-chart-mg label-caps" aria-hidden>
+                  <span>{pane === "price" ? "Overlays" : "Oscillators · own pane"}</span>
+                  <span className="tm-chart-mg-n">{list.length}</span>
+                </div>
+                {list.map((d) => {
+                  const on = inds.includes(d.id);
+                  const [title, params] = splitIndName(d.name);
+                  return (
+                    <button key={d.id} type="button" role="menuitemcheckbox" aria-checked={on} className="tm-chart-mi tm-chart-mi-ind" onClick={() => toggle(d.id)} style={{ "--c": colorOf(d) } as CSSProperties}>
+                      <span className="tm-chart-mi-glyph" aria-hidden>
+                        <IndGlyph d={d} />
+                      </span>
+                      <span className="tm-chart-mi-name">
+                        {title}
+                        {params && <small>{params}</small>}
+                      </span>
+                      <span className="tm-chart-mi-check" aria-hidden>
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1.8 5.4 4 7.6l4.3-5" />
+                        </svg>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              {list.map((d) => {
-                const on = inds.includes(d.id);
-                const [title, params] = splitIndName(d.name);
-                return (
-                  <button key={d.id} type="button" role="menuitemcheckbox" aria-checked={on} className="tm-chart-mi tm-chart-mi-ind" onClick={() => toggle(d.id)} style={{ "--c": colorOf(d) } as CSSProperties}>
-                    <span className="tm-chart-mi-glyph" aria-hidden>
-                      <IndGlyph d={d} />
-                    </span>
-                    <span className="tm-chart-mi-name">
-                      {title}
-                      {params && <small>{params}</small>}
-                    </span>
-                    <span className="tm-chart-mi-check" aria-hidden>
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M1.8 5.4 4 7.6l4.3-5" />
-                      </svg>
-                    </span>
-                  </button>
-                );
-              })}
+            ) : null,
+          )}
+          {!groups[0].list.length && !groups[1].list.length && (
+            <div className="tm-chart-mi-none" role="status">
+              No indicator matches <b>{query.trim()}</b>
             </div>
-          ) : null,
-        )}
-        {!groups[0].list.length && !groups[1].list.length && (
-          <div className="tm-chart-mi-none" role="status">
-            No indicator matches <b>{query.trim()}</b>
-          </div>
-        )}
+          )}
+        </div>
+        <div className="tm-chart-menu-rule" role="separator" />
+        <button type="button" role="menuitemcheckbox" aria-checked={showVol} className="tm-chart-mi tm-chart-mi-vol" onClick={() => setShowVol(!showVol)}>
+          <span className="tm-chart-mi-vbars" aria-hidden>
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="tm-chart-mi-txt">
+            <b>Volume</b>
+            <small>Bars under the price</small>
+          </span>
+          <span className="switch tm-chart-mi-switch" aria-hidden data-on={showVol || undefined} />
+        </button>
       </div>
-      <div className="tm-chart-menu-rule" />
-      <button type="button" role="menuitemcheckbox" aria-checked={showVol} className="tm-chart-mi tm-chart-mi-vol" onClick={() => setShowVol(!showVol)}>
-        <span className="tm-chart-mi-vbars" aria-hidden>
-          <i />
-          <i />
-          <i />
-        </span>
-        <span className="tm-chart-mi-txt">
-          <b>Volume</b>
-          <small>Bars under the price</small>
-        </span>
-        <span className="switch tm-chart-mi-switch" aria-hidden data-on={showVol || undefined} />
-      </button>
     </div>
   );
 }
