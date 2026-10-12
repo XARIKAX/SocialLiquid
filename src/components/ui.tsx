@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { fmtUsd, userLabel, userPath } from "@/lib/format";
 
 /* ---------- identity ---------- */
@@ -33,18 +33,28 @@ export function Avatar({ address, url, size = 28, handle, ring, initials }: { ad
 
 const ICON_BASE = "https://app.hyperliquid.xyz/coins";
 
+/** a market's icon from hyperliquid's set. pass the symbol ("BTC", "SOL"), or a builder dex's full id ("xyz:GOLD"),
+    which is how hyperliquid names those icons. a missing icon becomes a tinted disc with the symbol's first letter */
 export function CoinIcon({ coin, size = 20, className = "" }: { coin: string; size?: number; className?: string }) {
   const [broken, setBroken] = useState(false);
-  const hue = (coin.charCodeAt(0) * 47 + (coin.charCodeAt(1) || 0) * 13) % 360;
+  const ref = useRef<HTMLImageElement>(null);
+  // an icon that failed before hydration never fires onError on the client: catch it once mounted
+  useEffect(() => {
+    const img = ref.current;
+    if (img && img.complete && img.naturalWidth === 0) setBroken(true);
+  }, [coin]);
+  useEffect(() => setBroken(false), [coin]);
+  const sym = coin.includes(":") ? coin.slice(coin.indexOf(":") + 1) : coin;
+  const hue = (sym.charCodeAt(0) * 47 + (sym.charCodeAt(1) || 0) * 13) % 360;
   if (broken)
     return (
       <span className={`rounded-full inline-flex items-center justify-center font-bold text-white/90 shrink-0 ${className}`} style={{ width: size, height: size, fontSize: size * 0.42, background: `hsl(${hue} 45% 32%)` }}>
-        {coin.slice(0, 1)}
+        {sym.slice(0, 1)}
       </span>
     );
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={`${ICON_BASE}/${coin}.svg`} alt="" width={size} height={size} onError={() => setBroken(true)} className={`coin-icon rounded-full shrink-0 bg-panel-3 ${className}`} style={{ width: size, height: size }} />
+    <img ref={ref} src={`${ICON_BASE}/${coin}.svg`} alt="" width={size} height={size} onError={() => setBroken(true)} className={`coin-icon rounded-full shrink-0 bg-panel-3 ${className}`} style={{ width: size, height: size }} />
   );
 }
 

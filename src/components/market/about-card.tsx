@@ -6,6 +6,7 @@ import { api, HL_APP_URL_CLIENT } from "@/lib/client";
 import { fmtPct } from "@/lib/format";
 import type { MarketSummary } from "@/lib/hl-types";
 import { CoinIcon, Icon } from "../ui";
+import { iconOf } from "@/hooks/use-market";
 import { SplitBar, money } from "./layout-bits";
 
 type Candle = { time: number; open: number; close: number };
@@ -59,7 +60,7 @@ export function AboutCard({ coin, market, mid, longShort, counts }: { coin: stri
     <section className="card tm-lay-card tm-lay-about" aria-labelledby={id}>
       <header className="tm-lay-ch">
         <span className="tm-lay-coin" aria-hidden>
-          <CoinIcon coin={sym} size={30} />
+          <CoinIcon coin={market ? iconOf(market) : coin} size={30} />
         </span>
         <div className="min-w-0">
           <h3 id={id} className="tm-lay-ch-title">

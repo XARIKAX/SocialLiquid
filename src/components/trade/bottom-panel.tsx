@@ -624,7 +624,7 @@ function Filters({
         <option value="B">Buy / Long</option>
         <option value="A">Sell / Short</option>
       </Sel>
-      <Sel label="market filter" value={filter.market} on={!!pick} icon={pick ? <CoinIcon coin={pick.base || pick.name} size={14} /> : null} onChange={onMarket}>
+      <Sel label="market filter" value={filter.market} on={!!pick} icon={pick ? <CoinIcon coin={pick.icon} size={14} /> : null} onChange={onMarket}>
         <option value="all">Market</option>
         {opts.map((o) => (
           <option key={o.c} value={o.c}>
@@ -653,7 +653,7 @@ function CoinCell({ m, href, pill, sub, nsub, fold, subFold, extra }: { m: Mk; h
   return (
     <span className="tm-bp-coin">
       <span className="tm-bp-coin-ic">
-        <CoinIcon coin={m.base || m.name} size={20} />
+        <CoinIcon coin={m.icon} size={20} />
       </span>
       <span className="tm-bp-2">
         <span className="tm-bp-coin-row">
@@ -1312,7 +1312,7 @@ function TpslEditor({ edit, m: mkt, setEdit, onClose, onSave, busy }: { edit: Ed
       <div className="tm-bp-editor-head">
         <span className="tm-bp-editor-id">
           <span className="tm-bp-coin-ic">
-            <CoinIcon coin={mkt.base || mkt.name} size={18} />
+            <CoinIcon coin={mkt.icon} size={18} />
           </span>
           TP / SL · {mkt.name}
           <SidePill buy={edit.long} />
@@ -1387,7 +1387,7 @@ function ThesisComposer({ c, m, setCompose, onClose, onPost, busy }: { c: Compos
       <div className="tm-bp-editor-head">
         <span className="tm-bp-editor-id">
           <span className="tm-bp-coin-ic">
-            <CoinIcon coin={m.base || m.name} size={18} />
+            <CoinIcon coin={m.icon} size={18} />
           </span>
           <span>
             <span className="tm-bp-thesis-word">Thesis</span> on your open {m.name} position

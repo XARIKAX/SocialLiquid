@@ -19,7 +19,7 @@ async function load(id: string) {
 async function marketOf(coin: string) {
   const m = await marketByRef(coin).catch(() => undefined);
   const bare = coin.includes(":") ? coin.slice(coin.indexOf(":") + 1) : coin;
-  return { name: m?.name ?? bare, base: m?.base ?? bare, href: `/m/${encodeURIComponent(m?.slug ?? coin)}` };
+  return { name: m?.name ?? bare, base: m?.base ?? bare, icon: m ? (m.kind === "hip3" ? m.coin : m.base) : coin, href: `/m/${encodeURIComponent(m?.slug ?? coin)}` };
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -57,7 +57,7 @@ export default async function ThesisPage({ params }: Props) {
           <span className="pill pill-thesis ml-auto">Thesis</span>
         </div>
         <div className="flex items-center gap-2 mt-4 text-xs flex-wrap">
-          <CoinIcon coin={mk.base} size={22} />
+          <CoinIcon coin={mk.icon} size={22} />
           <Link href={mk.href} className="font-semibold text-[15px] hover:underline">{mk.name}</Link>
           {p && <SidePill side={p.side} />}
           {p && <span className="num text-muted">{fmtUsd(Number(p.sizeUsd), { compact: true })} · {p.leverage}x · entry {fmtPx(Number(p.entryPx))}</span>}

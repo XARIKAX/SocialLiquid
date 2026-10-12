@@ -8,7 +8,7 @@ import { api } from "@/lib/client";
 import type { FeedItem, HlBoard, LeaderboardRow } from "@/lib/queries";
 import type { MarketSummary } from "@/lib/hl-types";
 import { fmtPct, fmtPx, fmtUsd, userPath } from "@/lib/format";
-import { useMarkets, useMids } from "@/hooks/use-market";
+import { iconOf, useMarkets, useMids } from "@/hooks/use-market";
 import { useAuth } from "@/hooks/use-auth";
 import { useConnectModal } from "../connect-modal";
 import { FeedCard, RailMoney, railName } from "./feed-card";
@@ -406,7 +406,7 @@ function Feed({ onNavigate, alerts, active = true, onBrowse }: { onNavigate?: ()
           label="Market"
           value={coin}
           on={!!coin}
-          icon={coin ? <CoinIcon coin={markets.data?.find((m) => m.coin === coin)?.base ?? coin} size={14} /> : null}
+          icon={coin ? <CoinIcon coin={(() => { const s = markets.data?.find((m) => m.coin === coin); return s ? iconOf(s) : coin; })()} size={14} /> : null}
           onChange={(v) => {
             setCoin(v);
             setLimit(PAGE);
@@ -740,7 +740,7 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
                 <Link href={marketHref(m)} data-tok="" onClick={onNavigate} onKeyDown={onRowKey} className="tm-rail-tok" aria-current={cur ? "page" : undefined}>
                   <span className="tm-rail-tok-id">
                     <span className="tm-rail-coin">
-                      <CoinIcon coin={m.base} size={full ? 30 : 24} />
+                      <CoinIcon coin={iconOf(m)} size={full ? 30 : 24} />
                     </span>
                     <span className="tm-rail-tok-name">
                       <b>{m.name}</b>

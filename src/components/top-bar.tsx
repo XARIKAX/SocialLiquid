@@ -6,7 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as 
 import { createPortal } from "react-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance, type Balance, type Me } from "@/hooks/use-me";
-import { useMarkets, useMids } from "@/hooks/use-market";
+import { iconOf, useMarkets, useMids } from "@/hooks/use-market";
 import { api } from "@/lib/client";
 import { fmtPct, fmtPx, fmtUsd, shortAddr } from "@/lib/format";
 import { Avatar, CoinIcon, Icon, Logo } from "./ui";
@@ -363,6 +363,8 @@ function AccountMenu({ address, me, bal, onSignOut }: { address: string; me: Me 
 
 /* ---------- search: tokens and traders, from the keyboard or the pointer ---------- */
 function Search({ sheet, onClose }: { sheet?: boolean; onClose?: () => void }) {
+  // on the terminal, ⌘K opens the market picker in the header, so the field does not advertise it there
+  const terminal = isTradingRoute(usePathname() ?? "");
   const [q, setQ] = useState("");
   const [res, setRes] = useState<SearchResult | null>(null);
   const [failed, setFailed] = useState(false);
@@ -554,9 +556,11 @@ function Search({ sheet, onClose }: { sheet?: boolean; onClose?: () => void }) {
       </button>
       {!sheet && (
         <>
-          <kbd className="tm-chrome-key" data-k="slash" aria-hidden title={`${mac ? "⌘" : "Ctrl "}K to search`}>
-            {mac ? "⌘K" : "Ctrl K"}
-          </kbd>
+          {!terminal && (
+            <kbd className="tm-chrome-key" data-k="slash" aria-hidden title={`${mac ? "⌘" : "Ctrl "}K to search`}>
+              {mac ? "⌘K" : "Ctrl K"}
+            </kbd>
+          )}
           <kbd className="tm-chrome-key" data-k="esc" aria-hidden>
             esc
           </kbd>
@@ -579,7 +583,7 @@ function Search({ sheet, onClose }: { sheet?: boolean; onClose?: () => void }) {
                 option(
                   marketPath(m),
                   <>
-                    <CoinIcon coin={m.base} size={20} className="tm-chrome-coin" />
+                    <CoinIcon coin={iconOf(m)} size={20} className="tm-chrome-coin" />
                     <span className="flex flex-col leading-tight min-w-0">
                       <b>{m.name}</b>
                       <span className="tm-chrome-num tm-chrome-quick-px">{fmtPx(m.markPx)}</span>
@@ -603,7 +607,7 @@ function Search({ sheet, onClose }: { sheet?: boolean; onClose?: () => void }) {
               option(
                 marketPath(c),
                 <>
-                  <CoinIcon coin={c.base ?? c.coin} size={22} className="tm-chrome-coin" />
+                  <CoinIcon coin={c.kind === "hip3" ? c.coin : (c.base ?? c.coin)} size={22} className="tm-chrome-coin" />
                   <span className="tm-chrome-result-name">{c.name ?? c.coin}</span>
                   <span className="tm-chrome-result-tag">{c.kind === "spot" ? "Spot" : c.kind === "hip3" ? (c.category ?? "Tradfi") : "Perp"}</span>
                   <span className="tm-chrome-result-px tm-chrome-num">{fmtPx(c.markPx)}</span>

@@ -76,7 +76,7 @@ function AlertRow({ it, onClick, fresh }: { it: FeedItem; onClick?: () => void; 
     <Link href={mk.href} onClick={onClick} className="tm-chrome-alert" data-new={fresh || undefined} aria-label={label}>
       <span className="tm-chrome-alert-av" aria-hidden>
         <Avatar address={it.address} url={it.user?.avatarUrl} handle={it.user?.handle ?? it.user?.displayName} size={32} />
-        <CoinIcon coin={mk.base} size={15} className="tm-chrome-alert-coinbadge" />
+        <CoinIcon coin={mk.icon} size={15} className="tm-chrome-alert-coinbadge" />
       </span>
       <span className="tm-chrome-alert-body" aria-hidden>
         <span className="tm-chrome-alert-line">

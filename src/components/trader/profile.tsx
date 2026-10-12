@@ -142,7 +142,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                 <Link key={t.id} href={mk(t.coin).href} className="card-2 px-3 py-2 min-w-[200px] hover:bg-panel-3 transition-colors">
                   <div className="text-[11px] text-muted"><span className="text-fg-2 font-semibold">#{i + 1}</span> Trade</div>
                   <div className="flex items-center gap-2 mt-1">
-                    <CoinIcon coin={mk(t.coin).base} size={18} />
+                    <CoinIcon coin={mk(t.coin).icon} size={18} />
                     <Pnl value={t.realisedPnl} className="font-semibold" />
                     <span className={`num text-[11px] ${roe >= 0 ? "text-up" : "text-down"}`}>({roe >= 0 ? "▲" : "▼"} {Math.abs(roe * 100).toFixed(1)}%)</span>
                   </div>
@@ -189,7 +189,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
             {pinned ? (
               <section className="card p-4">
                 <div className="flex items-center gap-2">
-                  <CoinIcon coin={mk(pinned.coin).base} size={22} />
+                  <CoinIcon coin={mk(pinned.coin).icon} size={22} />
                   <span className="font-semibold">{mk(pinned.coin).name}</span>
                   <span className="pill pill-thesis">Thesis</span>
                   <span className="pill pill-neutral">Most liked</span>
@@ -221,7 +221,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                       const long = /long/i.test(f.dir) && !/short >/i.test(f.dir);
                       return (
                         <tr key={f.id} className="row-hover border-b border-line/60">
-                          <td className="px-4 py-2"><Link href={mk(f.coin).href} className="flex items-center gap-2 font-medium"><CoinIcon coin={mk(f.coin).base} size={22} />{mk(f.coin).name}</Link></td>
+                          <td className="px-4 py-2"><Link href={mk(f.coin).href} className="flex items-center gap-2 font-medium"><CoinIcon coin={mk(f.coin).icon} size={22} />{mk(f.coin).name}</Link></td>
                           <td className="px-2 py-2"><span className={`pill ${f.liquidation ? "pill-liq" : open ? (long ? "pill-up" : "pill-down") : "pill-neutral"}`}>{f.liquidation ? "Liquidated" : f.dir}</span></td>
                           <td className="num px-2 py-2 text-right font-medium">{fmtUsd(f.usd)}</td>
                           <td className={`num px-2 py-2 text-right hidden sm:table-cell ${f.closedPnl > 0 ? "text-up" : f.closedPnl < 0 ? "text-down" : "text-dim"}`}>{f.closedPnl ? fmtUsd(f.closedPnl, { sign: true }) : ""}</td>
@@ -254,7 +254,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                 const roe = o.sizeUsd ? (pnl * o.leverage) / o.sizeUsd : 0;
                 return (
                   <div key={o.coin} className="flex items-center gap-3 px-4 py-2.5 border-b border-line/60 row-hover">
-                    <CoinIcon coin={mk(o.coin).base} size={32} />
+                    <CoinIcon coin={mk(o.coin).icon} size={32} />
                     <div className="leading-tight min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <Link href={mk(o.coin).href} className="font-semibold hover:underline">{mk(o.coin).name}</Link>
@@ -289,7 +289,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                 const roe = c.sizeUsd ? ((c.realisedPnl ?? 0) * c.leverage) / c.sizeUsd : 0;
                 return (
                   <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-line/60 row-hover">
-                    <CoinIcon coin={mk(c.coin).base} size={32} />
+                    <CoinIcon coin={mk(c.coin).icon} size={32} />
                     <div className="leading-tight min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <Link href={mk(c.coin).href} className="font-semibold hover:underline">{mk(c.coin).name}</Link>
@@ -326,7 +326,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
               return (
                 <article key={t.id} className="px-4 py-3 border-b border-line/60">
                   <div className="flex items-center gap-2 text-xs flex-wrap">
-                    <CoinIcon coin={mk(t.coin).base} size={18} />
+                    <CoinIcon coin={mk(t.coin).icon} size={18} />
                     <Link href={mk(t.coin).href} className="font-semibold text-[13px] hover:underline">{mk(t.coin).name}</Link>
                     {t.position && <span className={`num ${t.position.side === "LONG" ? "text-up" : "text-down"}`}>{t.position.side === "LONG" ? "Long" : "Short"} {fmtUsd(t.position.sizeUsd, { compact: true })} · {t.position.leverage}x</span>}
                     <span className="ml-auto text-dim num">{timeAgo(t.createdAt)}</span>

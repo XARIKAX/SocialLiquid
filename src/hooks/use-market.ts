@@ -23,10 +23,13 @@ export function useMarkets() {
 
 /** a market as people see it, from its hyperliquid id: name ("SOL/USDC", "GOLD"), icon symbol and page. until the
     market list has loaded it falls back to the id, minus a builder dex's "xyz:" prefix */
-export function marketIdentity(coin: string, m?: MarketSummary | null): { name: string; base: string; href: string; market?: MarketSummary } {
+export function marketIdentity(coin: string, m?: MarketSummary | null): { name: string; base: string; icon: string; href: string; market?: MarketSummary } {
   const bare = coin.includes(":") ? coin.slice(coin.indexOf(":") + 1) : coin;
-  return { name: m?.name ?? bare, base: m?.base ?? bare, href: `/m/${encodeURIComponent(m?.slug ?? coin)}`, market: m ?? undefined };
+  return { name: m?.name ?? bare, base: m?.base ?? bare, icon: m ? iconOf(m) : coin.includes(":") ? coin : bare, href: `/m/${encodeURIComponent(m?.slug ?? coin)}`, market: m ?? undefined };
 }
+
+/** the key of a market's icon in hyperliquid's set: builder-dex markets go by their full id ("xyz:GOLD"), the rest by symbol */
+export const iconOf = (m: Pick<MarketSummary, "kind" | "coin" | "base">) => (m.kind === "hip3" ? m.coin : m.base);
 
 /** resolve hyperliquid ids to their identity over the shared market list (one query for the whole page) */
 export function useMarketIdentity(): (coin: string) => ReturnType<typeof marketIdentity> {

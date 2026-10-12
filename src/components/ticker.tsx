@@ -48,7 +48,7 @@ function TickPx({ v, flash = true }: { v: number; flash?: boolean }) {
   );
 }
 
-type Item = { coin: string; name: string; base: string; href: string; px: number | undefined; chg: number | undefined };
+type Item = { coin: string; name: string; base: string; icon: string; href: string; px: number | undefined; chg: number | undefined };
 
 /** the path names a market by its id or its slug, percent-encoded or not */
 function isAt(path: string | null, it: Item) {
@@ -64,7 +64,7 @@ function isAt(path: string | null, it: Item) {
 function Tick({ it, current, hidden, flash }: { it: Item; current: boolean; hidden?: boolean; flash?: boolean }) {
   return (
     <Link href={it.href} className="tm-chrome-tk" aria-current={current ? "page" : undefined} tabIndex={hidden ? -1 : undefined}>
-      <CoinIcon coin={it.base} size={14} className="tm-chrome-coin" />
+      <CoinIcon coin={it.icon} size={14} className="tm-chrome-coin" />
       <span className="tm-chrome-tk-sym">{it.name}</span>
       {it.px ? <TickPx v={it.px} flash={flash} /> : <span className="skeleton tm-chrome-tk-sk" />}
       {it.chg !== undefined && (

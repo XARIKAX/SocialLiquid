@@ -149,7 +149,7 @@ export const FeedCard = memo(function FeedCard({ item, mid, onNavigate, signedIn
   const coinLink = (
     <Link href={mk.href} onClick={onNavigate} className="tm-rail-fc-coin" title={`Open ${mk.name}`}>
       <span className="tm-rail-coin">
-        <CoinIcon coin={mk.base} size={15} />
+        <CoinIcon coin={mk.icon} size={15} />
       </span>
       <b>{mk.name}</b>
     </Link>
