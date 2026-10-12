@@ -73,15 +73,9 @@ export async function setDexAbstractionWithWallet(wallet: WalletClient, chainId:
   return (await exchange(wallet, chainId)).userDexAbstraction({ user: user as `0x${string}`, enabled });
 }
 
-type OrderStatus = { filled: { totalSz: string; avgPx: string; oid: number } } | { resting: { oid: number } } | { error: string } | string;
-/**
- * a spot market sell signed by the main wallet itself (no trading agent involved): an IOC limit on the coin's USDC
- * pair. the quote (asset id, size, price) comes from /api/trade/spot-quote so the browser never guesses market rules.
+/*
+ * no main-wallet order signing here on purpose: orders and cancels are L1 actions, signed under the fixed
+ * "Exchange" domain with chainId 1337. browser wallets refuse that (Phantom: "Unsupported network", MetaMask:
+ * chain id mismatch), which is why hyperliquid itself routes every order through the approved agent key.
+ * spot sells go through /api/trade/spot-sell (agent-signed) once trading is enabled.
  */
-export async function spotSellWithWallet(wallet: WalletClient, chainId: number, q: { assetId: number; sz: string; px: string }): Promise<{ avgPx: number; totalSz: number }> {
-  const res = await (await exchange(wallet, chainId)).order({ orders: [{ a: q.assetId, b: false, p: q.px, s: q.sz, r: false, t: { limit: { tif: "Ioc" } } }], grouping: "na" });
-  const first = (res as unknown as { response: { data: { statuses: OrderStatus[] } } }).response.data.statuses[0];
-  if (typeof first === "object" && "error" in first) throw new Error(first.error);
-  if (typeof first === "object" && "filled" in first) return { avgPx: Number(first.filled.avgPx), totalSz: Number(first.filled.totalSz) };
-  throw new Error("the spot market did not fill the order; try again");
-}

@@ -47,13 +47,16 @@ export const GET = handler(async () => {
   }
   const perps = out.perps as { accountValue?: number } | string;
   const spotUsdc = Array.isArray(out.spot) ? (out.spot as { coin: string; total: number }[]).find((b) => b.coin === "USDC")?.total ?? 0 : null;
+  const spotCoins = Array.isArray(out.spot) ? (out.spot as { coin: string; total: number }[]).filter((b) => b.coin !== "USDC" && b.total > 0).map((b) => b.coin) : [];
   out.verdict =
     typeof perps === "string"
       ? "hyperliquid did not answer for this address"
       : (perps.accountValue ?? 0) < 0.5 && (spotUsdc ?? 0) >= 0.5
         ? "USDC is in spot, not perps: move it to perps first (the enable-trading step now does this)"
-        : (perps.accountValue ?? 0) < 0.5
-          ? "no USDC in perps or spot: deposit first"
+        : (perps.accountValue ?? 0) < 0.5 && spotCoins.length > 0
+          ? `spot-only account (${spotCoins.join(", ")}): enable trading, then Sell for USDC (agent-signed) and the USDC moves to perps`
+          : (perps.accountValue ?? 0) < 0.5
+            ? "no balance in perps or spot: deposit first"
           : "funds are in perps; approvals should register";
   return json(out);
 });

@@ -43,7 +43,7 @@ function useRefreshMe() {
 }
 function InvitePanel() { return <InviteStep onDone={useRefreshMe()} />; }
 function HandlePanel() { return <HandleStep onDone={useRefreshMe()} />; }
-function EnablePanel() { return <EnableTradingStep onDone={useRefreshMe()} />; }
+export function EnablePanel() { return <EnableTradingStep onDone={useRefreshMe()} />; }
 
 /** legacy gate: renders children only when ready. kept for places that want the step cards up front. */
 export function OnboardingGate({ children }: { children: React.ReactNode }) {
@@ -158,6 +158,12 @@ function HandleStep({ onDone }: { onDone: () => void }) {
   );
 }
 
+/** wagmi hands us no wallet client while the extension sits on a network the site does not list */
+export function needWallet<T>(wallet: T | null | undefined): T {
+  if (!wallet) throw new Error("your wallet is on a network this site does not list. Switch it to Ethereum, Arbitrum, Base or Polygon (Phantom: Ethereum, Base or Polygon), then press again.");
+  return wallet;
+}
+
 /** the enable flow's progress lives outside the component: a wallet prompt can take a minute, and the ticket around the
  *  step re-renders (and may remount it) the whole time. the run keeps going and its log, error and busy flag stay visible. */
 type EnableState = { busy: boolean; log: string[]; err: string | null };
@@ -189,13 +195,16 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
         const b = await api<{ accountValue: number; spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
         const spotUsdc = b.spot?.find((x) => x.coin === "USDC");
         const inSpot = spotUsdc ? Math.max(0, spotUsdc.total - spotUsdc.hold) : 0;
+        const spotCoins = (b.spot ?? []).filter((x) => x.coin !== "USDC" && x.total > 0);
         if (b.accountValue < 0.5 && inSpot >= 0.5) {
           push(`Moving ${inSpot.toFixed(2)} USDC from spot to perps (sign in your wallet)…`);
-          if (!wallet) throw new Error("wallet not ready");
-          await withTimeout(usdClassTransferWithWallet(wallet, chainId, (Math.floor(inSpot * 100) / 100).toFixed(2).replace(/\.?0+$/, ""), true), "the wallet did not answer");
+          await withTimeout(usdClassTransferWithWallet(needWallet(wallet), chainId, (Math.floor(inSpot * 100) / 100).toFixed(2).replace(/\.?0+$/, ""), true), "the wallet did not answer");
           push("USDC is in perps");
-        } else if (b.accountValue < 0.5 && inSpot < 0.5) {
-          throw new Error("Hyperliquid needs USDC in your perps balance before trading can be enabled. Deposit first (any route), then press this again.");
+        } else if (b.accountValue < 0.5 && inSpot < 0.5 && spotCoins.length === 0) {
+          throw new Error("your Hyperliquid account has no balance yet. Deposit first (any route, including SOL / BTC / ETH), then press this again.");
+        } else if (b.accountValue < 0.5 && spotCoins.length > 0) {
+          // spot-only account (SOL/BTC/ETH through Unit): approvals register fine; selling for USDC comes after, through the agent
+          push(`Spot balance found (${spotCoins.map((c) => c.coin.replace(/^U(?=[A-Z]{3,})/, "")).join(", ")}); enabling trading so it can be sold for USDC`);
         }
       }
       push("Creating your agent wallet…");
@@ -204,19 +213,13 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
       let builderSigned = false;
       if (prep.needsAgentApproval) {
         push(`Approve agent ${prep.agentAddress.slice(0, 10)}… in your wallet (signature 1 of ${prep.needsBuilderApproval ? 2 : 1})`);
-        if (!mockMode) {
-          if (!wallet) throw new Error("wallet not ready");
-          await withTimeout(approveAgentWithWallet(wallet, chainId, prep.agentAddress, prep.agentName), "the wallet did not answer the agent approval");
-        }
+        if (!mockMode) await withTimeout(approveAgentWithWallet(needWallet(wallet), chainId, prep.agentAddress, prep.agentName), "the wallet did not answer the agent approval");
         agentSigned = true;
         push("Agent approved");
       } else push("Agent already approved");
       if (prep.needsBuilderApproval) {
         push(`Approve builder fee (max ${prep.maxFeeRate}, we charge ${prep.builderFeeTenthsBp / 1000}%) in your wallet`);
-        if (!mockMode) {
-          if (!wallet) throw new Error("wallet not ready");
-          await withTimeout(approveBuilderFeeWithWallet(wallet, chainId, prep.builder, prep.maxFeeRate), "the wallet did not answer the builder-fee approval");
-        }
+        if (!mockMode) await withTimeout(approveBuilderFeeWithWallet(needWallet(wallet), chainId, prep.builder, prep.maxFeeRate), "the wallet did not answer the builder-fee approval");
         builderSigned = true;
         push("Builder fee approved");
       } else push("Builder fee already approved");
@@ -233,7 +236,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <Step n={4} title="Enable trading" hint="Two signatures from your main wallet, once. We never hold your main key.">
+    <Step n={4} title="Enable trading" hint="Two signatures from your main wallet, once. No gas, nothing leaves Hyperliquid; your wallet may label them 'Ethereum' or your current network, that is only the signing network. We never hold your main key.">
       <ul className="text-xs text-fg-2 space-y-2 mb-3">
         <li className="flex gap-2"><span className="text-brand">1.</span><span><b>Approve an API wallet</b> so you don't sign every click. <span className="text-dim">approveAgent</span></span></li>
         <li className="flex gap-2"><span className="text-brand">2.</span><span><b>Approve the builder fee</b>, max 0.1%, so our code goes on your fills. <span className="text-dim">approveBuilderFee</span></span></li>

@@ -329,6 +329,8 @@ export async function sellSpotForUsdc(userId: string, address: string, coin: str
   const szStr = HL.formatSz(size, pair.szDecimals, "floor");
   const sz = Number(szStr);
   if (!(sz > 0)) throw new HttpError(400, `amount too small: ${coin} trades in steps of ${10 ** -pair.szDecimals}`);
+  // an order, so the approved agent signs it (browser wallets refuse the L1 signing domain): enable trading first
+  const agent = await agentFor(userId);
   if (HL_MOCK) {
     const r = await mock.mockSpotSell(address, coin, sz);
     return { ...r, sz: szStr };
@@ -337,7 +339,6 @@ export async function sellSpotForUsdc(userId: string, address: string, coin: str
   const mids = await HL.allMids();
   const spotMid = Number(mids[pair.name] ?? mids[`@${pair.pairIndex}`] ?? mids[perpName]);
   if (!Number.isFinite(spotMid) || spotMid <= 0) throw new HttpError(400, `no price for ${coin}`);
-  const agent = await getOrCreateAgent(userId);
   const ex = exchangeFor(agent.encryptedPrivKey);
   const px = HL.formatSpotPx(spotMid * 0.98, pair.szDecimals);
   const res = await ex.order({ orders: [{ a: pair.assetId, b: false, p: px, s: szStr, r: false, t: { limit: { tif: "Ioc" } } }], grouping: "na", builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } });

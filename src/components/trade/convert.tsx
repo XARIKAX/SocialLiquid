@@ -1,8 +1,10 @@
 "use client";
 /**
  * "Sell for USDC": turns a spot coin (SOL, BTC, ETH that arrived through Unit) into perps margin, the way the
- * Hyperliquid app does it in two moves: a spot market sell on the coin's USDC pair (signed by the trading agent),
- * then usdClassTransfer of the USDC from spot to perps (signed by the main wallet).
+ * Hyperliquid app does it in two moves: a spot market sell on the coin's USDC pair (an order, so signed by the
+ * approved trading agent; browser wallets cannot sign hyperliquid orders themselves), then usdClassTransfer of
+ * the USDC from spot to perps (a user-signed message from the main wallet). not enabled yet → the enable step
+ * renders right here.
  */
 import { useEffect, useRef, useState } from "react";
 import { useChainId, useWalletClient } from "wagmi";
@@ -12,9 +14,10 @@ import { useBalance } from "@/hooks/use-me";
 import { useMids } from "@/hooks/use-market";
 import { api } from "@/lib/client";
 import { fmtUsd } from "@/lib/format";
-import { spotSellWithWallet, usdClassTransferWithWallet } from "@/lib/hl-client";
+import { usdClassTransferWithWallet } from "@/lib/hl-client";
 import { displayCoin, fmtQty, spotRows } from "@/lib/spot";
 import { CoinIcon, Icon } from "../ui";
+import { EnablePanel, needWallet } from "./onboarding";
 
 const EVT = "sl:convert";
 /** open the sell-for-USDC modal for a spot coin (USOL) or its display name (SOL); no coin = the largest holding */
@@ -68,33 +71,20 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
   const valid = !!sel && amt > 0 && amt <= sel.available + 1e-9;
   const busy = phase.kind === "busy";
   const spotUsdc = bal.data?.spot?.find((b) => b.coin === "USDC");
+  const enabled = !!me?.user?.agent?.approved && !!me.user.agent.builderApproved;
 
   const run = async () => {
     if (!sel) return;
     try {
-      let r: { avgPx: number; totalSz: number; usdc: number };
-      if (mockMode) {
-        setPhase({ kind: "busy", text: `1 of 2 · Selling ${fmtQty(amt)} ${sel.name} on Hyperliquid spot…` });
-        r = await api<{ avgPx: number; totalSz: number; usdc: number; sz: string }>("/api/trade/spot-sell", { method: "POST", json: { coin: sel.coin, sz: amt } });
-      } else {
-        if (!wallet) throw new Error("wallet not connected");
-        setPhase({ kind: "busy", text: "1 of 2 · Getting the Hyperliquid spot quote…" });
-        const q = await api<{ assetId: number; sz: string; px: string; mid: number }>(`/api/trade/spot-quote?coin=${encodeURIComponent(sel.coin)}&sz=${amt}`);
-        setPhase({ kind: "busy", text: `1 of 2 · Confirm selling ${q.sz} ${sel.name} in your wallet (a signed message, no gas)…` });
-        const f = await spotSellWithWallet(wallet, chainId, q);
-        r = { avgPx: f.avgPx, totalSz: f.totalSz, usdc: f.avgPx * f.totalSz };
-      }
+      setPhase({ kind: "busy", text: `1 of 2 · Selling ${fmtQty(amt)} ${sel.name} on Hyperliquid spot (your trading agent signs, no wallet prompt)…` });
+      const r = await api<{ avgPx: number; totalSz: number; usdc: number; sz: string }>("/api/trade/spot-sell", { method: "POST", json: { coin: sel.coin, sz: amt } });
       const fresh = await api<{ spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
       const usdcSpot = fresh.spot?.find((b) => b.coin === "USDC");
       const move = Math.floor(Math.max(0, (usdcSpot ? usdcSpot.total - usdcSpot.hold : r.usdc)) * 100) / 100;
       if (move <= 0) throw new Error(`sold ${r.totalSz} ${sel.name} at ${fmtUsd(r.avgPx)}, but no USDC shows in spot yet; open Withdraw → HyperEVM or try again in a moment`);
       setPhase({ kind: "busy", text: mockMode ? "2 of 2 · Moving USDC to perps…" : `2 of 2 · Confirm moving ${fmtUsd(move)} to perps in your wallet…` });
-      if (mockMode) {
-        await api("/api/mock/funds", { method: "POST", json: { kind: "class-transfer", amount: move, toPerp: true } });
-      } else {
-        if (!wallet) throw new Error("wallet not connected");
-        await usdClassTransferWithWallet(wallet, chainId, String(move), true);
-      }
+      if (mockMode) await api("/api/mock/funds", { method: "POST", json: { kind: "class-transfer", amount: move, toPerp: true } });
+      else await usdClassTransferWithWallet(needWallet(wallet), chainId, String(move), true);
       qc.invalidateQueries({ queryKey: ["balance"] });
       setPhase({ kind: "done", text: `Sold ${r.totalSz} ${sel.name} at ${fmtUsd(r.avgPx)}. ${fmtUsd(move)} is now in your perps balance, ready to trade.` });
     } catch (e) {
@@ -110,10 +100,7 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
     try {
       setPhase({ kind: "busy", text: mockMode ? "Moving USDC to perps…" : `Confirm moving ${fmtUsd(move)} to perps in your wallet…` });
       if (mockMode) await api("/api/mock/funds", { method: "POST", json: { kind: "class-transfer", amount: move, toPerp: true } });
-      else {
-        if (!wallet) throw new Error("wallet not connected");
-        await usdClassTransferWithWallet(wallet, chainId, String(move), true);
-      }
+      else await usdClassTransferWithWallet(needWallet(wallet), chainId, String(move), true);
       qc.invalidateQueries({ queryKey: ["balance"] });
       setPhase({ kind: "done", text: `${fmtUsd(move)} moved to your perps balance.` });
     } catch (e) {
@@ -164,8 +151,13 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
               <button className="btn h-11 px-3" onClick={() => setAmount(String(Math.floor(sel.available * 1e6) / 1e6))} disabled={busy}>Max</button>
             </div>
             {amt > sel.available + 1e-9 && <p className="text-warn text-[11px] mt-1.5">That is more than you have.</p>}
-            {phase.kind === "idle" || phase.kind === "error" ? (
-              <button className="btn btn-primary h-11 w-full mt-3 text-[14px]" onClick={run} disabled={!valid || busy || (!mockMode && !wallet)} data-testid="convert-go">
+            {!enabled ? (
+              <div className="mt-1" data-testid="convert-enable">
+                <p className="text-xs text-muted mt-3 leading-snug">Hyperliquid fills spot sells through your approved trading agent, so enable trading first. Two signatures, once; the sell button appears right after.</p>
+                <EnablePanel />
+              </div>
+            ) : phase.kind === "idle" || phase.kind === "error" ? (
+              <button className="btn btn-primary h-11 w-full mt-3 text-[14px]" onClick={run} disabled={!valid || busy} data-testid="convert-go">
                 Sell {amt > 0 ? `${fmtQty(amt)} ` : ""}{sel.name} → USDC
               </button>
             ) : (
@@ -175,7 +167,7 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
             )}
             {phase.kind !== "idle" && phase.kind !== "busy" && <p className={`text-xs mt-2 leading-snug ${phase.kind === "error" ? "text-down" : "text-muted"}`} data-testid="convert-status">{phase.text}</p>}
             <p className="text-[11px] text-dim mt-3 leading-snug">
-              Same two moves as the Hyperliquid app, both signed by your own wallet as messages (no gas, nothing leaves Hyperliquid): a market sell of {displayCoin(sel.coin)} on Hyperliquid spot, then the USDC moves from spot to perps. Your wallet may label the signature &quot;Ethereum&quot;; that is only the signing network.
+              Same two moves as the Hyperliquid app: a market sell of {displayCoin(sel.coin)} on Hyperliquid spot, placed by your trading agent (no wallet prompt), then one signed message from your wallet moves the USDC from spot to perps. No gas, nothing leaves Hyperliquid. Your wallet may label the signature &quot;Ethereum&quot; or your current network; that is only the signing network.
             </p>
           </>
         )}
