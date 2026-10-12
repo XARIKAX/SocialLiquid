@@ -66,7 +66,8 @@ function HlBoard() {
       )}
       <section className="card overflow-hidden">
         {q.isLoading && <Skeleton rows={10} h={48} />}
-        {q.data && rows.length === 0 && <Empty title="Waiting for the first sync" hint="The indexer mirrors Hyperliquid's leaderboard on startup and every hour after that." />}
+        {q.isError && <Empty title="Leaderboard unavailable" hint={(q.error as Error).message} />}
+        {q.data && rows.length === 0 && <Empty title="Waiting for the first sync" hint="Hyperliquid's leaderboard is mirrored on the first request and refreshed hourly. Refresh in a moment." />}
         {rows.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px] min-w-[760px]">
