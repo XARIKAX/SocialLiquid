@@ -472,7 +472,8 @@ input[type="range"].slider::-moz-range-thumb {
   object-position: 70% 60%;
 }
 @media (max-width: 640px) {
-  .hero-img { object-position: 92% 72%; }
+  /* taller than the section and anchored to the top, so the lead fish lands below the buttons instead of behind them */
+  .hero-img { height: 125%; object-position: 83% 0; }
 }
 .hero-shade {
   position: absolute;

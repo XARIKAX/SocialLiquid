@@ -60,7 +60,7 @@ function Hero({ items }: { items: FeedItem[] }) {
         <img src="/landing/hero.webp" alt="" width={1376} height={768} loading="eager" fetchPriority="high" decoding="async" className="hero-img" />
       </picture>
       <div className="hero-shade" aria-hidden />
-      <div className="relative z-10 max-w-[1180px] mx-auto px-5 md:px-8 pt-28 md:pt-36 pb-56 md:pb-64 lg:pb-72">
+      <div className="relative z-10 max-w-[1180px] mx-auto px-5 md:px-8 pt-28 md:pt-36 pb-64 md:pb-64 lg:pb-72">
         <div className="max-w-[640px]">
           <div className="mono-label text-brand">Live on Hyperliquid mainnet</div>
           <h1 className="wordmark wordmark-left mt-4">
