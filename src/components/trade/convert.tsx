@@ -14,6 +14,7 @@ import { api } from "@/lib/client";
 import { fmtUsd } from "@/lib/format";
 import { usdClassTransferWithWallet } from "@/lib/hl-client";
 import { displayCoin, fmtQty, spotRows } from "@/lib/spot";
+import { useOnboarding } from "./onboarding";
 import { CoinIcon, Icon } from "../ui";
 
 const EVT = "sl:convert";
@@ -43,6 +44,8 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
   const qc = useQueryClient();
   const bal = useBalance(address);
   const mids = useMids();
+  // the sell is signed by the trading agent, so trading must be enabled first (approveAgent + builder fee)
+  const ob = useOnboarding();
   const rows = spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC");
   const row = rows.find((r) => r.coin === want || r.name === want) ?? rows[0] ?? null;
   const [amount, setAmount] = useState("");
@@ -151,7 +154,12 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
               <button className="btn h-11 px-3" onClick={() => setAmount(String(Math.floor(sel.available * 1e6) / 1e6))} disabled={busy}>Max</button>
             </div>
             {amt > sel.available + 1e-9 && <p className="text-warn text-[11px] mt-1.5">That is more than you have.</p>}
-            {phase.kind === "idle" || phase.kind === "error" ? (
+            {ob.stage !== "ready" ? (
+              <div className="mt-3" data-testid="convert-enable">
+                <p className="text-xs text-muted mb-2">The sale is placed by your trading agent on Hyperliquid, so trading has to be enabled once first. Same step as before your first trade.</p>
+                {ob.Panel ? <ob.Panel /> : <button className="btn btn-primary h-11 w-full" onClick={() => ob.act?.()} disabled={ob.busy}>{ob.cta}</button>}
+              </div>
+            ) : phase.kind === "idle" || phase.kind === "error" ? (
               <button className="btn btn-primary h-11 w-full mt-3 text-[14px]" onClick={run} disabled={!valid || busy || (!mockMode && !wallet)} data-testid="convert-go">
                 Sell {amt > 0 ? `${fmtQty(amt)} ` : ""}{sel.name} → USDC
               </button>
