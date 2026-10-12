@@ -172,6 +172,8 @@ type MockState = {
   history?: Record<string, MockHist[]>;
   twaps?: Record<string, MockTwap[]>;
   leverage?: Record<string, number>;
+  /** net mock deposits per user, added to the synthetic base balance */
+  deposits?: Record<string, number>;
 };
 
 const STATE_FILE = path.join(process.cwd(), ".hl-mock-state.json");
@@ -427,7 +429,7 @@ export async function clearinghouseState(address: string): Promise<HlClearinghou
     });
     const totalNtl = positions.reduce((acc, p) => acc + Number(p.positionValue), 0);
     const margin = positions.reduce((acc, p) => acc + Number(p.marginUsed), 0);
-    const base = 1000 + (hash32(a) % 50_000);
+    const base = 1000 + (hash32(a) % 50_000) + ((s.deposits ?? {})[a] ?? 0);
     const accountValue = base + positions.reduce((acc, p) => acc + Number(p.unrealizedPnl), 0);
     return {
       marginSummary: {
@@ -491,6 +493,15 @@ export async function portfolio(address: string) {
 }
 
 // ---------- mock exchange (write side, used by the trade route when HL_MOCK) ----------
+
+/** mock deposit (positive) or withdrawal (negative) */
+export async function mockFunds(user: string, delta: number) {
+  withState((s) => {
+    const d = (s.deposits ??= {});
+    const a = user.toLowerCase();
+    d[a] = (d[a] ?? 0) + delta;
+  });
+}
 
 export async function mockApproveBuilderFee(user: string, builder: string, tenthsBp: number) {
   withState((s) => {

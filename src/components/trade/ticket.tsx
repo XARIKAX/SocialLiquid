@@ -4,11 +4,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { TICKET_PRICE_EVENT } from "@/hooks/use-account";
-import { api, HL_APP_URL_CLIENT } from "@/lib/client";
+import { api } from "@/lib/client";
 import { fmtPx, fmtUsd } from "@/lib/format";
 import type { MarketSummary } from "@/lib/hl-types";
 import { Icon, Toggle } from "../ui";
 import { useOnboarding } from "./onboarding";
+import { openFunds } from "./funds";
 
 type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap";
 const PRO: [OrderType, string][] = [
@@ -358,8 +359,8 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
         <Row k="Fees" v={<span><span className="text-brand">◆</span> {(TAKER * 100).toFixed(3)}% / {(MAKER * 100).toFixed(3)}% + {(BUILDER * 100).toFixed(2)}% builder{sizeUsd ? ` · ${fmtUsd(sizeUsd * feeRate)}` : ""}</span>} />
       </dl>
       <div className="grid grid-cols-2 gap-1.5">
-        <a className="btn h-9" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Deposit</a>
-        <a className="btn h-9" href={`${HL_APP_URL_CLIENT}/portfolio`} target="_blank" rel="noreferrer">Withdraw</a>
+        <button className="btn h-9" onClick={() => openFunds("deposit")}>Deposit</button>
+        <button className="btn h-9" onClick={() => openFunds("withdraw")}>Withdraw</button>
       </div>
     </section>
   );

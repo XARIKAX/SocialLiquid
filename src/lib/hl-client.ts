@@ -21,3 +21,8 @@ export async function approveAgentWithWallet(wallet: WalletClient, chainId: numb
 export async function approveBuilderFeeWithWallet(wallet: WalletClient, chainId: number, builder: string, maxFeeRate: string) {
   return exchange(wallet, chainId).approveBuilderFee({ builder: builder as `0x${string}`, maxFeeRate });
 }
+
+/** withdraw USDC from hyperliquid to an arbitrum address. signed by the main wallet; the agent key cannot withdraw. $1 fee, ~5 minutes. */
+export async function withdrawWithWallet(wallet: WalletClient, chainId: number, destination: string, amount: string) {
+  return exchange(wallet, chainId).withdraw3({ destination: destination as `0x${string}`, amount });
+}
