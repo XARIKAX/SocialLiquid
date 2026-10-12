@@ -7,7 +7,8 @@
  * renders right here.
  */
 import { useEffect, useRef, useState } from "react";
-import { useChainId, useWalletClient } from "wagmi";
+import { useChainId } from "wagmi";
+import { useSigner } from "@/hooks/use-signer";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
@@ -41,7 +42,7 @@ type Phase = { kind: "idle" } | { kind: "busy"; text: string } | { kind: "done";
 function ConvertModal({ address, want, onClose }: { address: string; want: string | null; onClose: () => void }) {
   const { me } = useAuth();
   const mockMode = me?.network === "mock";
-  const { data: wallet } = useWalletClient();
+  const { wallet } = useSigner();
   const chainId = useChainId();
   const qc = useQueryClient();
   const bal = useBalance(address);

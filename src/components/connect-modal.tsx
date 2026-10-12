@@ -23,7 +23,7 @@ const HINT: Record<string, string> = { injected: "Any EVM browser extension", wa
 /** the wallets we want visible even before they are installed. rdns is what the extension announces via eip-6963. */
 const FEATURED = [
   { id: "metamask", name: "MetaMask", rdns: ["io.metamask", "io.metamask.flask"], color: "#f6851b", url: "https://metamask.io/download/", hint: "Browser extension or mobile" },
-  { id: "phantom", name: "Phantom", rdns: ["app.phantom"], color: "#ab9ff2", url: "https://phantom.com/download", hint: "Solana wallet with EVM support · Arbitrum works" },
+  { id: "phantom", name: "Phantom", rdns: ["app.phantom"], color: "#ab9ff2", url: "https://phantom.com/download", hint: "Solana wallet; EVM side signs on Ethereum, Base or Polygon (no Arbitrum)" },
   { id: "rabby", name: "Rabby", rdns: ["io.rabby"], color: "#7084ff", url: "https://rabby.io/", hint: "Multi-chain extension by DeBank" },
 ] as const;
 

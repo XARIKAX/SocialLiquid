@@ -153,18 +153,23 @@ function publicClient(chain: Chain) {
   return c;
 }
 
-/** chains Phantom's EVM side can show; it refuses to switch to anything else */
-export const PHANTOM_CHAINS = new Set([1, 8453, 137, 999]);
+/** chains Phantom's EVM side can show (Ethereum, Base, Polygon); asking it for any other opens its "Unsupported network" screen */
+export const PHANTOM_CHAINS = new Set([1, 8453, 137]);
+export const PHANTOM_HINT = "Phantom's EVM side only has Ethereum, Base and Polygon (no Arbitrum, no HyperEVM)";
+let phantomWallet = false;
+/** the funds modal tells us whether the connected extension is Phantom, so no route ever asks it to switch to a chain it lacks */
+export function markPhantomWallet(v: boolean) {
+  phantomWallet = v;
+}
 
 async function ensureChain(wallet: WalletClient, chain: Chain) {
   if ((await wallet.getChainId()) === chain.id) return;
+  if (phantomWallet && !PHANTOM_CHAINS.has(chain.id)) throw new Error(`Phantom cannot switch to ${chain.name}. ${PHANTOM_HINT}: pick one of those routes, or connect MetaMask or Rabby for ${chain.name}.`);
   try {
     await wallet.switchChain({ id: chain.id });
   } catch (e) {
     const msg = (e as Error).message ?? String(e);
-    if (/unsupported|not supported|4902|4092|unrecognized/i.test(msg) || !PHANTOM_CHAINS.has(chain.id)) {
-      throw new Error(`Your wallet cannot switch to ${chain.name}. Phantom only does Ethereum, Base, Polygon and HyperEVM on the EVM side: pick one of those routes, or connect MetaMask or Rabby for ${chain.name}.`);
-    }
+    if (/unsupported|not supported|4902|4092|unrecognized/i.test(msg)) throw new Error(`Your wallet cannot switch to ${chain.name}: add that network to the wallet, or connect MetaMask or Rabby for this route.`);
     throw e;
   }
 }
