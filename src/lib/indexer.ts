@@ -4,6 +4,7 @@
  * positions and fills are mirrored from hyperliquid, never trusted from the client.
  */
 import type { HlLeaderboardRow } from "./hl-types";
+import { featuredAddresses } from "./featured";
 import { Prisma, type FeedEventType, type ThesisOutcome } from "@prisma/client";
 import { prisma } from "./db";
 import * as HL from "./hl";
@@ -269,6 +270,18 @@ export async function seedTrackedAddresses(count: number): Promise<number> {
     data: rows.map((r) => ({ address: r.address, source: "DISCOVERED" as const, displayName: r.displayName })),
     skipDuplicates: true,
   });
+  return res.count;
+}
+
+/** featured traders (lib/featured.ts + PINNED_ADDRESSES) are always tracked as MANUAL, which polls ahead of DISCOVERED */
+export async function trackFeatured(): Promise<number> {
+  const addrs = featuredAddresses();
+  if (!addrs.length) return 0;
+  const res = await prisma.trackedAddress.createMany({
+    data: addrs.map((address) => ({ address, source: "MANUAL" as const })),
+    skipDuplicates: true,
+  });
+  await prisma.trackedAddress.updateMany({ where: { address: { in: addrs }, source: "DISCOVERED" }, data: { source: "MANUAL" } });
   return res.count;
 }
 

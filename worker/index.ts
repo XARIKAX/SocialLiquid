@@ -8,7 +8,7 @@ import "dotenv/config";
 import * as hl from "@nktkas/hyperliquid";
 import { prisma } from "../src/lib/db";
 import { HL_MOCK, IS_TESTNET } from "../src/lib/env";
-import { refreshHlLeaderboard, seedTrackedAddresses, syncAddress, trackUsers } from "../src/lib/indexer";
+import { refreshHlLeaderboard, seedTrackedAddresses, syncAddress, trackFeatured, trackUsers } from "../src/lib/indexer";
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 5000);
 const WEIGHT_BUDGET_PER_MIN = Number(process.env.HL_WEIGHT_BUDGET_PER_MIN ?? 1000);
@@ -130,6 +130,8 @@ async function housekeeping() {
       if (Date.now() - lastHlRefresh >= HL_LEADERBOARD_REFRESH_MS) await refreshHlBoard("refresh");
       const added = await trackUsers();
       if (added) log(`tracking ${added} new user address(es)`);
+      const pinned = await trackFeatured();
+      if (pinned) log(`tracking ${pinned} new featured address(es)`);
       await syncWs();
     } catch (e) {
       log("housekeeping error", (e as Error).message);
@@ -140,6 +142,8 @@ async function housekeeping() {
 
 async function main() {
   log(`starting. network=${HL_MOCK ? "mock" : IS_TESTNET ? "testnet" : "mainnet"} budget=${WEIGHT_BUDGET_PER_MIN}w/min floor=${POLL_INTERVAL_MS}ms`);
+  const featured = await trackFeatured();
+  log(`featured traders tracked (+${featured} new)`);
   await refreshHlBoard("startup");
   const tracked = await prisma.trackedAddress.count();
   if (tracked < SEED_COUNT) {

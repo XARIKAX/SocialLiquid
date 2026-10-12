@@ -46,6 +46,7 @@ pnpm worker                     # indexer, in a second terminal
 | `HL_WEIGHT_BUDGET_PER_MIN` | info api weight budget for the worker (published limit 1200 / min / ip) |
 | `POLL_INTERVAL_MS` | floor on the per address poll interval |
 | `SEED_ADDRESSES` / `SEED_COUNT` | leaderboard seed fallback and size |
+| `PINNED_ADDRESSES` | extra always-tracked traders, on top of the hand-verified list in `src/lib/featured.ts` |
 | `HL_LEADERBOARD_TOP_N` / `HL_LEADERBOARD_REFRESH_MS` | how many hyperliquid leaderboard rows to mirror (10) and how often (1h) |
 | `HL_MOCK` | offline synthetic exchange |
 
@@ -80,7 +81,7 @@ a thesis is bound to a position id at post time. when the worker sees that posit
 
 on startup and every hour the worker mirrors hyperliquid's own leaderboard (`stats-data.hyperliquid.xyz/Mainnet/leaderboard`, the feed behind app.hyperliquid.xyz/leaderboard) into `HlLeaderboardEntry`: the same 30-day window, the same exclusion rule (under 100k account value and under 10M volume), sorted by 30d pnl, top `HL_LEADERBOARD_TOP_N` (10). account value, pnl, roi and volume are stored exactly as hyperliquid reports them and shown on `/leaderboard` under the default "hyperliquid 30d" tab, so launch-day rankings match hyperliquid to the cent. the same ordering seeds the tracked address list, so those traders' positions are indexed first. if the worker is not running, the web process fetches the board itself on the first request and re-fetches in the background once it is older than the refresh interval.
 
-`pnpm hl:top` prints that top 10 (full addresses, account value, pnl, roi, volume) from your own machine, plus a ready `SEED_ADDRESSES` line.
+`src/lib/featured.ts` holds hand-verified traders (copied from hyperliquid's leaderboard) that are always tracked with source MANUAL, so they are polled before discovered addresses from the first cycle. `pnpm hl:top` prints that top 10 (full addresses, account value, pnl, roi, volume) from your own machine, plus a ready `SEED_ADDRESSES` line.
 
 positions and fills are mirrored from chain and never written by the client. `lib/indexer.ts` is shared by the worker and the trade route.
 
