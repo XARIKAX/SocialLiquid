@@ -10,6 +10,9 @@ import type { MarketSummary } from "@/lib/hl-types";
 import { Icon, Toggle } from "../ui";
 import { useOnboarding } from "./onboarding";
 import { openFunds } from "./funds";
+import { fmtQty, spotRows } from "@/lib/spot";
+import { useMids } from "@/hooks/use-market";
+import { HL_APP_URL_CLIENT } from "@/lib/client";
 
 type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap";
 const PRO: [OrderType, string][] = [
@@ -35,6 +38,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const ready = ob.stage === "ready";
   const qc = useQueryClient();
   const bal = useBalance(signedIn ? address : null);
+  const mids = useMids();
   const maxLev = market?.maxLeverage ?? 50;
   const szDec = market?.szDecimals ?? 4;
 
@@ -402,6 +406,11 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
         <button className="btn h-9" onClick={() => openFunds("deposit")}>Deposit</button>
         <button className="btn h-9" onClick={() => openFunds("withdraw")}>Withdraw</button>
       </div>
+      {spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC").length > 0 && (
+        <p className="text-[11px] text-muted leading-snug" data-testid="ticket-spot">
+          Spot: {spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC").map((r) => `${fmtQty(r.total)} ${r.name}`).join(" · ")}. <a className="text-brand hover:underline" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Sell for USDC</a> on Hyperliquid to use it as margin here.
+        </p>
+      )}
     </section>
   );
 }

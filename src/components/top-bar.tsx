@@ -4,6 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
+import { useMids } from "@/hooks/use-market";
+import { fmtQty, spotRows } from "@/lib/spot";
 import { api } from "@/lib/client";
 import { fmtPct, fmtPx, fmtUsd, shortAddr } from "@/lib/format";
 import { Avatar, CoinIcon, Icon, Logo } from "./ui";
@@ -20,6 +22,9 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
   const connect = useConnectModal();
   const [theme, setTheme] = useTheme();
   const upnl = bal.data?.positions.reduce((a, p) => a + p.unrealizedPnl, 0) ?? 0;
+  const mids = useMids();
+  const spot = spotRows(bal.data?.spot, mids.data).filter((r) => r.name !== "USDC");
+  const spotUsd = spot.reduce((a, r) => a + (r.usd ?? 0), 0);
   return (
     <header className="h-14 flex items-center gap-3 px-3 md:px-4 sticky top-0 z-30 bg-bg/90 backdrop-blur">
       <button className="md:hidden btn btn-ghost px-2 h-9" onClick={onToggleFeed} aria-label="toggle feed">
@@ -50,9 +55,15 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
               <span className="num text-[13px]">
                 {bal.data ? fmtUsd(bal.data.withdrawable) : "…"} <span className="text-muted font-normal">cash</span>
               </span>
-              <button onClick={() => openFunds("deposit")} className="text-[11px] text-brand font-medium hover:underline">
-                Deposit more
-              </button>
+              {spot.length > 0 ? (
+                <button onClick={() => openFunds("withdraw")} className="text-[11px] text-fg-2 hover:underline num text-left truncate max-w-[180px]" title={spot.map((r) => `${fmtQty(r.total)} ${r.name}`).join(" · ")} data-testid="topbar-spot">
+                  {fmtQty(spot[0].total)} {spot[0].name}{spot.length > 1 ? ` +${spot.length - 1}` : ""} <span className="text-muted">spot{spotUsd > 0 ? ` ≈ ${fmtUsd(spotUsd)}` : ""}</span>
+                </button>
+              ) : (
+                <button onClick={() => openFunds("deposit")} className="text-[11px] text-brand font-medium hover:underline">
+                  Deposit more
+                </button>
+              )}
             </div>
             <Link href={`/t/${me?.user?.handle ?? address}`} className="flex items-center gap-2.5 card pl-3 pr-1.5 h-10 rounded-[10px] hover:bg-panel-2 transition-colors">
               <span className="flex flex-col justify-center leading-tight">

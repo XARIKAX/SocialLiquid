@@ -4,6 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { livePnl, useMids } from "@/hooks/use-market";
+import { fmtQty, spotRows } from "@/lib/spot";
+import { openFunds } from "./funds";
+import { HL_APP_URL_CLIENT } from "@/lib/client";
 import { useAccountFills, useFundingPayments, useOpenOrders, useOrderHistory, useTwaps, type OpenOrder } from "@/hooks/use-account";
 import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, timeAgo } from "@/lib/format";
@@ -119,8 +122,10 @@ function Export({ rows, name }: { rows: Record<string, unknown>[]; name: string 
 function Balances() {
   const { address } = useAuth();
   const bal = useBalance(address);
+  const mids = useMids();
   const b = bal.data;
   const upnl = b?.positions.reduce((a, p) => a + p.unrealizedPnl, 0) ?? 0;
+  const spot = spotRows(b?.spot, mids.data);
   return (
     <Table head={<><Th>Asset</Th><Th right>Total Balance</Th><Th right>Available Balance</Th><Th right>Margin Used</Th><Th right>Unrealised PnL</Th><Th right>Contract</Th></>}>
       <tr className="border-b border-line/60">
@@ -131,6 +136,30 @@ function Balances() {
         <Td right className={upnl >= 0 ? "text-up" : "text-down"}>{b ? fmtUsd(upnl, { sign: true }) : "…"}</Td>
         <Td right className="text-muted">Perps</Td>
       </tr>
+      {spot.map((r) => (
+        <tr key={r.coin} className="border-b border-line/60" data-testid={`spot-row-${r.name}`}>
+          <Td><span className="flex items-center gap-2 font-sans font-medium"><CoinIcon coin={r.name} size={20} />{r.name}{r.name !== r.coin && <span className="text-dim font-normal text-[11px]">{r.coin}</span>}</span></Td>
+          <Td right><span className="block">{fmtQty(r.total)} {r.name}</span>{r.usd !== null && <span className="block text-[11px] text-dim">≈ {fmtUsd(r.usd)}</span>}</Td>
+          <Td right>{fmtQty(r.available)} {r.name}</Td>
+          <Td right className="text-dim">—</Td>
+          <Td right className="text-dim">—</Td>
+          <Td right className="text-muted">
+            Spot
+            {r.name !== "USDC" && (
+              <span className="block text-[11px]">
+                <a className="text-brand hover:underline" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Sell for USDC</a>
+                {" · "}
+                <button className="text-brand hover:underline" onClick={() => openFunds("withdraw")}>Withdraw</button>
+              </span>
+            )}
+          </Td>
+        </tr>
+      ))}
+      {b && b.spot && spot.length === 0 && (
+        <tr>
+          <td className="px-4 py-2 text-dim text-xs" colSpan={6}>No spot balances. Native deposits (SOL, BTC, ETH) land here; USDC deposits land in perps above.</td>
+        </tr>
+      )}
     </Table>
   );
 }
