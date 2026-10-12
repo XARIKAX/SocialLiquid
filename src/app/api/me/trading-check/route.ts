@@ -20,6 +20,9 @@ export const GET = handler(async () => {
   } catch (e) {
     out.perps = `error: ${(e as Error).message}`;
   }
+  const abstraction = await HL.userAbstraction(s.address);
+  out.abstraction = abstraction ?? "unknown";
+  out.unified = HL.isUnified(abstraction);
   try {
     out.spot = await HL.spotBalances(s.address);
   } catch (e) {
@@ -54,8 +57,10 @@ export const GET = handler(async () => {
     ? builder.reason
     : typeof perps === "string"
       ? "hyperliquid did not answer for this address"
-      : (perps.accountValue ?? 0) < 0.5 && (spotUsdc ?? 0) >= 0.5
-        ? "USDC is in spot, not perps: move it to perps first (the enable-trading step now does this)"
+      : HL.isUnified(abstraction)
+        ? "unified account: spot and perps share one margin pool, so nothing needs moving and usdClassTransfer is refused by design"
+        : (perps.accountValue ?? 0) < 0.5 && (spotUsdc ?? 0) >= 0.5
+          ? "USDC is in spot, not perps: move it to perps first (the enable-trading step now does this)"
         : (perps.accountValue ?? 0) < 0.5 && spotCoins.length > 0
           ? `spot-only account (${spotCoins.join(", ")}): enable trading, then Sell for USDC (agent-signed) and the USDC moves to perps`
           : (perps.accountValue ?? 0) < 0.5

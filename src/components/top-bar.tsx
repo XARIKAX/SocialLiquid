@@ -57,10 +57,12 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
               <span className="num text-[13px]">
                 {bal.data ? fmtUsd(cashTotal(bal.data)) : "…"} <span className="text-muted font-normal">cash</span>
               </span>
-              {spotUsdc > 0.01 ? (
+              {spotUsdc > 0.01 && !bal.data?.unified ? (
                 <button onClick={() => openConvert("USDC")} className="text-[11px] text-brand font-medium hover:underline text-left truncate max-w-[220px]" data-testid="topbar-move-usdc">
                   {fmtUsd(spotUsdc)} in spot · Move to perps to trade
                 </button>
+              ) : spotUsdc > 0.01 ? (
+                <span className="text-[11px] text-muted truncate max-w-[220px] block">{fmtUsd(spotUsdc)} USDC · unified, ready to trade</span>
               ) : spot.length > 0 ? (
                 <button onClick={() => openConvert(spot[0].coin)} className="text-[11px] text-fg-2 hover:underline num text-left truncate max-w-[200px]" title="Sell for USDC to trade perps with it" data-testid="topbar-spot">
                   {fmtQty(spot[0].total)} {spot[0].name}{spot.length > 1 ? ` +${spot.length - 1}` : ""} <span className="text-muted">spot{spotUsd > 0 ? ` ≈ ${fmtUsd(spotUsd)}` : ""}</span> <span className="text-brand">· Sell for USDC</span>

@@ -34,6 +34,10 @@ export type Balance = {
   totalNtlPos?: number;
   /** cross maintenance margin used; null if hyperliquid did not report it */
   maintenanceMargin?: number | null;
+  /** hyperliquid's account abstraction mode; null if the read failed */
+  abstraction?: "unifiedAccount" | "portfolioMargin" | "disabled" | "default" | null;
+  /** spot and perps share one margin pool: spot USDC already trades, and usdClassTransfer is refused */
+  unified?: boolean;
   /** spot balances (native deposits through Unit land here); null if the spot read failed */
   spot: { coin: string; total: number; hold: number }[] | null;
   accountValue: number;

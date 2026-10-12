@@ -40,6 +40,7 @@ function explain(e: unknown): string {
   const msg = (e as Error)?.message ?? String(e);
   if (/user rejected|user denied|rejected the request/i.test(msg)) return "You dismissed the request in your wallet. Press Approve both to try again.";
   if (/does not exist|must deposit/i.test(msg)) return "Hyperliquid will not take approvals from an account with no perps balance yet. Move USDC to perps (or deposit), then try again.";
+  if (/unified account/i.test(msg)) return "Your Hyperliquid account is unified: spot and perps share one balance, so there is nothing to move. Reload the page and press again.";
   return msg.split("\n")[0];
 }
 
@@ -221,11 +222,14 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
       // hyperliquid only registers approvals for accounts that hold USDC in perps. deposits that landed in spot move first.
       if (!mockMode && address) {
         push("Checking your Hyperliquid balances…");
-        const b = await api<{ accountValue: number; spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
+        const b = await api<{ accountValue: number; unified: boolean; spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
         const spotUsdc = b.spot?.find((x) => x.coin === "USDC");
         const inSpot = spotUsdc ? Math.max(0, spotUsdc.total - spotUsdc.hold) : 0;
         const spotCoins = (b.spot ?? []).filter((x) => x.coin !== "USDC" && x.total > 0);
-        if (b.accountValue < 0.5 && inSpot >= 0.5) {
+        if (b.unified) {
+          // one margin pool: spot USDC already backs perps, and hyperliquid refuses usdClassTransfer outright
+          push("Unified account: your spot USDC already backs perps, nothing to move");
+        } else if (b.accountValue < 0.5 && inSpot >= 0.5) {
           push(`Moving ${inSpot.toFixed(2)} USDC from spot to perps (sign in your wallet)…`);
           await withTimeout(usdClassTransferWithWallet(needWallet(wallet), chainId, (Math.floor(inSpot * 100) / 100).toFixed(2).replace(/\.?0+$/, ""), true), "the wallet did not answer");
           await waitForPerps(address, push);

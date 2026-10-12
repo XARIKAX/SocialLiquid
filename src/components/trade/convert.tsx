@@ -72,6 +72,8 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
   const busy = phase.kind === "busy";
   const spotUsdc = bal.data?.spot?.find((b) => b.coin === "USDC");
   const enabled = !!me?.user?.agent?.approved && !!me.user.agent.builderApproved;
+  /** spot and perps share one margin pool: nothing to move, and hyperliquid rejects usdClassTransfer */
+  const unified = !!bal.data?.unified;
 
   const run = async () => {
     if (!sel) return;
@@ -81,6 +83,12 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
       const fresh = await api<{ spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
       const usdcSpot = fresh.spot?.find((b) => b.coin === "USDC");
       const move = Math.floor(Math.max(0, (usdcSpot ? usdcSpot.total - usdcSpot.hold : r.usdc)) * 100) / 100;
+      if (unified) {
+        // one margin pool: the USDC from the sale already backs perps, and hyperliquid refuses the transfer
+        qc.invalidateQueries({ queryKey: ["balance"] });
+        setPhase({ kind: "done", text: `Sold ${r.totalSz} ${sel.name} at ${fmtUsd(r.avgPx)}. Your account is unified, so the ${fmtUsd(move)} is already margin, ready to trade.` });
+        return;
+      }
       if (move <= 0) throw new Error(`sold ${r.totalSz} ${sel.name} at ${fmtUsd(r.avgPx)}, but no USDC shows in spot yet; open Withdraw → HyperEVM or try again in a moment`);
       setPhase({ kind: "busy", text: mockMode ? "2 of 2 · Moving USDC to perps…" : `2 of 2 · Confirm moving ${fmtUsd(move)} to perps in your wallet…` });
       if (mockMode) await api("/api/mock/funds", { method: "POST", json: { kind: "class-transfer", amount: move, toPerp: true } });
@@ -113,7 +121,7 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label="sell for USDC">
       <div className="card w-full max-w-md p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[15px] font-semibold">{sel ? "Sell for USDC" : "Move USDC to perps"}</h2>
+          <h2 className="text-[15px] font-semibold">{sel ? "Sell for USDC" : unified ? "Your USDC balance" : "Move USDC to perps"}</h2>
           <button className="btn btn-ghost h-8 w-8 px-0" onClick={onClose} aria-label="close">✕</button>
         </div>
         {spotUsdc && spotUsdc.total - spotUsdc.hold > 0.01 && (
@@ -122,8 +130,14 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
               <span className="text-muted">USDC in your spot balance</span>
               <span className="num font-semibold">{fmtUsd(spotUsdc.total - spotUsdc.hold)}</span>
             </div>
-            <p className="text-dim mt-1 leading-snug">Deposits sometimes land in spot. Perps trade from the perps balance, so move it over: one signed message, no fee, instant.</p>
-            <button className="btn btn-primary h-10 w-full mt-2" onClick={moveOnly} disabled={busy || (!mockMode && !wallet)} data-testid="move-usdc-go">{busy ? "Working…" : `Move ${fmtUsd(spotUsdc.total - spotUsdc.hold)} to perps`}</button>
+            {unified ? (
+              <p className="text-dim mt-1 leading-snug">Your Hyperliquid account is unified: spot and perps share one margin pool, so this USDC already backs your trades. There is nothing to move.</p>
+            ) : (
+              <>
+                <p className="text-dim mt-1 leading-snug">Deposits sometimes land in spot. Perps trade from the perps balance, so move it over: one signed message, no fee, instant.</p>
+                <button className="btn btn-primary h-10 w-full mt-2" onClick={moveOnly} disabled={busy || (!mockMode && !wallet)} data-testid="move-usdc-go">{busy ? "Working…" : `Move ${fmtUsd(spotUsdc.total - spotUsdc.hold)} to perps`}</button>
+              </>
+            )}
             {phase.kind !== "idle" && phase.kind !== "busy" && !sel && <p className={`text-xs mt-2 leading-snug ${phase.kind === "error" ? "text-down" : "text-up"}`} data-testid="convert-status">{phase.text}</p>}
           </div>
         )}
