@@ -5,7 +5,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { api } from "@/lib/client";
-import { approveAgentWithWallet, approveBuilderFeeWithWallet } from "@/lib/hl-client";
+import { approveAgentWithWallet, approveBuilderFeeWithWallet, usdClassTransferWithWallet } from "@/lib/hl-client";
+
+/** a wallet prompt that never comes back should not leave the button spinning forever */
+function withTimeout<T>(p: Promise<T>, what: string, ms = 120_000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${what} within 2 minutes; open the wallet, then try again`)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
 import { fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
 import { openFunds } from "./funds";
@@ -145,7 +153,7 @@ function HandleStep({ onDone }: { onDone: () => void }) {
 function EnableTradingStep({ onDone }: { onDone: () => void }) {
   const { data: wallet } = useWalletClient();
   const chainId = useChainId();
-  const { me } = useAuth();
+  const { me, address } = useAuth();
   const [log, setLog] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -157,6 +165,20 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
     setErr(null);
     setLog([]);
     try {
+      // hyperliquid only registers approvals for accounts that hold USDC in perps. deposits that landed in spot are moved first.
+      if (!mockMode && address) {
+        const b = await api<{ accountValue: number; spot: { coin: string; total: number; hold: number }[] | null }>(`/api/balance?address=${address}`);
+        const spotUsdc = b.spot?.find((x) => x.coin === "USDC");
+        const inSpot = spotUsdc ? Math.max(0, spotUsdc.total - spotUsdc.hold) : 0;
+        if (b.accountValue < 0.5 && inSpot >= 0.5) {
+          push(`Moving ${inSpot.toFixed(2)} USDC from spot to perps (sign in your wallet)…`);
+          if (!wallet) throw new Error("wallet not ready");
+          await withTimeout(usdClassTransferWithWallet(wallet, chainId, (Math.floor(inSpot * 100) / 100).toFixed(2).replace(/\.?0+$/, ""), true), "the wallet did not answer");
+          push("USDC is in perps");
+        } else if (b.accountValue < 0.5 && inSpot < 0.5) {
+          throw new Error("Hyperliquid needs USDC in your perps balance before trading can be enabled. Deposit first (any route), then press this again.");
+        }
+      }
       push("Creating your agent wallet…");
       const prep = await api<Prepare>("/api/agent/prepare", { method: "POST" });
       let agentSigned = false;
@@ -165,7 +187,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
         push(`Approve agent ${prep.agentAddress.slice(0, 10)}… in your wallet`);
         if (!mockMode) {
           if (!wallet) throw new Error("wallet not ready");
-          await approveAgentWithWallet(wallet, chainId, prep.agentAddress, prep.agentName);
+          await withTimeout(approveAgentWithWallet(wallet, chainId, prep.agentAddress, prep.agentName), "the wallet did not answer the agent approval");
         }
         agentSigned = true;
         push("Agent approved");
@@ -174,7 +196,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
         push(`Approve builder fee (max ${prep.maxFeeRate}, we charge ${prep.builderFeeTenthsBp / 1000}%)`);
         if (!mockMode) {
           if (!wallet) throw new Error("wallet not ready");
-          await approveBuilderFeeWithWallet(wallet, chainId, prep.builder, prep.maxFeeRate);
+          await withTimeout(approveBuilderFeeWithWallet(wallet, chainId, prep.builder, prep.maxFeeRate), "the wallet did not answer the builder-fee approval");
         }
         builderSigned = true;
         push("Builder fee approved");
@@ -205,7 +227,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
           ))}
         </ol>
       )}
-      {err && <p className="text-down text-xs mt-2">{err}</p>}
+      {err && <p className="text-down text-xs mt-2 leading-snug" role="alert" data-testid="enable-error">Hyperliquid said: {err}</p>}
       <Steps current={4} />
     </Step>
   );

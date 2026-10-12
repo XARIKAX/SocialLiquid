@@ -30,3 +30,13 @@ export function spotRows(spot: Balance["spot"] | undefined, mids: Record<string,
 }
 
 export const fmtQty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: n >= 1000 ? 2 : 6 });
+
+/** USDC sitting in the spot balance (free to move to perps) */
+export const usdcSpotAvail = (spot: Balance["spot"] | undefined | null) => {
+  const u = spot?.find((b) => b.coin === "USDC");
+  return u ? Math.max(0, u.total - u.hold) : 0;
+};
+/** what hyperliquid's unified view calls cash: perps withdrawable plus spot USDC */
+export const cashTotal = (b: Balance | undefined | null) => (b ? b.withdrawable + usdcSpotAvail(b.spot) : 0);
+/** cents-floored decimal string for a hyperliquid transfer */
+export const cents = (n: number) => (Math.floor(n * 100) / 100).toFixed(2).replace(/\.?0+$/, "");

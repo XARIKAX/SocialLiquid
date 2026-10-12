@@ -29,6 +29,7 @@ import {
   swapUsdtToUsdc,
   withdrawRouteById,
 } from "@/lib/funds";
+import { cents, usdcSpotAvail } from "@/lib/spot";
 import { UNIT_APP_URL, UNIT_ASSETS, fetchUnitAddress, fetchUnitOperations, fetchUnitWithdrawAddress, looksLikeAddress, minNumber, spotEntry, unitDepositable, unitStateLabel, unitWithdrawable, type UnitAddress, type UnitAsset, type UnitOperation } from "@/lib/unit";
 import QRCode from "qrcode";
 import type { wagmiConfig } from "@/lib/wagmi";
@@ -79,6 +80,9 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   const [dest, setDest] = useState(address);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const startBal = useRef<number | null>(null);
+  const startSpotUsdc = useRef<number | null>(null);
+  const perpsAvail = bal.data ? Math.max(0, bal.data.withdrawable) : 0;
+  const spotUsdcAvail = usdcSpotAvail(bal.data?.spot);
   const amt = Number(amount);
   const isUsdc = asset === USDC;
   const unitInfo = UNIT_ASSETS.find((a) => a.symbol === asset);
@@ -116,7 +120,10 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   useEffect(() => {
     if (phase.kind !== "sent" || mode !== "deposit" || startBal.current === null || !bal.data) return;
     if (bal.data.withdrawable > startBal.current + 0.01) {
-      setPhase({ kind: "done", text: `${fmtUsd(bal.data.withdrawable - startBal.current)} credited to your Hyperliquid balance.` });
+      setPhase({ kind: "done", text: `${fmtUsd(bal.data.withdrawable - startBal.current)} credited to your Hyperliquid perps balance. Ready to trade.` });
+      qc.invalidateQueries({ queryKey: ["balance"] });
+    } else if (startSpotUsdc.current !== null && usdcSpotAvail(bal.data.spot) > startSpotUsdc.current + 0.01) {
+      setPhase({ kind: "done", text: `${fmtUsd(usdcSpotAvail(bal.data.spot) - startSpotUsdc.current)} arrived in your Hyperliquid spot balance. Move it to perps below to trade with it.` });
       qc.invalidateQueries({ queryKey: ["balance"] });
     }
   }, [bal.data, phase.kind, mode, qc]);
@@ -132,7 +139,7 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   const destLocked = mode === "withdraw" && !nativeW && wRoute.kind === "hyperevm";
   const effDest = destLocked ? address : dest;
   const destOk = mode === "deposit" ? true : nativeW ? !!unitInfo && looksLikeAddress(unitInfo.chain, dest) : /^0x[0-9a-fA-F]{40}$/.test(effDest);
-  const max = mode === "deposit" ? walletBal : nativeW ? (spotBal ? Math.max(0, spotBal.total - spotBal.hold) : bal.data?.spot ? 0 : null) : bal.data ? Math.max(0, bal.data.withdrawable) : null;
+  const max = mode === "deposit" ? walletBal : nativeW ? (spotBal ? Math.max(0, spotBal.total - spotBal.hold) : bal.data?.spot ? 0 : null) : bal.data ? perpsAvail + spotUsdcAvail : null;
   const min = mode === "deposit" ? route.min : nativeW ? minNumber(unitInfo?.withdrawMin) : wRoute.min;
   const valid = amt >= min && (max === null || amt <= max + 1e-9) && destOk;
   const busy = phase.kind === "busy";
@@ -156,6 +163,7 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
     try {
       if (mode === "deposit") {
         startBal.current = bal.data?.withdrawable ?? 0;
+        startSpotUsdc.current = usdcSpotAvail(bal.data?.spot);
         if (mockMode) {
           await api("/api/mock/funds", { method: "POST", json: { kind: "deposit", amount: amt } });
           setPhase({ kind: "sent", hash: null, explorer: "", text: `Mock deposit sent via ${route.label}.` });
@@ -202,21 +210,40 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
         qc.invalidateQueries({ queryKey: ["balance"] });
         setPhase({ kind: "done", text: `Sent to Unit. ${amountStr} ${asset}, minus Unit's network fee, arrives at ${dest.slice(0, 6)}…${dest.slice(-4)} on ${info.chainLabel} in about 4 minutes.` });
       } else {
+        // USDC can sit in perps or spot; take it from wherever it is, moving between the two only when needed
+        const fromSpot = Math.max(0, amt - perpsAvail);
         if (mockMode) {
+          if (fromSpot > 0.001) await api("/api/mock/funds", { method: "POST", json: { kind: "class-transfer", amount: Number(cents(fromSpot)), toPerp: true } });
           await api("/api/mock/funds", { method: "POST", json: { kind: "withdraw", amount: amt } });
         } else {
           if (!wallet) throw new Error("wallet not connected");
           if (wRoute.kind === "bridge") {
+            if (fromSpot > 0.001) {
+              step(`1 of 2 · Confirm moving ${fmtUsd(fromSpot)} from spot to perps…`);
+              await usdClassTransferWithWallet(wallet, chainId, cents(fromSpot), true);
+              step("2 of 2 · Confirm the withdrawal in your wallet…");
+            } else step("Confirm the withdrawal in your wallet…");
             await withdrawWithWallet(wallet, chainId, effDest, amountStr);
           } else if (wRoute.kind === "hyperevm") {
-            step("1 of 2 · Confirm moving USDC from perps to spot…");
-            await usdClassTransferWithWallet(wallet, chainId, amountStr, false);
             const { tokens } = await api<{ tokens: Record<string, { tokenId: string }> }>("/api/funds/tokens?names=USDC");
-            if (!tokens.USDC) throw new Error("USDC is missing from Hyperliquid's spot token list; the USDC is in your spot balance, nothing was sent to HyperEVM");
-            step("2 of 2 · Confirm sending it to HyperEVM…");
+            if (!tokens.USDC) throw new Error("USDC is missing from Hyperliquid's spot token list; nothing was sent");
+            const needFromPerps = Math.max(0, amt - spotUsdcAvail);
+            if (needFromPerps > 0.001) {
+              step(`1 of 2 · Confirm moving ${fmtUsd(needFromPerps)} from perps to spot…`);
+              await usdClassTransferWithWallet(wallet, chainId, cents(needFromPerps), false);
+              step("2 of 2 · Confirm sending it to HyperEVM…");
+            } else step("Confirm sending it to HyperEVM…");
             await spotSendWithWallet(wallet, chainId, USDC_SYSTEM_ADDRESS, `USDC:${tokens.USDC.tokenId}`, amountStr);
-          } else {
+          } else if (amt <= perpsAvail + 1e-9) {
             step("Confirm the withdrawal in your wallet…");
+            await sendToEvmWithWallet(wallet, chainId, { amount: amountStr, destination: effDest, domain: wRoute.domain! });
+          } else if (amt <= spotUsdcAvail + 1e-9) {
+            step("Confirm the withdrawal (from your spot balance) in your wallet…");
+            await sendToEvmWithWallet(wallet, chainId, { amount: amountStr, destination: effDest, domain: wRoute.domain!, sourceDex: "spot" });
+          } else {
+            step(`1 of 2 · Confirm moving ${fmtUsd(fromSpot)} from spot to perps…`);
+            await usdClassTransferWithWallet(wallet, chainId, cents(fromSpot), true);
+            step("2 of 2 · Confirm the withdrawal in your wallet…");
             await sendToEvmWithWallet(wallet, chainId, { amount: amountStr, destination: effDest, domain: wRoute.domain! });
           }
         }
@@ -330,7 +357,7 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
                 </>
               ) : (
                 <>
-                  <div className="flex justify-between"><span className="text-muted">Available to withdraw</span><span className="num">{bal.data ? fmtUsd(bal.data.withdrawable) : "…"}</span></div>
+                  <div className="flex justify-between"><span className="text-muted">Available to withdraw</span><span className="num">{bal.data ? fmtUsd(perpsAvail + spotUsdcAvail) : "…"}{bal.data && spotUsdcAvail > 0.01 && <span className="text-dim"> · perps {fmtUsd(perpsAvail)} + spot {fmtUsd(spotUsdcAvail)}</span>}</span></div>
                   <div className="flex justify-between"><span className="text-muted">Fee</span><span className="num">{wRoute.feeLabel}</span></div>
                   <div className="flex justify-between"><span className="text-muted">Arrives</span><span className="num">{wRoute.eta}</span></div>
                 </>
@@ -379,6 +406,11 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
                 {phase.kind === "sent" && phase.hash && phase.explorer && <> <a className="text-brand hover:underline" href={`${phase.explorer}/tx/${phase.hash}`} target="_blank" rel="noreferrer">View transaction</a>.</>}
                 {phase.kind === "sent" && mode === "deposit" && <> Waiting for Hyperliquid to credit it…</>}
               </p>
+            )}
+            {mode === "deposit" && spotUsdcAvail > 0.01 && (
+              <button className="btn h-9 w-full mt-2 text-[13px]" onClick={() => { onClose(); openConvert("USDC"); }} data-testid="move-spot-usdc">
+                {fmtUsd(spotUsdcAvail)} USDC is in your spot balance · Move it to perps
+              </button>
             )}
 
             {nativeW && unitInfo && (

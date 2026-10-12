@@ -126,19 +126,22 @@ function ConvertModal({ address, want, onClose }: { address: string; want: strin
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label="sell for USDC">
       <div className="card w-full max-w-md p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[15px] font-semibold">Sell for USDC</h2>
+          <h2 className="text-[15px] font-semibold">{sel ? "Sell for USDC" : "Move USDC to perps"}</h2>
           <button className="btn btn-ghost h-8 w-8 px-0" onClick={onClose} aria-label="close">✕</button>
         </div>
-        {!sel ? (
-          <div className="card-2 p-3 text-xs text-muted">
-            Nothing to sell: no spot coins in your Hyperliquid balance.
-            {spotUsdc && spotUsdc.total > 0.01 && (
-              <div className="mt-2">
-                You do have {fmtUsd(spotUsdc.total)} USDC sitting in spot.{" "}
-                <button className="text-brand hover:underline" onClick={moveOnly} disabled={busy}>Move it to perps</button>
-              </div>
-            )}
+        {spotUsdc && spotUsdc.total - spotUsdc.hold > 0.01 && (
+          <div className="card-2 p-3 text-xs mb-3" data-testid="usdc-spot-card">
+            <div className="flex items-center justify-between">
+              <span className="text-muted">USDC in your spot balance</span>
+              <span className="num font-semibold">{fmtUsd(spotUsdc.total - spotUsdc.hold)}</span>
+            </div>
+            <p className="text-dim mt-1 leading-snug">Deposits sometimes land in spot. Perps trade from the perps balance, so move it over: one signed message, no fee, instant.</p>
+            <button className="btn btn-primary h-10 w-full mt-2" onClick={moveOnly} disabled={busy || (!mockMode && !wallet)} data-testid="move-usdc-go">{busy ? "Working…" : `Move ${fmtUsd(spotUsdc.total - spotUsdc.hold)} to perps`}</button>
+            {phase.kind !== "idle" && phase.kind !== "busy" && !sel && <p className={`text-xs mt-2 leading-snug ${phase.kind === "error" ? "text-down" : "text-up"}`} data-testid="convert-status">{phase.text}</p>}
           </div>
+        )}
+        {!sel ? (
+          <div className="card-2 p-3 text-xs text-muted">Nothing to sell: no spot coins in your Hyperliquid balance.{spotUsdc && spotUsdc.total > 0.01 ? " Your spot USDC is above." : ""}</div>
         ) : (
           <>
             {rows.length > 1 && (

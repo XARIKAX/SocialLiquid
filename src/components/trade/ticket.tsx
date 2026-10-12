@@ -14,7 +14,7 @@ import { openConvert } from "./convert";
 import { useChainId, useWalletClient } from "wagmi";
 import { setDexAbstractionWithWallet } from "@/lib/hl-client";
 import { startChase } from "@/lib/chase";
-import { fmtQty, spotRows } from "@/lib/spot";
+import { fmtQty, spotRows, usdcSpotAvail } from "@/lib/spot";
 import { useMids } from "@/hooks/use-market";
 
 type OrderType = "market" | "limit" | "stopMarket" | "stopLimit" | "takeProfitMarket" | "takeProfitLimit" | "scale" | "twap" | "chase";
@@ -358,6 +358,9 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
 
       <dl className="text-xs space-y-1 px-0.5">
         <Row k={isSpot ? (side === "LONG" ? "Available USDC · spot" : `Available ${market?.base ?? coin} · spot`) : "Available to Trade"} v={signedIn ? (isSpot && side === "SHORT" ? `${avail} ${market?.base ?? coin}` : `${fmtUsd(avail)} USDC`) : "–"} />
+        {!isSpot && usdcSpotAvail(bal.data?.spot) > 0.01 && (
+          <Row k="In spot" v={<span>{fmtUsd(usdcSpotAvail(bal.data?.spot))} · <button className="text-brand hover:underline" onClick={() => openConvert("USDC")} data-testid="ticket-move-usdc">Move to perps</button></span>} />
+        )}
         {isSpot ? (
           <Row k="You hold" v={`${spotTok ? spotTok.total : 0} ${market?.base ?? coin}`} />
         ) : (
