@@ -153,8 +153,20 @@ function publicClient(chain: Chain) {
   return c;
 }
 
+/** chains Phantom's EVM side can show; it refuses to switch to anything else */
+export const PHANTOM_CHAINS = new Set([1, 8453, 137, 999]);
+
 async function ensureChain(wallet: WalletClient, chain: Chain) {
-  if ((await wallet.getChainId()) !== chain.id) await wallet.switchChain({ id: chain.id });
+  if ((await wallet.getChainId()) === chain.id) return;
+  try {
+    await wallet.switchChain({ id: chain.id });
+  } catch (e) {
+    const msg = (e as Error).message ?? String(e);
+    if (/unsupported|not supported|4902|4092|unrecognized/i.test(msg) || !PHANTOM_CHAINS.has(chain.id)) {
+      throw new Error(`Your wallet cannot switch to ${chain.name}. Phantom only does Ethereum, Base, Polygon and HyperEVM on the EVM side: pick one of those routes, or connect MetaMask or Rabby for ${chain.name}.`);
+    }
+    throw e;
+  }
 }
 
 function account(wallet: WalletClient) {

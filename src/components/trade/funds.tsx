@@ -5,7 +5,7 @@
  * (Arbitrum via CCTP, the legacy bridge, HyperEVM, the other CCTP chains; deposits also offer the USDT swap).
  */
 import { useEffect, useRef, useState } from "react";
-import { useChainId, useReadContract, useWalletClient } from "wagmi";
+import { useAccount, useChainId, useReadContract, useWalletClient } from "wagmi";
 import { erc20Abi, formatUnits, parseUnits } from "viem";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -17,6 +17,7 @@ import {
   CCTP_FORWARD_FEE,
   DEFAULT_ROUTE,
   DEPOSIT_ROUTES,
+  PHANTOM_CHAINS,
   USDC_SYSTEM_ADDRESS,
   WITHDRAW_ROUTES,
   cctpFastFeeBps,
@@ -62,6 +63,10 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
   const mockMode = me?.network === "mock";
   const { data: wallet } = useWalletClient();
   const chainId = useChainId();
+  const { connector } = useAccount();
+  // Phantom's EVM side only shows Ethereum, Base, Polygon and HyperEVM; it refuses to switch anywhere else
+  const phantom = /phantom/i.test(connector?.name ?? "") || (typeof window !== "undefined" && !!(window as unknown as { phantom?: { ethereum?: unknown } }).phantom?.ethereum && !/metamask|rabby|coinbase|walletconnect/i.test(connector?.name ?? ""));
+  const canSwitchTo = (id: number) => !phantom || PHANTOM_CHAINS.has(id);
   const qc = useQueryClient();
   const bal = useBalance(address);
   const [asset, setAsset] = useState(USDC);
@@ -283,7 +288,7 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
             ) : mode === "deposit" ? (
               <select className="input h-10 mt-1 w-full" value={routeId} aria-label="deposit chain" onChange={(e) => { setRouteId(e.target.value); reset(); }} disabled={busy}>
                 {DEPOSIT_ROUTES.map((r) => (
-                  <option key={r.id} value={r.id}>{r.label}</option>
+                  <option key={r.id} value={r.id}>{r.label}{canSwitchTo(r.chain.id) ? "" : " · not in Phantom"}</option>
                 ))}
               </select>
             ) : (
@@ -353,11 +358,14 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
                 {dest && !destOk && !destLocked && <p className="text-warn text-[11px] mt-1.5">That is not a valid {chainName} address.</p>}
               </>
             )}
+            {mode === "deposit" && !canSwitchTo(route.chain.id) && (
+              <p className="text-warn text-[11px] mt-1.5" data-testid="phantom-route-warning">Phantom cannot switch to {route.chain.name}. Pick HyperEVM, Ethereum, Base or Polygon, or connect MetaMask or Rabby for this route.</p>
+            )}
             {amt > 0 && amt < min && <p className="text-warn text-[11px] mt-1.5">Minimum {mode === "deposit" ? "deposit" : "withdrawal"} is {min} {symbol}.</p>}
             {max !== null && amt > max + 1e-9 && <p className="text-warn text-[11px] mt-1.5">That is more than you have available.</p>}
 
             {phase.kind === "idle" || phase.kind === "error" ? (
-              <button className="btn btn-primary h-11 w-full mt-3 text-[14px]" onClick={run} disabled={!valid || (!mockMode && !wallet)}>
+              <button className="btn btn-primary h-11 w-full mt-3 text-[14px]" onClick={run} disabled={!valid || (!mockMode && !wallet) || (mode === "deposit" && !canSwitchTo(route.chain.id))}>
                 {buttonLabel}
               </button>
             ) : (
