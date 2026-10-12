@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/client";
-import type { HlBoardRow, LeaderboardRow } from "@/lib/queries";
+import type { HlBoard, HlBoardRow, LeaderboardRow } from "@/lib/queries";
 import { fmtDuration, fmtPct, fmtUsd, userLabel, userPath } from "@/lib/format";
 import { Avatar, Empty, Icon, Pnl, Skeleton } from "../ui";
 import { HL_APP_URL } from "@/lib/env";
@@ -43,7 +43,7 @@ const fmtRoi = (n: number) => `${(n * 100).toFixed(2)}%`;
 
 /** mirror of app.hyperliquid.xyz/leaderboard (30D): same rows, same figures, same exclusion rule */
 function HlBoard() {
-  const q = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<{ rows: HlBoardRow[]; updatedAt: string | null }>("/api/leaderboard/hl"), refetchInterval: 60_000 });
+  const q = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<HlBoard>("/api/leaderboard/hl"), refetchInterval: 60_000 });
   const rows = q.data?.rows ?? [];
   const top3 = rows.slice(0, 3);
   const updated = q.data?.updatedAt ? new Date(q.data.updatedAt) : null;
@@ -67,7 +67,7 @@ function HlBoard() {
       <section className="card overflow-hidden">
         {q.isLoading && <Skeleton rows={10} h={48} />}
         {q.isError && <Empty title="Leaderboard unavailable" hint={(q.error as Error).message} />}
-        {q.data && rows.length === 0 && <Empty title="Waiting for the first sync" hint="Hyperliquid's leaderboard is mirrored on the first request and refreshed hourly. Refresh in a moment." />}
+        {q.data && rows.length === 0 && <Empty title="Leaderboard unavailable" hint={q.data.error ? `Hyperliquid did not answer: ${q.data.error}` : "Hyperliquid's leaderboard is mirrored on the first request and refreshed hourly. Refresh in a moment."} />}
         {rows.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px] min-w-[760px]">
@@ -106,7 +106,11 @@ function HlBoard() {
         )}
         {rows.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 text-[11px] text-dim border-t border-line">
-            <span>Excludes accounts with less than 100k USDC account value and less than 10M USDC trading volume. ROI = PNL / max(100, starting account value + maximum net deposits) for the time window.</span>
+            <span>
+              {q.data?.source === "portfolio"
+                ? "Built from Hyperliquid's portfolio API for the featured traders: PNL and volume are exact, ROI = PNL / account value at the start of the window."
+                : "Excludes accounts with less than 100k USDC account value and less than 10M USDC trading volume. ROI = PNL / max(100, starting account value + maximum net deposits) for the time window."}
+            </span>
             <span className="ml-auto flex items-center gap-1.5">
               {updated && <span suppressHydrationWarning>Updated {updated.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>}
               <a href={`${HL_APP_URL}/leaderboard`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand hover:underline">Source: Hyperliquid <Icon.external /></a>

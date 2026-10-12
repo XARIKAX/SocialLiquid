@@ -479,6 +479,17 @@ export async function leaderboard(): Promise<HlLeaderboardRow[]> {
   }));
 }
 
+export async function portfolio(address: string) {
+  const i = Math.max(0, MOCK_TRADERS.findIndex((a) => a.toLowerCase() === address.toLowerCase()));
+  const now = Date.now();
+  const win = (days: number, pnl: number, vlm: number) => ({
+    accountValueHistory: [[now - days * 864e5, String(150_000 * (i + 1) - pnl)], [now, String(150_000 * (i + 1))]] as [number, string][],
+    pnlHistory: [[now - days * 864e5, "0"], [now, String(pnl)]] as [number, string][],
+    vlm: String(vlm),
+  });
+  return { day: win(1, 1000 - i * 50, 100_000), week: win(7, 5000 - i * 200, 500_000), month: win(30, 20000 - i * 500, 2_000_000), allTime: win(365, 100000 - i * 1000, 9_000_000) };
+}
+
 // ---------- mock exchange (write side, used by the trade route when HL_MOCK) ----------
 
 export async function mockApproveBuilderFee(user: string, builder: string, tenthsBp: number) {

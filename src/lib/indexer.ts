@@ -213,40 +213,90 @@ export function hlLeaderboardRanked(rows: HlLeaderboardRow[]): HlLeaderboardRow[
   return rows.filter(hlLeaderboardEligible).sort((a, b) => HL.leaderboardPnl(b, "month") - HL.leaderboardPnl(a, "month"));
 }
 
+export type HlBoardStatus = { lastError: string | null; lastSource: "leaderboard" | "portfolio" | null; lastAttemptAt: number };
+const hlBoardStatus: HlBoardStatus = { lastError: null, lastSource: null, lastAttemptAt: 0 };
+export function getHlBoardStatus(): HlBoardStatus {
+  return { ...hlBoardStatus };
+}
+
+type BoardRow = { rank: number; address: string; displayName: string | null; accountValue: string; pnl30d: string; roi30d: string; vlm30d: string; pnl7d: string; source: string };
+
+function rowsFromLeaderboard(ranked: HlLeaderboardRow[]): BoardRow[] {
+  const perf = (r: HlLeaderboardRow, w: "week" | "month") => r.windowPerformances.find(([k]) => k === w)?.[1] ?? { pnl: "0", roi: "0", vlm: "0" };
+  return ranked.map((r, i) => {
+    const m = perf(r, "month");
+    return { rank: i + 1, address: r.ethAddress.toLowerCase(), displayName: r.displayName, accountValue: r.accountValue, pnl30d: m.pnl, roi30d: m.roi, vlm30d: m.vlm, pnl7d: perf(r, "week").pnl, source: "leaderboard" };
+  });
+}
+
+/**
+ * rebuild the board for the featured traders from the portfolio api (the data hyperliquid's leaderboard is computed from).
+ * pnl and volume are exact; roi is pnl / max(100, account value at the start of the window), which matches hyperliquid
+ * unless the account deposited or withdrew during the window.
+ */
+async function rowsFromPortfolio(addresses: string[]): Promise<BoardRow[]> {
+  const out: Omit<BoardRow, "rank">[] = [];
+  for (const address of addresses) {
+    try {
+      const [p, st] = await Promise.all([HL.portfolio(address), HL.clearinghouseState(address)]);
+      const last = (h: [number, string][]) => Number(h[h.length - 1]?.[1] ?? 0);
+      const first = (h: [number, string][]) => Number(h[0]?.[1] ?? 0);
+      const m = p.month, w = p.week;
+      if (!m) continue;
+      const pnl30 = last(m.pnlHistory);
+      const start = first(m.accountValueHistory);
+      out.push({
+        address,
+        displayName: null,
+        accountValue: st.marginSummary.accountValue,
+        pnl30d: String(pnl30),
+        roi30d: String(pnl30 / Math.max(100, start)),
+        vlm30d: m.vlm,
+        pnl7d: String(w ? last(w.pnlHistory) : 0),
+        source: "portfolio",
+      });
+    } catch (e) {
+      console.warn(`[indexer] portfolio fetch failed for ${address.slice(0, 10)}:`, (e as Error).message);
+    }
+  }
+  return out.sort((a, b) => Number(b.pnl30d) - Number(a.pnl30d)).map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
 /**
  * mirror the top N of hyperliquid's leaderboard (30D) into HlLeaderboardEntry and make sure they are tracked.
- * figures are stored exactly as the stats endpoint reports them. returns rows written, 0 if the fetch failed.
+ * primary source is hyperliquid's leaderboard feed, stored verbatim. if that feed is unreachable (or
+ * HL_LEADERBOARD_SOURCE=portfolio), the board is rebuilt for the featured traders from the portfolio api instead.
+ * returns rows written, 0 if nothing could be fetched.
  */
 export async function refreshHlLeaderboard(topN = 10): Promise<number> {
-  let ranked: HlLeaderboardRow[];
-  try {
-    ranked = hlLeaderboardRanked(await HL.leaderboard()).slice(0, topN);
-  } catch (e) {
-    console.warn("[indexer] hl leaderboard refresh failed:", (e as Error).message);
-    return 0;
+  hlBoardStatus.lastAttemptAt = Date.now();
+  let rows: BoardRow[] = [];
+  if (process.env.HL_LEADERBOARD_SOURCE !== "portfolio") {
+    try {
+      rows = rowsFromLeaderboard(hlLeaderboardRanked(await HL.leaderboard()).slice(0, topN));
+      if (!rows.length) throw new Error("leaderboard feed returned no eligible rows");
+    } catch (e) {
+      hlBoardStatus.lastError = `leaderboard feed: ${(e as Error).message}`;
+      console.warn("[indexer] hl leaderboard feed failed, falling back to portfolio api:", (e as Error).message);
+      rows = [];
+    }
   }
-  if (!ranked.length) return 0;
-  const perf = (r: HlLeaderboardRow, w: "week" | "month") => r.windowPerformances.find(([k]) => k === w)?.[1] ?? { pnl: "0", roi: "0", vlm: "0" };
+  if (!rows.length) {
+    rows = (await rowsFromPortfolio(featuredAddresses())).slice(0, topN);
+    if (!rows.length) {
+      hlBoardStatus.lastError = (hlBoardStatus.lastError ?? "") + " · portfolio api: no rows for the featured traders";
+      return 0;
+    }
+  }
   const now = new Date();
-  const data = ranked.map((r, i) => {
-    const m = perf(r, "month");
-    return {
-      rank: i + 1,
-      address: r.ethAddress.toLowerCase(),
-      displayName: r.displayName,
-      accountValue: r.accountValue,
-      pnl30d: m.pnl,
-      roi30d: m.roi,
-      vlm30d: m.vlm,
-      pnl7d: perf(r, "week").pnl,
-      updatedAt: now,
-    };
-  });
+  const data = rows.map((r) => ({ ...r, updatedAt: now }));
   await prisma.$transaction([prisma.hlLeaderboardEntry.deleteMany({}), prisma.hlLeaderboardEntry.createMany({ data })]);
   await prisma.trackedAddress.createMany({
     data: data.map((d) => ({ address: d.address, source: "DISCOVERED" as const, displayName: d.displayName })),
     skipDuplicates: true,
   });
+  hlBoardStatus.lastSource = rows[0].source as "leaderboard" | "portfolio";
+  if (hlBoardStatus.lastSource === "leaderboard") hlBoardStatus.lastError = null;
   return data.length;
 }
 

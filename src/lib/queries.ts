@@ -1,7 +1,7 @@
 /** db queries shared by route handlers and server components */
 import { Prisma, type FeedEventType } from "@prisma/client";
 import { prisma } from "./db";
-import { refreshHlLeaderboard } from "./indexer";
+import { getHlBoardStatus, refreshHlLeaderboard } from "./indexer";
 import { plain } from "./api";
 
 /** handle is only set for claimed accounts and is what /t/[handle] resolves. displayName is the hyperliquid leaderboard name. */
@@ -270,12 +270,18 @@ function refreshHlBoardOnce(): Promise<number> {
   return hlBoardRefreshing;
 }
 
-export async function hlLeaderboard(): Promise<{ rows: HlBoardRow[]; updatedAt: string | null }> {
+export type HlBoard = { rows: HlBoardRow[]; updatedAt: string | null; source: "leaderboard" | "portfolio" | null; error: string | null };
+
+export async function hlLeaderboard(): Promise<HlBoard> {
   let entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
   if (!entries.length) {
     // first visitor on a fresh database: fetch hyperliquid's board right now
-    if (await refreshHlBoardOnce()) entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
-    if (!entries.length) return { rows: [], updatedAt: null };
+    try {
+      if (await refreshHlBoardOnce()) entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
+    } catch (e) {
+      return { rows: [], updatedAt: null, source: null, error: (e as Error).message };
+    }
+    if (!entries.length) return { rows: [], updatedAt: null, source: null, error: getHlBoardStatus().lastError ?? "no rows returned" };
   } else if (Date.now() - entries[0].updatedAt.getTime() > HL_BOARD_REFRESH_MS) {
     void refreshHlBoardOnce().catch(() => {});
   }
@@ -289,5 +295,5 @@ export async function hlLeaderboard(): Promise<{ rows: HlBoardRow[]; updatedAt: 
     vlm30d: Number(e.vlm30d),
     pnl7d: Number(e.pnl7d),
   }));
-  return { rows, updatedAt: entries[0].updatedAt.toISOString() };
+  return { rows, updatedAt: entries[0].updatedAt.toISOString(), source: entries[0].source === "portfolio" ? "portfolio" : "leaderboard", error: null };
 }

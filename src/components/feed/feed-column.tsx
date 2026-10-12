@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/client";
-import type { FeedItem, HlBoardRow, LeaderboardRow } from "@/lib/queries";
+import type { FeedItem, HlBoard, LeaderboardRow } from "@/lib/queries";
 import { fmtPct, fmtPx, fmtUsd, userLabel, userPath } from "@/lib/format";
 import { useMarkets, useMids } from "@/hooks/use-market";
 import { useAuth } from "@/hooks/use-auth";
@@ -192,7 +192,7 @@ export function Tokens({ onNavigate, full }: { onNavigate?: () => void; full?: b
 function MiniLeaderboard({ onNavigate }: { onNavigate?: () => void }) {
   const [src, setSrc] = useState<"hl" | "own">("hl");
   // same key and shape as the /leaderboard page so both can be mounted at once and share the cache
-  const hlq = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<{ rows: HlBoardRow[]; updatedAt: string | null }>("/api/leaderboard/hl"), refetchInterval: 60_000 });
+  const hlq = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<HlBoard>("/api/leaderboard/hl"), refetchInterval: 60_000 });
   const hl = { isLoading: hlq.isLoading, isError: hlq.isError, error: hlq.error, data: hlq.data?.rows };
   const own = useQuery({ queryKey: ["leaderboard", "pnl7d"], queryFn: () => api<{ rows: LeaderboardRow[] }>("/api/leaderboard?by=pnl7d").then((r) => r.rows), refetchInterval: 30_000 });
   const header = (
@@ -210,7 +210,7 @@ function MiniLeaderboard({ onNavigate }: { onNavigate?: () => void }) {
       <div>
         {header}
         {hl.isError && <Empty title="Leaderboard unavailable" hint={(hl.error as Error).message} />}
-        {!hl.isError && !hl.data?.length && <Empty title="Waiting for the first sync" hint="Hyperliquid's leaderboard is mirrored on the first request. Refresh in a moment." />}
+        {!hl.isError && !hl.data?.length && <Empty title="Leaderboard unavailable" hint={hlq.data?.error ? `Hyperliquid did not answer: ${hlq.data.error}` : "Hyperliquid's leaderboard is mirrored on the first request. Refresh in a moment."} />}
         {hl.data?.map((r) => (
           <Link key={r.rank} href={userPath(r.user)} onClick={onNavigate} className="flex items-center gap-2.5 px-4 h-12 row-hover">
             <span className={`num text-xs w-5 ${r.rank <= 3 ? "text-brand font-semibold" : "text-dim"}`}>{r.rank}</span>

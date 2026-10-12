@@ -25,7 +25,7 @@ pnpm dev                        # app on :3000
 pnpm worker                     # indexer, in a second terminal
 ```
 
-`NEXT_PUBLIC_HL_TESTNET=true` points everything at hyperliquid testnet. `HL_MOCK=true` swaps in a synthetic in-process exchange (deterministic prices, a dozen synthetic traders, a mock write side) so the whole stack runs with no network at all. never set `HL_MOCK` in production.
+the app talks to hyperliquid mainnet. `NEXT_PUBLIC_HL_NETWORK=testnet` points it at testnet for local development (the old `NEXT_PUBLIC_HL_TESTNET` flag is ignored). `HL_MOCK=true` swaps in a synthetic in-process exchange (deterministic prices, a dozen synthetic traders, a mock write side) so the whole stack runs with no network at all. never set `HL_MOCK` in production.
 
 ## deploying
 
@@ -41,7 +41,8 @@ pnpm worker                     # indexer, in a second terminal
 | `AGENT_KEY_SECRET` | 32 byte hex. aes-256-gcm for agent private keys at rest |
 | `SESSION_SECRET` | signs the session cookie |
 | `INVITE_CODE` | mainnet gate. empty = open. testnet is always open |
-| `NEXT_PUBLIC_HL_TESTNET` | `true` for testnet |
+| `NEXT_PUBLIC_HL_NETWORK` | `mainnet` (default) or `testnet` |
+| `HL_LEADERBOARD_SOURCE` | empty = hyperliquid leaderboard feed, `portfolio` = rebuild from the portfolio api for the featured traders |
 | `NEXT_PUBLIC_WALLETCONNECT_ID` | optional. without it the walletconnect option is hidden |
 | `HL_WEIGHT_BUDGET_PER_MIN` | info api weight budget for the worker (published limit 1200 / min / ip) |
 | `POLL_INTERVAL_MS` | floor on the per address poll interval |
@@ -79,7 +80,7 @@ a thesis is bound to a position id at post time. when the worker sees that posit
 
 `worker/index.ts` polls every `TrackedAddress`. `clearinghouseState` is weight 2 and `userFills` is weight 20, so with 200 addresses a full pass at 1000 weight / min takes about 24 seconds, not 5. the worker is budget bound with a token bucket and only fetches fills when a position changed (or every 10 minutes). our own users are also subscribed to websocket `userFills`, capped at hyperliquid's 10 unique users per ip, so their trades show within a second.
 
-on startup and every hour the worker mirrors hyperliquid's own leaderboard (`stats-data.hyperliquid.xyz/Mainnet/leaderboard`, the feed behind app.hyperliquid.xyz/leaderboard) into `HlLeaderboardEntry`: the same 30-day window, the same exclusion rule (under 100k account value and under 10M volume), sorted by 30d pnl, top `HL_LEADERBOARD_TOP_N` (10). account value, pnl, roi and volume are stored exactly as hyperliquid reports them and shown on `/leaderboard` under the default "hyperliquid 30d" tab, so launch-day rankings match hyperliquid to the cent. the same ordering seeds the tracked address list, so those traders' positions are indexed first. if the worker is not running, the web process fetches the board itself on the first request and re-fetches in the background once it is older than the refresh interval.
+on startup and every hour the worker mirrors hyperliquid's own leaderboard (`stats-data.hyperliquid.xyz/Mainnet/leaderboard`, the feed behind app.hyperliquid.xyz/leaderboard) into `HlLeaderboardEntry`: the same 30-day window, the same exclusion rule (under 100k account value and under 10M volume), sorted by 30d pnl, top `HL_LEADERBOARD_TOP_N` (10). account value, pnl, roi and volume are stored exactly as hyperliquid reports them and shown on `/leaderboard` under the default "hyperliquid 30d" tab, so launch-day rankings match hyperliquid to the cent. the same ordering seeds the tracked address list, so those traders' positions are indexed first. if the worker is not running, the web process fetches the board itself on the first request and re-fetches in the background once it is older than the refresh interval. the feed is always mainnet. if it is unreachable, the board is rebuilt for the featured traders from the `portfolio` info endpoint (exact pnl and volume, roi against the window's starting account value) and labelled as such.
 
 `src/lib/featured.ts` holds hand-verified traders (copied from hyperliquid's leaderboard) that are always tracked with source MANUAL, so they are polled before discovered addresses from the first cycle. `pnpm hl:top` prints that top 10 (full addresses, account value, pnl, roi, volume) from your own machine, plus a ready `SEED_ADDRESSES` line.
 

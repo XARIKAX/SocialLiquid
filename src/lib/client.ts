@@ -12,4 +12,4 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   return data;
 }
 
-export const HL_APP_URL_CLIENT = process.env.NEXT_PUBLIC_HL_TESTNET === "true" ? "https://app.hyperliquid-testnet.xyz" : "https://app.hyperliquid.xyz";
+export const HL_APP_URL_CLIENT = process.env.NEXT_PUBLIC_HL_NETWORK === "testnet" ? "https://app.hyperliquid-testnet.xyz" : "https://app.hyperliquid.xyz";
