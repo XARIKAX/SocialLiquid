@@ -18,7 +18,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { useMarkets } from "@/hooks/use-market";
+import { useMarkets, iconOf } from "@/hooks/use-market";
 import type { MarketKind, MarketSummary } from "@/lib/hl-types";
 import { CoinIcon, Icon } from "../ui";
 
@@ -669,8 +669,12 @@ function coinRgb(base: string): string {
   return COIN_RGB[base] ?? "77 227 193";
 }
 
-function CoinRing({ coin, size }: { coin: string; size: number }) {
+/** the coin as a lit orb. `clientOnly`: an icon the cdn is not expected to have (builder-dex bases) is drawn after
+ *  hydration, when CoinIcon's own fallback can catch the failure; the server draws an empty glass disc meanwhile */
+function CoinRing({ coin, size, clientOnly = false }: { coin: string; size: number; clientOnly?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const [mounted, setMounted] = useState(!clientOnly);
+  useEffect(() => setMounted(true), []);
   // a server-rendered icon that failed before hydration never told CoinIcon (its onError was not attached yet), so
   // the browser's broken-image glyph would stay: remount it, and its own fallback (the initial) takes over
   const [retry, setRetry] = useState(0);
@@ -680,7 +684,7 @@ function CoinRing({ coin, size }: { coin: string; size: number }) {
   }, [coin]);
   return (
     <span ref={ref} className="tm-head-coin" style={{ "--tm-head-coin": coinRgb(coin), width: size, height: size } as CSSProperties}>
-      <CoinIcon key={`${coin}:${retry}`} coin={coin} size={size} />
+      {mounted ? <CoinIcon key={`${coin}:${retry}`} coin={coin} size={size} /> : <span className="tm-head-coin-ph" aria-hidden />}
     </span>
   );
 }
@@ -717,7 +721,8 @@ function CoinSelect({ coin, market, kind, title, favs, toggleFav }: { coin: stri
   const popId = useId();
   const isFav = favs.includes(coin);
   const dex = kind === "hip3" ? market?.dex || coin.slice(0, Math.max(0, coin.indexOf(":"))) : "";
-  const icon = market?.base ?? (kind === "spot" ? null : bareName(coin));
+  // hyperliquid names builder-dex icons by their full id ("xyz:GOLD"); the rest by symbol
+  const icon = market ? iconOf(market) : kind === "spot" ? null : kind === "hip3" ? coin : bareName(coin);
   const name = title ?? "this market";
 
   const setView = useCallback((patch: Partial<View>) => setViewState((v) => ({ ...v, ...patch })), []);
@@ -835,7 +840,7 @@ function CoinSelect({ coin, market, kind, title, favs, toggleFav }: { coin: stri
         data-tip-kbd="/|⌘K"
         data-tip="Every perp, spot pair and tradfi market. Or just start typing over the chart."
       >
-        {icon ? <CoinRing coin={icon} size={30} /> : <span className="skeleton tm-head-coin-skel" aria-hidden />}
+        {icon ? <CoinRing coin={icon} size={30} clientOnly={kind === "hip3"} /> : <span className="skeleton tm-head-coin-skel" aria-hidden />}
         <span className="tm-head-sym">{title ?? <Skel w={84} />}</span>
         <span className="tm-head-chev" aria-hidden>
           <Icon.chevron />
@@ -956,7 +961,7 @@ function frameList(idx: Indexed[], q: string, view: View, favs: string[]): Marke
 const COLS: { key: SortKey; label: string; short?: string; name: string; cls: string }[] = [
   { key: "markPx", label: "Last price", short: "Price", name: "last price", cls: "tm-head-c-px" },
   { key: "change24h", label: "24h change", short: "24h", name: "24h change", cls: "tm-head-c-chg" },
-  { key: "funding", label: "8h funding", name: "funding", cls: "tm-head-c-fund" },
+  { key: "funding", label: "1h funding", name: "funding", cls: "tm-head-c-fund" },
   { key: "volume24h", label: "Volume", name: "24h volume", cls: "tm-head-c-vol" },
   { key: "openInterestUsd", label: "Open int.", name: "open interest", cls: "tm-head-c-oi" },
 ];
@@ -1307,6 +1312,8 @@ function SymbolSearch({
           id={listId}
           role="listbox"
           aria-label="Markets"
+          // the field drives the list (aria-activedescendant): the scroller is not a tab stop of its own
+          tabIndex={-1}
           className="tm-head-pop-list"
           onScroll={(e) => {
             const t = e.currentTarget.scrollTop;
@@ -1438,7 +1445,7 @@ const Row = memo(function Row({
       <Link href={`/m/${encodeURIComponent(m.slug)}`} prefetch={false} tabIndex={-1} className="tm-head-row-link" onClick={(e) => onPick(e, m)}>
         <span className="tm-head-row-mkt">
           <span className="tm-head-row-ico" style={{ "--tm-head-coin": coinRgb(m.base) } as CSSProperties}>
-            <CoinIcon coin={m.base} size={22} />
+            <CoinIcon coin={iconOf(m)} size={22} />
           </span>
           <span className="tm-head-row-name">
             <span className="tm-head-row-title">
