@@ -25,9 +25,10 @@ import type {
   HlLeaderboardRow,
   HlMeta,
   HlPosition,
+  MarketSummary,
 } from "./hl-types";
 
-const UNIVERSE: { name: string; base: number; szDecimals: number; maxLeverage: number; vol: number }[] = [
+const UNIVERSE: { name: string; base: number; szDecimals: number; maxLeverage: number; vol: number; dex?: string }[] = [
   { name: "BTC", base: 112_000, szDecimals: 5, maxLeverage: 40, vol: 0.02 },
   { name: "ETH", base: 3_900, szDecimals: 4, maxLeverage: 25, vol: 0.03 },
   { name: "SOL", base: 185, szDecimals: 2, maxLeverage: 20, vol: 0.04 },
@@ -38,7 +39,26 @@ const UNIVERSE: { name: string; base: number; szDecimals: number; maxLeverage: n
   { name: "PEPE", base: 0.0000098, szDecimals: 0, maxLeverage: 10, vol: 0.07 },
   { name: "WIF", base: 0.9, szDecimals: 1, maxLeverage: 10, vol: 0.07 },
   { name: "ARB", base: 0.45, szDecimals: 1, maxLeverage: 10, vol: 0.05 },
+  // builder-dex (HIP-3) tradfi perps, like hyperliquid's "xyz" dex
+  { name: "xyz:BRENTOIL", base: 103.4, szDecimals: 2, maxLeverage: 20, vol: 0.015, dex: "xyz" },
+  { name: "xyz:S&P500", base: 7814, szDecimals: 3, maxLeverage: 50, vol: 0.008, dex: "xyz" },
+  { name: "xyz:XYZ100", base: 30837, szDecimals: 3, maxLeverage: 30, vol: 0.01, dex: "xyz" },
+  { name: "xyz:SILVER", base: 60.6, szDecimals: 2, maxLeverage: 25, vol: 0.02, dex: "xyz" },
+  { name: "xyz:GOLD", base: 4312, szDecimals: 3, maxLeverage: 25, vol: 0.01, dex: "xyz" },
+  { name: "xyz:TSLA", base: 412, szDecimals: 2, maxLeverage: 10, vol: 0.03, dex: "xyz" },
+  { name: "xyz:NVDA", base: 188, szDecimals: 2, maxLeverage: 10, vol: 0.03, dex: "xyz" },
+  { name: "xyz:EURUSD", base: 1.164, szDecimals: 0, maxLeverage: 50, vol: 0.004, dex: "xyz" },
+  { name: "xyz:SPACEX", base: 1004, szDecimals: 2, maxLeverage: 5, vol: 0.03, dex: "xyz" },
 ];
+/** mock spot pairs: "@index" the way hyperliquid names them, priced off the matching perp */
+const SPOT_PAIRS: { coin: string; token: string; perp: string; index: number }[] = [
+  { coin: "@1", token: "USOL", perp: "SOL", index: 1 },
+  { coin: "@2", token: "UBTC", perp: "BTC", index: 2 },
+  { coin: "@3", token: "UETH", perp: "ETH", index: 3 },
+  { coin: "@4", token: "HYPE", perp: "HYPE", index: 4 },
+];
+const ALIAS: Record<string, string> = Object.fromEntries(SPOT_PAIRS.map((p) => [p.coin, p.perp]));
+const MAIN = () => UNIVERSE.filter((u) => !u.dex);
 
 /** deterministic but realistic-looking synthetic trader addresses */
 export const MOCK_TRADERS: `0x${string}`[] = Array.from({ length: 12 }, (_, i) => {
@@ -68,6 +88,7 @@ function rand(seed: string): number {
 }
 
 export function priceAt(coin: string, t: number): number {
+  coin = ALIAS[coin] ?? coin;
   const u = UNIVERSE.find((x) => x.name === coin);
   if (!u) return 0;
   const seed = hash32(coin) % 1000;
@@ -79,33 +100,88 @@ export function priceAt(coin: string, t: number): number {
 }
 
 export async function meta(): Promise<HlMeta> {
-  return { universe: UNIVERSE.map(({ name, szDecimals, maxLeverage }) => ({ name, szDecimals, maxLeverage })) };
+  return { universe: MAIN().map(({ name, szDecimals, maxLeverage }) => ({ name, szDecimals, maxLeverage })) };
+}
+
+function ctxFor(u: (typeof UNIVERSE)[number], now: number): HlAssetCtx {
+  const mark = priceAt(u.name, now);
+  const prev = priceAt(u.name, now - 86_400_000);
+  const vlm = (u.base > 1000 ? 2.2e9 : u.base > 100 ? 7e8 : 9e7) * (0.6 + rand(u.name + ":vlm") * 0.8) * (u.dex ? 0.12 : 1);
+  return {
+    funding: String(((rand(u.name + ":f") - 0.4) * 0.0002).toFixed(8)),
+    openInterest: String((vlm * 0.4) / mark),
+    prevDayPx: String(prev),
+    dayNtlVlm: String(vlm),
+    premium: "0",
+    oraclePx: String(mark),
+    markPx: String(mark),
+    midPx: String(mark),
+    impactPxs: null,
+  };
+}
+
+/** mock builder-dex perps as MarketSummary rows */
+export async function hip3Markets(): Promise<MarketSummary[]> {
+  const now = Date.now();
+  const dexes = [...new Set(UNIVERSE.filter((u) => u.dex).map((u) => u.dex!))];
+  return UNIVERSE.filter((u) => u.dex).map((u) => {
+    const c = ctxFor(u, now);
+    const markPx = Number(c.markPx);
+    const prevDayPx = Number(c.prevDayPx);
+    const name = u.name.split(":")[1];
+    const dexIndex = dexes.indexOf(u.dex!) + 1;
+    const i = UNIVERSE.filter((x) => x.dex === u.dex).indexOf(u);
+    return { coin: u.name, slug: u.name, name, base: name, kind: "hip3" as const, dex: u.dex!, dexName: "XYZ Markets", category: tradfiCategoryMock(name), assetId: 100000 + dexIndex * 10000 + i, szDecimals: u.szDecimals, maxLeverage: u.maxLeverage, markPx, midPx: markPx, prevDayPx, change24h: prevDayPx > 0 ? (markPx - prevDayPx) / prevDayPx : 0, volume24h: Number(c.dayNtlVlm), openInterestUsd: Number(c.openInterest) * markPx, funding: Number(c.funding), oraclePx: markPx };
+  });
+}
+function tradfiCategoryMock(name: string) {
+  if (/OIL|SILVER|GOLD/.test(name)) return "Commodities";
+  if (/S&P|XYZ100/.test(name)) return "Indices";
+  if (/EURUSD/.test(name)) return "FX";
+  if (/SPACEX/.test(name)) return "Pre-IPO";
+  return "Stocks";
+}
+
+/** mock USDC spot pairs as MarketSummary rows */
+export async function spotMarkets(): Promise<MarketSummary[]> {
+  const now = Date.now();
+  const toks = await spotTokens();
+  return SPOT_PAIRS.map((p) => {
+    const markPx = priceAt(p.perp, now);
+    const prevDayPx = priceAt(p.perp, now - 86_400_000);
+    const disp = p.token.startsWith("U") ? p.token.slice(1) : p.token;
+    return { coin: p.coin, slug: `spot:${p.token}`, name: `${disp}/USDC`, base: disp, kind: "spot" as const, dex: "", token: p.token, assetId: 10000 + p.index, szDecimals: toks[p.token]?.szDecimals ?? 2, maxLeverage: 1, markPx, midPx: markPx, prevDayPx, change24h: prevDayPx > 0 ? (markPx - prevDayPx) / prevDayPx : 0, volume24h: 3e7 * (0.5 + rand(p.coin + ":v")), openInterestUsd: 0, funding: 0, oraclePx: markPx };
+  });
+}
+
+/** mock spot trade: buy debits spot USDC and credits the token, sell the reverse. fills at the mid, spot taker fee */
+export async function mockSpotTrade(user: string, token: string, perp: string, isBuy: boolean, sz: number): Promise<{ avgPx: number; totalSz: number }> {
+  const px = priceAt(perp, Date.now());
+  return withState((s) => {
+    const all = (s.spot ??= {});
+    const mine = (all[user.toLowerCase()] ??= {});
+    const cost = sz * px;
+    if (isBuy) {
+      if ((mine.USDC ?? 0) + 1e-9 < cost * 1.0007) throw new Error("insufficient spot USDC");
+      mine.USDC = Math.max(0, (mine.USDC ?? 0) - cost * 1.0007);
+      mine[token] = (mine[token] ?? 0) + sz;
+    } else {
+      if ((mine[token] ?? 0) + 1e-12 < sz) throw new Error(`insufficient ${token}`);
+      mine[token] = Math.max(0, mine[token] - sz);
+      mine.USDC = (mine.USDC ?? 0) + cost * (1 - 0.0007);
+    }
+    return { avgPx: px, totalSz: sz };
+  });
 }
 
 export async function metaAndAssetCtxs(): Promise<[HlMeta, HlAssetCtx[]]> {
   const now = Date.now();
-  const ctxs: HlAssetCtx[] = UNIVERSE.map((u) => {
-    const mark = priceAt(u.name, now);
-    const prev = priceAt(u.name, now - 86_400_000);
-    const vlm = (u.base > 1000 ? 2.2e9 : u.base > 100 ? 7e8 : 9e7) * (0.6 + rand(u.name + ":vlm") * 0.8);
-    return {
-      funding: String(((rand(u.name + ":f") - 0.4) * 0.0002).toFixed(8)),
-      openInterest: String((vlm * 0.4) / mark),
-      prevDayPx: String(prev),
-      dayNtlVlm: String(vlm),
-      premium: "0",
-      oraclePx: String(mark),
-      markPx: String(mark),
-      midPx: String(mark),
-      impactPxs: null,
-    };
-  });
-  return [await meta(), ctxs];
+  return [await meta(), MAIN().map((u) => ctxFor(u, now))];
 }
 
 export async function allMids(): Promise<HlAllMids> {
   const now = Date.now();
-  return Object.fromEntries(UNIVERSE.map((u) => [u.name, String(priceAt(u.name, now))]));
+  return Object.fromEntries([...UNIVERSE.map((u) => [u.name, String(priceAt(u.name, now))]), ...SPOT_PAIRS.map((p) => [p.coin, String(priceAt(p.perp, now))])]);
 }
 
 export async function candleSnapshot(
@@ -413,13 +489,14 @@ function fillOrder(s: MockState, a: string, o: MockOrder, px: number) {
   applyTrade(s, a, o.coin, delta, px, o.leverage, { builderFee: (Math.abs(delta) * px * 50) / 100_000 });
 }
 
-export async function clearinghouseState(address: string): Promise<HlClearinghouseState> {
+export async function clearinghouseState(address: string, dex = ""): Promise<HlClearinghouseState> {
   const a = address.toLowerCase();
   return withState((s) => {
     tick(s, a);
     settle(s, a);
     const now = Date.now();
-    const positions: HlPosition[] = (s.positions[a] ?? []).map((p) => {
+    const onDex = (coin: string) => (dex ? coin.startsWith(`${dex}:`) : !coin.includes(":"));
+    const positions: HlPosition[] = (s.positions[a] ?? []).filter((p) => onDex(p.coin)).map((p) => {
       const mark = priceAt(p.coin, now);
       const value = Math.abs(p.szi) * mark;
       const upnl = (mark - p.entryPx) * p.szi;
@@ -448,6 +525,7 @@ export async function clearinghouseState(address: string): Promise<HlClearinghou
         totalRawUsd: String(accountValue),
         totalMarginUsed: String(margin),
       },
+      crossMaintenanceMarginUsed: String(positions.reduce((acc, p) => acc + Number(p.positionValue) / (2 * Math.max(1, p.maxLeverage)), 0)),
       withdrawable: String(Math.max(0, accountValue - margin)),
       assetPositions: positions.map((p) => ({ type: "oneWay", position: p })),
       time: now,

@@ -25,6 +25,7 @@ import type {
   MarketSummary,
 } from "./hl-types";
 import * as mock from "./hl-mock";
+import { UNIT_ASSETS } from "./unit";
 
 let _transport: hl.HttpTransport | undefined;
 let _info: hl.InfoClient | undefined;
@@ -77,19 +78,37 @@ export async function metaAndAssetCtxs(): Promise<[HlMeta, HlAssetCtx[]]> {
 }
 
 let marketsCache: { at: number; value: MarketSummary[] } | undefined;
+let hip3Cache: { at: number; value: MarketSummary[] } | undefined;
+const UNIT_BASES = new Set(UNIT_ASSETS.map((a) => a.symbol));
+/** hyperliquid names Unit's spot tokens with a U prefix (USOL); show the asset people know */
+export const spotDisplay = (token: string) => (token.startsWith("U") && UNIT_BASES.has(token.slice(1)) ? token.slice(1) : token === "UFART" ? "FARTCOIN" : token);
 
-/** all perps with derived 24h stats. cached 10s server side. */
-export async function markets(): Promise<MarketSummary[]> {
-  if (marketsCache && Date.now() - marketsCache.at < 10_000) return marketsCache.value;
+/** tradfi grouping for builder-dex markets, from the name (hyperliquid's own tabs: Stocks · Indices · Commodities · FX · Pre-IPO) */
+export function tradfiCategory(name: string): string {
+  const n = name.toUpperCase();
+  if (/(SPACEX|OPENAI|ANTHROPIC|STRIPE|PRE-?IPO|BYTEDANCE|^XAI$|KALSHI|POLYMARKET|DATABRICKS|ANDURIL|REVOLUT|DISCORD|CANVA)/.test(n)) return "Pre-IPO";
+  if (/(OIL|BRENT|WTI|GOLD|XAU|SILVER|XAG|COPPER|NATGAS|WHEAT|CORN|PLATINUM|PALLADIUM|URANIUM|COCOA|COFFEE|SUGAR|SOYBEAN|LUMBER)/.test(n)) return "Commodities";
+  if (/^(S&P|SPX|SP500|NDX|NASDAQ|QQQ|DOW|DJI|XYZ\d|US\d|DAX|FTSE|NIKKEI|NKY|HSI|KOSPI|RUSSELL|RUT|VIX|MAG7|CAC|STOXX|IBEX|ASX|TSX|SENSEX|NIFTY|SMI|MIB)/.test(n)) return "Indices";
+  if (/^(EUR|GBP|JPY|AUD|CAD|CHF|CNH|CNY|MXN|KRW|TRY|INR|BRL|DXY|NZD|SEK|NOK|ZAR|SGD|HKD)([A-Z]{3})?$/.test(n) || /^USD[A-Z]{3}$/.test(n)) return "FX";
+  return "Stocks";
+}
+
+async function perpMarkets(): Promise<MarketSummary[]> {
   const [m, ctxs] = await metaAndAssetCtxs();
-  const out: MarketSummary[] = m.universe
-    .map((a, i) => {
+  return m.universe
+    .map((a, i): MarketSummary | null => {
       const c = ctxs[i];
       if (!c || a.isDelisted) return null;
       const markPx = Number(c.markPx);
       const prevDayPx = Number(c.prevDayPx);
       return {
         coin: a.name,
+        slug: a.name,
+        name: a.name,
+        base: a.name,
+        kind: "perp" as const,
+        dex: "",
+        assetId: i,
         szDecimals: a.szDecimals,
         maxLeverage: a.maxLeverage,
         markPx,
@@ -103,7 +122,114 @@ export async function markets(): Promise<MarketSummary[]> {
       } satisfies MarketSummary;
     })
     .filter((x): x is MarketSummary => x !== null);
+}
+
+/** USDC-quoted spot pairs with a price */
+async function spotMarkets(): Promise<MarketSummary[]> {
+  if (HL_MOCK) return mock.spotMarkets();
+  const [meta, ctxs] = await info().spotMetaAndAssetCtxs();
+  const byIndex = new Map(meta.tokens.map((t) => [t.index, t]));
+  const out: MarketSummary[] = [];
+  for (const pair of meta.universe) {
+    const base = byIndex.get(pair.tokens[0]);
+    const ctx = ctxs[pair.index] ?? ctxs.find((c) => c.coin === pair.name);
+    if (!base || pair.tokens[1] !== 0 || !ctx) continue;
+    const markPx = Number(ctx.markPx);
+    if (!(markPx > 0)) continue;
+    const prevDayPx = Number(ctx.prevDayPx);
+    const disp = spotDisplay(base.name);
+    out.push({
+      coin: pair.name,
+      slug: `spot:${base.name}`,
+      name: `${disp}/USDC`,
+      base: disp,
+      kind: "spot",
+      dex: "",
+      token: base.name,
+      assetId: 10000 + pair.index,
+      szDecimals: base.szDecimals,
+      maxLeverage: 1,
+      markPx,
+      midPx: ctx.midPx ? Number(ctx.midPx) : markPx,
+      prevDayPx,
+      change24h: prevDayPx > 0 ? (markPx - prevDayPx) / prevDayPx : 0,
+      volume24h: Number(ctx.dayNtlVlm),
+      openInterestUsd: 0,
+      funding: 0,
+      oraclePx: markPx,
+    });
+  }
+  return out;
+}
+
+/** builder-deployed perps (HIP-3): one meta per dex; asset id = 100000 + dex index * 10000 + index in that dex */
+async function hip3Markets(): Promise<MarketSummary[]> {
+  if (HL_MOCK) return mock.hip3Markets();
+  if (hip3Cache && Date.now() - hip3Cache.at < 30_000) return hip3Cache.value;
+  const dexs = await info().perpDexs();
+  const settled = await Promise.allSettled(
+    dexs.map(async (d, dexIndex) => {
+      if (!d || dexIndex === 0) return [] as MarketSummary[];
+      const [m, ctxs] = (await info().metaAndAssetCtxs({ dex: d.name })) as unknown as [HlMeta, HlAssetCtx[]];
+      return m.universe
+        .map((a, i): MarketSummary | null => {
+          const c = ctxs[i];
+          if (!c || a.isDelisted) return null;
+          const coin = a.name.includes(":") ? a.name : `${d.name}:${a.name}`;
+          const name = coin.split(":")[1];
+          const markPx = Number(c.markPx);
+          const prevDayPx = Number(c.prevDayPx);
+          return {
+            coin,
+            slug: coin,
+            name,
+            base: name,
+            kind: "hip3" as const,
+            dex: d.name,
+            dexName: d.fullName,
+            category: tradfiCategory(name),
+            assetId: 100000 + dexIndex * 10000 + i,
+            szDecimals: a.szDecimals,
+            maxLeverage: a.maxLeverage,
+            markPx,
+            midPx: c.midPx ? Number(c.midPx) : markPx,
+            prevDayPx,
+            change24h: prevDayPx > 0 ? (markPx - prevDayPx) / prevDayPx : 0,
+            volume24h: Number(c.dayNtlVlm),
+            openInterestUsd: Number(c.openInterest) * markPx,
+            funding: Number(c.funding),
+            oraclePx: Number(c.oraclePx),
+          } satisfies MarketSummary;
+        })
+        .filter((x): x is MarketSummary => x !== null);
+    }),
+  );
+  const value = settled.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+  hip3Cache = { at: Date.now(), value };
+  return value;
+}
+
+/** every market hyperliquid lists: main perps, USDC spot pairs, builder-dex perps. cached 10s server side. */
+export async function markets(): Promise<MarketSummary[]> {
+  if (marketsCache && Date.now() - marketsCache.at < 10_000) return marketsCache.value;
+  const [perps, spot, hip3] = await Promise.all([perpMarkets(), spotMarkets().catch(() => [] as MarketSummary[]), hip3Markets().catch(() => [] as MarketSummary[])]);
+  const out = [...perps, ...spot, ...hip3];
   marketsCache = { at: Date.now(), value: out };
+  return out;
+}
+
+/** one market by hyperliquid id or url slug (case-insensitive) */
+export async function marketByRef(ref: string): Promise<MarketSummary | undefined> {
+  const list = await markets();
+  const r = ref.toLowerCase();
+  return list.find((m) => m.coin.toLowerCase() === r) ?? list.find((m) => m.slug.toLowerCase() === r) ?? list.find((m) => m.coin === ref.toUpperCase());
+}
+
+/** mids for every market: hyperliquid's allMids (main perps + spot) plus builder-dex marks from the market cache */
+export async function allMidsAll(): Promise<HlAllMids> {
+  const [mids, list] = await Promise.all([allMids(), markets().catch(() => [] as MarketSummary[])]);
+  const out: HlAllMids = { ...mids };
+  for (const m of list) if (out[m.coin] === undefined && m.midPx > 0) out[m.coin] = String(m.midPx);
   return out;
 }
 
@@ -122,13 +248,24 @@ export async function allMids(): Promise<HlAllMids> {
 
 // ---------- per-address reads ----------
 
-export async function clearinghouseState(address: string): Promise<HlClearinghouseState> {
-  if (HL_MOCK) return mock.clearinghouseState(address);
-  return (await info().clearinghouseState({ user: address as `0x${string}` })) as unknown as HlClearinghouseState;
+export async function clearinghouseState(address: string, dex = ""): Promise<HlClearinghouseState> {
+  if (HL_MOCK) return mock.clearinghouseState(address, dex);
+  return (await info().clearinghouseState(dex ? { user: address as `0x${string}`, dex } : { user: address as `0x${string}` })) as unknown as HlClearinghouseState;
 }
 
 export type SpotToken = { name: string; tokenId: `0x${string}`; index: number; szDecimals: number; weiDecimals: number };
 let _tokens: { at: number; map: Record<string, SpotToken> } | null = null;
+/** is hip-3 dex abstraction on for this user (main perps USDC usable as margin on every builder dex)? null when unknown */
+export async function dexAbstraction(address: string): Promise<boolean | null> {
+  if (HL_MOCK) return true;
+  try {
+    const r = await info().userDexAbstraction({ user: address as `0x${string}` });
+    return r === null ? null : !!r;
+  } catch {
+    return null;
+  }
+}
+
 /** spot token registry (name → tokenId etc.), the "NAME:tokenId" half of a spotSend. cached 10 min. */
 export async function spotTokens(): Promise<Record<string, SpotToken>> {
   if (HL_MOCK) return mock.spotTokens();

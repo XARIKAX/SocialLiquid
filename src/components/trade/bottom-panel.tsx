@@ -30,6 +30,7 @@ const TABS: [Tab, string][] = [
 
 export function BottomPanel(props: {
   coin: string;
+  label?: string;
   positions?: MarketPosition[];
   trades?: MarketTrade[];
   theses?: FeedItem[];
@@ -57,12 +58,12 @@ export function BottomPanel(props: {
         ))}
         {own && (
           <span className="ml-auto pr-2 shrink-0">
-            <Toggle on={onlyCoin} onChange={setOnlyCoin} label={`Only ${props.coin}`} />
+            <Toggle on={onlyCoin} onChange={setOnlyCoin} label={`Only ${props.label ?? props.coin}`} />
           </span>
         )}
       </div>
       {tab === "traders" || tab === "thesis" ? (
-        <PositionsTable coin={props.coin} positions={props.positions} trades={props.trades} theses={props.theses} mid={props.mid} loading={props.loading} thesisOnly={props.thesisOnly} following={props.following} setThesisOnly={props.setThesisOnly} setFollowing={props.setFollowing} initialTab={tab === "thesis" ? "thesis" : "positions"} key={tab} />
+        <PositionsTable coin={props.coin} label={props.label} positions={props.positions} trades={props.trades} theses={props.theses} mid={props.mid} loading={props.loading} thesisOnly={props.thesisOnly} following={props.following} setThesisOnly={props.setThesisOnly} setFollowing={props.setFollowing} initialTab={tab === "thesis" ? "thesis" : "positions"} key={tab} />
       ) : !signedIn ? (
         <div className="py-10 text-center">
           <p className="text-muted text-sm">Connect a wallet to see your {TABS.find(([t]) => t === tab)?.[1].toLowerCase()}.</p>

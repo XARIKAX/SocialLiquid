@@ -84,19 +84,19 @@ export type OrderResult =
 type OrderStatus = { filled: { totalSz: string; avgPx: string; oid: number } } | { resting: { oid: number } } | { error: string } | string;
 
 async function marketInfo(coin: string) {
-  const m = await HL.meta();
-  const asset = m.universe.findIndex((a) => a.name === coin);
-  if (asset < 0) throw new HttpError(400, `unknown market ${coin}`);
-  const mids = await HL.allMids();
-  const mid = Number(mids[coin]);
+  const m = (await HL.markets()).find((x) => x.coin === coin);
+  if (!m) throw new HttpError(400, `unknown market ${coin}`);
+  const mids = await HL.allMidsAll();
+  const mid = Number(mids[coin]) || m.midPx;
   if (!mid) throw new HttpError(502, "no price for market");
-  return { asset, szDecimals: m.universe[asset].szDecimals, maxLeverage: m.universe[asset].maxLeverage, mid };
+  return { asset: m.assetId, szDecimals: m.szDecimals, maxLeverage: m.maxLeverage, mid, kind: m.kind, dex: m.dex, token: m.token, base: m.base };
 }
 
 export async function placeOrder(userId: string, address: string, input: OrderInput): Promise<OrderResult> {
   const agent = await agentFor(userId);
-  const { asset, szDecimals, maxLeverage, mid } = await marketInfo(input.coin);
-  const leverage = Math.max(1, Math.min(maxLeverage, Math.round(input.leverage)));
+  const { asset, szDecimals, maxLeverage, mid, kind, token, base } = await marketInfo(input.coin);
+  const isSpot = kind === "spot";
+  const leverage = isSpot ? 1 : Math.max(1, Math.min(maxLeverage, Math.round(input.leverage)));
   const isBuy = input.side === "LONG";
   const isCross = input.isCross ?? true;
 
@@ -108,8 +108,15 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
   if (Number(szStr) <= 0) throw new HttpError(400, "size too small for this market");
   if (Number(szStr) * refPx < 10 && !input.reduceOnly) throw new HttpError(400, "minimum order value is $10");
 
-  const fmt = (px: number) => HL.formatPx(px, szDecimals);
+  const fmt = (px: number) => (isSpot ? HL.formatSpotPx(px, szDecimals) : HL.formatPx(px, szDecimals));
   const marketPx = mid * (isBuy ? 1 + MAX_SLIPPAGE : 1 - MAX_SLIPPAGE);
+
+  // ---------- mock exchange: spot trades move spot balances ----------
+  if (HL_MOCK && isSpot) {
+    if (input.type !== "market" && input.type !== "limit") throw new HttpError(400, "spot supports market and limit orders");
+    const r = await mock.mockSpotTrade(address, token ?? base, base, isBuy, Number(szStr));
+    return { status: "filled", oid: Date.now() % 1_000_000, avgPx: r.avgPx, totalSz: r.totalSz, sz: szStr, px: fmt(refPx) };
+  }
 
   // ---------- mock exchange ----------
   if (HL_MOCK) {
@@ -146,9 +153,10 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
 
   // ---------- hyperliquid ----------
   const ex = exchangeFor(agent.encryptedPrivKey);
-  if (!input.reduceOnly) {
+  if (!input.reduceOnly && !isSpot) {
     await ex.updateLeverage({ asset, isCross, leverage }).catch((e: Error) => console.warn("[trade] updateLeverage:", e.message));
   }
+  if (isSpot && (input.type.startsWith("stop") || input.type.startsWith("takeProfit") || input.tp || input.sl)) throw new HttpError(400, "spot orders have no triggers; use market or limit");
   const builder = { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP };
 
   if (input.type === "twap") {

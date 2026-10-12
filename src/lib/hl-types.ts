@@ -47,6 +47,7 @@ export type HlClearinghouseState = {
     totalRawUsd: string;
     totalMarginUsed: string;
   };
+  crossMaintenanceMarginUsed?: string;
   withdrawable: string;
   assetPositions: { type: "oneWay"; position: HlPosition }[];
   time: number;
@@ -102,8 +103,26 @@ export type HlLeaderboardRow = {
 export type HlAllMids = Record<string, string>;
 
 /** derived market summary used by the UI */
+export type MarketKind = "perp" | "spot" | "hip3";
 export type MarketSummary = {
+  /** hyperliquid's id for api calls: "BTC", "@107" (spot pair), "xyz:BRENTOIL" (builder dex) */
   coin: string;
+  /** url slug: "BTC", "spot:USOL", "xyz:BRENTOIL" */
+  slug: string;
+  /** display: "BTC", "SOL/USDC", "BRENTOIL" */
+  name: string;
+  /** symbol for the icon */
+  base: string;
+  kind: MarketKind;
+  /** builder dex short name; "" for the main perps dex and spot */
+  dex: string;
+  dexName?: string;
+  /** tradfi grouping for builder-dex markets: Stocks · Indices · Commodities · FX · Pre-IPO */
+  category?: string;
+  /** spot only: the base token as hyperliquid names it (USOL) */
+  token?: string;
+  /** asset id for the order endpoint */
+  assetId: number;
   szDecimals: number;
   maxLeverage: number;
   markPx: number;

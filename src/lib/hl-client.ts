@@ -56,3 +56,8 @@ export async function spotSendWithWallet(wallet: WalletClient, chainId: number, 
   if (!/^0x[0-9a-fA-F]{40}$/.test(destination)) throw new Error("bad destination address");
   return exchange(wallet, chainId).spotSend({ destination: destination as `0x${string}`, token, amount });
 }
+
+/** hip-3 dex abstraction: let the main perps USDC margin positions on every builder dex (one signature, main wallet) */
+export async function setDexAbstractionWithWallet(wallet: WalletClient, chainId: number, user: string, enabled: boolean) {
+  return exchange(wallet, chainId).userDexAbstraction({ user: user as `0x${string}`, enabled });
+}

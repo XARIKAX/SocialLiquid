@@ -33,9 +33,9 @@ export function AboutCard({ coin, market, mid, longShort, counts }: { coin: stri
   return (
     <section className="card p-4">
       <div className="flex items-center gap-2.5">
-        <CoinIcon coin={coin} size={28} />
+        <CoinIcon coin={market?.base ?? coin} size={28} />
         <div className="leading-tight">
-          <h3 className="font-semibold text-[15px]">About {coin}</h3>
+          <h3 className="font-semibold text-[15px]">About {market?.name ?? coin}</h3>
           <p className="text-xs text-muted">Perpetual on Hyperliquid · up to {market?.maxLeverage ?? "–"}x</p>
         </div>
       </div>
@@ -55,8 +55,8 @@ export function AboutCard({ coin, market, mid, longShort, counts }: { coin: stri
         <div className="card-2 px-2.5 py-1.5"><div className="text-dim">Funding / 1h</div><div className={`num font-semibold text-xs ${(market?.funding ?? 0) >= 0 ? "text-up" : "text-down"}`}>{market ? `${(market.funding * 100).toFixed(4)}%` : "–"}</div></div>
       </div>
       <div className="flex gap-2 mt-3">
-        <a className="btn btn-sm" href={`https://x.com/search?q=%24${coin}`} target="_blank" rel="noreferrer"><Icon.x /> Search on X</a>
-        <a className="btn btn-sm" href={`${HL_APP_URL_CLIENT}/trade/${coin}`} target="_blank" rel="noreferrer">Hyperliquid <Icon.external /></a>
+        <a className="btn btn-sm" href={`https://x.com/search?q=%24${market?.base ?? coin}`} target="_blank" rel="noreferrer"><Icon.x /> Search on X</a>
+        <a className="btn btn-sm" href={`${HL_APP_URL_CLIENT}/trade/${encodeURIComponent(market?.kind === "spot" ? (market.token ?? coin) : coin)}`} target="_blank" rel="noreferrer">Hyperliquid <Icon.external /></a>
       </div>
     </section>
   );

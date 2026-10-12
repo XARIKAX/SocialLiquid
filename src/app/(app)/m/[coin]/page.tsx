@@ -10,15 +10,14 @@ type Props = { params: Promise<{ coin: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { coin } = await params;
-  const c = decodeURIComponent(coin).toUpperCase();
-  const initial = await marketInitial(c);
-  return { title: initial ? `${c} ${fmtPx(initial.market.markPx)}` : c };
+  const ref = decodeURIComponent(coin);
+  const initial = await marketInitial(ref);
+  return { title: initial ? `${initial.market.name} ${fmtPx(initial.market.markPx)}` : ref.toUpperCase() };
 }
 
 export default async function MarketPage({ params }: Props) {
   const { coin } = await params;
-  const c = decodeURIComponent(coin).toUpperCase();
-  const initial = await marketInitial(c);
+  const initial = await marketInitial(decodeURIComponent(coin));
   if (!initial) notFound();
-  return <MarketView coin={c} initial={initial} />;
+  return <MarketView coin={initial.market.coin} initial={initial} />;
 }

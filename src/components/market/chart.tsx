@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, createChart, createSeriesMarkers, type IChartApi, type IPriceLine, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from "lightweight-charts";
+import { INDICATOR_DEFS, indicatorById } from "@/lib/indicators";
 import { api } from "@/lib/client";
 import { fmtPx } from "@/lib/format";
 import { chartPalette, useTheme } from "@/lib/theme";
@@ -17,15 +18,11 @@ const INTERVALS: Interval[] = ["1m", "5m", "15m", "1h", "4h", "1d", "1w"];
 const INTERVAL_SEC: Record<Interval, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
 /** range buttons like the hl chart: label -> [interval, bars] */
 const RANGES: [string, Interval, number][] = [["5y", "1w", 260], ["1y", "1d", 365], ["6m", "1d", 180], ["3m", "4h", 540], ["1m", "1h", 720], ["5d", "15m", 480], ["1d", "5m", 288]];
-type Ind = "sma20" | "sma50" | "ema21" | "bb" | "vwap";
-const INDICATORS: [Ind, string, string][] = [["sma20", "SMA 20", "#f5b236"], ["sma50", "SMA 50", "#6b93ff"], ["ema21", "EMA 21", "#c084fc"], ["bb", "Bollinger 20·2", "#8b8b98"], ["vwap", "VWAP", "#4de3c1"]];
+const IND_STORE = "sl:indicators";
 type Tool = "cursor" | "trend" | "hline" | "ruler";
 type Pt = { t: number; p: number };
 type Drawing = { id: string; type: "trend" | "hline" | "ruler"; a: Pt; b?: Pt };
 
-function sma(v: number[], n: number) { return v.map((_, i) => (i + 1 < n ? NaN : v.slice(i + 1 - n, i + 1).reduce((a, b) => a + b, 0) / n)); }
-function ema(v: number[], n: number) { const k = 2 / (n + 1); let e = v[0]; return v.map((x, i) => (e = i ? x * k + e * (1 - k) : x)); }
-function std(v: number[], n: number, m: number[]) { return v.map((_, i) => (i + 1 < n ? NaN : Math.sqrt(v.slice(i + 1 - n, i + 1).reduce((a, b) => a + (b - m[i]) ** 2, 0) / n))); }
 
 function useClock() {
   const [s, setS] = useState("");
@@ -42,7 +39,8 @@ function useClock() {
   return s;
 }
 
-export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string; markers?: ChartMarker[]; lastPx?: number; lines?: PriceLine[] }) {
+export function Chart({ coin, label, markers = [], lastPx, lines = [] }: { coin: string; label?: string; markers?: ChartMarker[]; lastPx?: number; lines?: PriceLine[] }) {
+  const name = label ?? coin;
   const [theme] = useTheme();
   const pal = chartPalette(theme);
   const [interval, setInterval_] = useState<Interval>("1h");
@@ -51,8 +49,21 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
   const [showMine, setShowMine] = useState(true);
   const [showThesis, setShowThesis] = useState(true);
   const [scale, setScale] = useState<0 | 1 | 2>(0);
-  const [inds, setInds] = useState<Ind[]>([]);
+  const [inds, setInds] = useState<string[]>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(IND_STORE) ?? "[]");
+      return Array.isArray(v) ? v.filter((x) => typeof x === "string" && indicatorById(x)) : [];
+    } catch {
+      return [];
+    }
+  });
   const [indOpen, setIndOpen] = useState(false);
+  const [indQuery, setIndQuery] = useState("");
+  useEffect(() => {
+    try {
+      localStorage.setItem(IND_STORE, JSON.stringify(inds));
+    } catch {}
+  }, [inds]);
   const [legend, setLegend] = useState<Candle | null>(null);
   const [full, setFull] = useState(false);
   const [tool, setTool] = useState<Tool>("cursor");
@@ -70,7 +81,8 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const fundRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const indRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  const indRef = useRef<Map<string, ISeriesApi<"Line"> | ISeriesApi<"Histogram">>>(new Map());
+  const indLevelRef = useRef<Map<string, IPriceLine[]>>(new Map());
   const lineRef = useRef<IPriceLine[]>([]);
   const markersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null);
   const indMenuRef = useRef<HTMLDivElement>(null);
@@ -221,42 +233,70 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     s.update({ time: last.time as UTCTimestamp, open: last.open, high: Math.max(last.high, lastPx), low: Math.min(last.low, lastPx), close: lastPx });
   }, [lastPx, q.data, mode]);
 
+  /** indicator series data: key = "<indicator>:<line>", computed from the candles */
   const indData = useMemo(() => {
     if (!q.data) return null;
-    const closes = q.data.map((c) => c.close);
     const times = q.data.map((c) => c.time as UTCTimestamp);
-    const out: Record<string, { time: UTCTimestamp; value: number }[]> = {};
-    const pack = (arr: number[]) => arr.map((v, i) => ({ time: times[i], value: v })).filter((p) => Number.isFinite(p.value));
-    if (inds.includes("sma20")) out.sma20 = pack(sma(closes, 20));
-    if (inds.includes("sma50")) out.sma50 = pack(sma(closes, 50));
-    if (inds.includes("ema21")) out.ema21 = pack(ema(closes, 21));
-    if (inds.includes("bb")) {
-      const m = sma(closes, 20);
-      const sd = std(closes, 20, m);
-      out.bbU = pack(m.map((x, i) => x + 2 * sd[i]));
-      out.bbL = pack(m.map((x, i) => x - 2 * sd[i]));
-    }
-    if (inds.includes("vwap")) {
-      let pv = 0;
-      let vv = 0;
-      out.vwap = pack(q.data.map((c) => { const tp = (c.high + c.low + c.close) / 3; pv += tp * c.volume; vv += c.volume; return vv ? pv / vv : NaN; }));
+    const out: { key: string; ind: string; pane: "price" | "own"; color: string; style: number; histogram: boolean; levels: number[]; points: { time: UTCTimestamp; value: number; color?: string }[] }[] = [];
+    for (const id of inds) {
+      const def = indicatorById(id);
+      if (!def) continue;
+      let series: Record<string, number[]>;
+      try {
+        series = def.compute(q.data);
+      } catch {
+        continue;
+      }
+      for (const line of def.lines) {
+        const arr = series[line.key] ?? [];
+        const points = arr.map((v, i) => ({ time: times[i], value: v, ...(line.histogram ? { color: v >= 0 ? pal.up : pal.down } : {}) })).filter((p) => Number.isFinite(p.value));
+        out.push({ key: `${id}:${line.key}`, ind: id, pane: def.pane, color: line.color, style: line.style ?? 0, histogram: !!line.histogram, levels: def.levels ?? [], points });
+      }
     }
     return out;
-  }, [q.data, inds]);
+  }, [q.data, inds, pal.up, pal.down]);
   useEffect(() => {
     const c = chartRef.current;
     if (!c || !indData) return;
-    const colors: Record<string, string> = { sma20: "#f5b236", sma50: "#6b93ff", ema21: "#c084fc", bbU: "#8b8b98", bbL: "#8b8b98", vwap: pal.brand };
-    for (const [k, s] of indRef.current) if (!indData[k]) { c.removeSeries(s); indRef.current.delete(k); }
-    for (const k of Object.keys(indData)) {
-      let s = indRef.current.get(k);
-      if (!s) {
-        s = c.addSeries(LineSeries, { color: colors[k], lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, lineStyle: k.startsWith("bb") ? 2 : 0 });
-        indRef.current.set(k, s);
+    const wanted = new Set(indData.map((d) => d.key));
+    for (const [k, s] of indRef.current) {
+      if (!wanted.has(k)) {
+        c.removeSeries(s);
+        indRef.current.delete(k);
+        indLevelRef.current.delete(k);
       }
-      s.setData(indData[k]);
     }
-  }, [indData, pal.brand]);
+    // own-pane indicators get consecutive panes below the price pane, in the order they were added
+    const ownOrder = [...new Set(indData.filter((d) => d.pane === "own").map((d) => d.ind))];
+    for (const d of indData) {
+      const paneIndex = d.pane === "own" ? 1 + ownOrder.indexOf(d.ind) : 0;
+      let s = indRef.current.get(d.key);
+      if (s && (s.seriesType() === "Histogram") !== d.histogram) {
+        c.removeSeries(s);
+        indRef.current.delete(d.key);
+        s = undefined;
+      }
+      if (!s) {
+        s = d.histogram
+          ? c.addSeries(HistogramSeries, { color: d.color, priceLineVisible: false, lastValueVisible: false, priceFormat: { type: "price", precision: 4, minMove: 0.0001 } }, paneIndex)
+          : c.addSeries(LineSeries, { color: d.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: d.pane === "own", crosshairMarkerVisible: false, lineStyle: d.style, priceFormat: d.pane === "own" ? { type: "price", precision: 2, minMove: 0.01 } : undefined }, paneIndex);
+        indRef.current.set(d.key, s);
+        if (d.pane === "own" && d.levels.length && !indLevelRef.current.has(d.key) && d.key.endsWith(`:${indicatorById(d.ind)?.lines[0].key}`)) {
+          indLevelRef.current.set(d.key, d.levels.map((lv) => s!.createPriceLine({ price: lv, color: pal.grid, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: "" })));
+        }
+      } else {
+        try {
+          s.moveToPane(paneIndex);
+        } catch {}
+      }
+      s.setData(d.points as never);
+    }
+    // keep oscillator panes compact
+    try {
+      const panes = c.panes();
+      for (let i = 1; i < panes.length; i++) panes[i].setHeight(110);
+    } catch {}
+  }, [indData, pal.brand, pal.grid]);
 
   useEffect(() => {
     const s = seriesRef.current;
@@ -350,7 +390,7 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
     if (!canvas) return;
     const a = document.createElement("a");
     a.href = canvas.toDataURL("image/png");
-    a.download = `${coin}-${interval}-${new Date().toISOString().slice(0, 19)}.png`;
+    a.download = `${name.replace(/[^A-Za-z0-9]+/g, "-")}-${interval}-${new Date().toISOString().slice(0, 19)}.png`;
     a.click();
   };
   const goToDate = (v: string) => {
@@ -455,14 +495,30 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
         <div ref={indMenuRef} className="relative">
           <button className={`tab h-8 px-2.5 ${inds.length ? "text-brand" : ""}`} onClick={() => setIndOpen((v) => !v)}><span className="italic font-serif">ƒ</span>x Indicators{inds.length ? ` (${inds.length})` : ""}</button>
           {indOpen && (
-            <div className="absolute left-0 top-9 z-30 w-52 card p-1.5 shadow-2xl shadow-black/40">
-              {INDICATORS.map(([k, l, c]) => (
-                <button key={k} className="w-full flex items-center gap-2 px-2.5 h-9 rounded-lg hover:bg-panel-2 text-left" onClick={() => setInds((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]))}>
-                  <span className="w-3 h-0.5 rounded" style={{ background: c }} />
-                  <span className="flex-1">{l}</span>
-                  {inds.includes(k) && <span className="text-brand"><Icon.check /></span>}
-                </button>
-              ))}
+            <div className="absolute left-0 top-9 z-30 w-72 card p-1.5 shadow-2xl shadow-black/40" data-testid="indicator-menu">
+              <div className="flex items-center h-8 card-2 px-2 gap-2 mb-1">
+                <span className="text-dim"><Icon.search /></span>
+                <input autoFocus className="flex-1 bg-transparent outline-none text-[12px] placeholder:text-dim" placeholder="Search indicators" value={indQuery} onChange={(e) => setIndQuery(e.target.value)} aria-label="search indicators" />
+                {inds.length > 0 && <button className="text-[11px] text-dim hover:text-fg" onClick={() => setInds([])}>Clear</button>}
+              </div>
+              <div className="max-h-[320px] overflow-y-auto">
+                {(["price", "own"] as const).map((pane) => {
+                  const list = INDICATOR_DEFS.filter((d) => d.pane === pane && d.name.toLowerCase().includes(indQuery.trim().toLowerCase()));
+                  if (!list.length) return null;
+                  return (
+                    <div key={pane}>
+                      <div className="px-2.5 h-6 flex items-center text-[10px] uppercase tracking-wide text-dim">{pane === "price" ? "Overlays" : "Oscillators · own pane"}</div>
+                      {list.map((d) => (
+                        <button key={d.id} className="w-full flex items-center gap-2 px-2.5 h-8 rounded-lg hover:bg-panel-2 text-left text-[12px]" onClick={() => setInds((s) => (s.includes(d.id) ? s.filter((x) => x !== d.id) : [...s, d.id]))}>
+                          <span className="w-3 h-0.5 rounded" style={{ background: d.lines[0].color }} />
+                          <span className="flex-1">{d.name}</span>
+                          {inds.includes(d.id) && <span className="text-brand"><Icon.check /></span>}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -503,17 +559,17 @@ export function Chart({ coin, markers = [], lastPx, lines = [] }: { coin: string
           {/* legend */}
           {mode === "chart" && cur && (
             <div className="absolute left-3 right-16 top-2 z-10 text-[11px] num flex items-center gap-2 pointer-events-none flex-wrap">
-              <span className="text-fg-2 font-sans font-medium hidden sm:inline">{coin}-USD · {interval} · socialLiquid</span>
+              <span className="text-fg-2 font-sans font-medium hidden sm:inline">{name} · {interval} · socialLiquid</span>
               <span className="text-dim">O</span><span className={up ? "text-up" : "text-down"}>{fmtPx(cur.open)}</span>
               <span className="text-dim">H</span><span className={up ? "text-up" : "text-down"}>{fmtPx(cur.high)}</span>
               <span className="text-dim">L</span><span className={up ? "text-up" : "text-down"}>{fmtPx(cur.low)}</span>
               <span className="text-dim">C</span><span className={up ? "text-up" : "text-down"}>{fmtPx(cur.close)}</span>
-              {inds.map((k) => { const d = INDICATORS.find((x) => x[0] === k)!; return <span key={k} className="ml-1" style={{ color: d[2] }}>{d[1]}</span>; })}
+              {inds.map((k) => { const d = indicatorById(k); return d ? <span key={k} className="ml-1" style={{ color: d.lines[0].color }}>{d.name}</span> : null; })}
             </div>
           )}
           {mode === "funding" && (
             <div className="absolute left-3 top-2 z-10 text-[11px] num flex items-center gap-2 pointer-events-none">
-              <span className="text-fg-2 font-sans font-medium">{coin} funding · hourly · 7d</span>
+              <span className="text-fg-2 font-sans font-medium">{name} funding · hourly · 7d</span>
               {lastFunding && <span className={lastFunding.rate >= 0 ? "text-up" : "text-down"}>{(lastFunding.rate * 100).toFixed(4)}%</span>}
             </div>
           )}

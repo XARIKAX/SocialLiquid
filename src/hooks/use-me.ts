@@ -27,6 +27,13 @@ export function useMe() {
 }
 
 export type Balance = {
+  /** builder dex these perps numbers are for; "" = main */
+  dex?: string;
+  /** hip-3 dex abstraction on (main USDC usable on builder dexes); only asked for when dex is set */
+  dexAbstraction?: boolean | null;
+  totalNtlPos?: number;
+  /** cross maintenance margin used; null if hyperliquid did not report it */
+  maintenanceMargin?: number | null;
   /** spot balances (native deposits through Unit land here); null if the spot read failed */
   spot: { coin: string; total: number; hold: number }[] | null;
   accountValue: number;
@@ -35,10 +42,10 @@ export type Balance = {
   positions: { coin: string; szi: number; entryPx: number; positionValue: number; unrealizedPnl: number; leverage: number; liquidationPx: number | null; returnOnEquity: number }[];
 };
 
-export function useBalance(address: string | null | undefined) {
+export function useBalance(address: string | null | undefined, dex = "") {
   return useQuery({
-    queryKey: ["balance", address],
-    queryFn: () => api<Balance>(`/api/balance?address=${address}`),
+    queryKey: ["balance", address, dex],
+    queryFn: () => api<Balance>(`/api/balance?address=${address}${dex ? `&dex=${encodeURIComponent(dex)}` : ""}`),
     enabled: !!address,
     refetchInterval: 5000,
   });
