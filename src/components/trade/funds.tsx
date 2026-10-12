@@ -28,7 +28,7 @@ import {
   swapUsdtToUsdc,
   withdrawRouteById,
 } from "@/lib/funds";
-import { UNIT_APP_URL, UNIT_ASSETS, fetchUnitAddress, fetchUnitWithdrawAddress, looksLikeAddress, minNumber, spotEntry, unitDepositable, unitWithdrawable, type UnitAddress, type UnitAsset } from "@/lib/unit";
+import { UNIT_APP_URL, UNIT_ASSETS, fetchUnitAddress, fetchUnitOperations, fetchUnitWithdrawAddress, looksLikeAddress, minNumber, spotEntry, unitDepositable, unitStateLabel, unitWithdrawable, type UnitAddress, type UnitAsset, type UnitOperation } from "@/lib/unit";
 import QRCode from "qrcode";
 import type { wagmiConfig } from "@/lib/wagmi";
 import { Icon } from "../ui";
@@ -296,7 +296,7 @@ function FundsModal({ mode, address, onClose, onMode }: { mode: FundsMode; addre
         </div>
 
         {mode === "deposit" && !isUsdc ? (
-          unitInfo && !unitDepositable(unitInfo) ? <UnitLinkPanel mode="deposit" asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} /> : <UnitPanel asset={unitInfo!} q={unit} spot={bal.data?.spot} copied={copied} onCopy={copy} />
+          unitInfo && !unitDepositable(unitInfo) ? <UnitLinkPanel mode="deposit" asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} /> : <UnitPanel asset={unitInfo!} q={unit} spot={bal.data?.spot} copied={copied} onCopy={copy} hlAddress={address} />
         ) : nativeW && unitInfo && !unitWithdrawable(unitInfo) ? (
           <UnitLinkPanel mode="withdraw" asset={unitInfo.symbol} chainLabel={unitInfo.chainLabel} />
         ) : (
@@ -428,6 +428,19 @@ function sendHint(asset: string, chain: string) {
   }
 }
 
+/** one Unit operation: amount, state in plain words, time */
+function OpRow({ o }: { o: UnitOperation }) {
+  const st = unitStateLabel(o.state);
+  const when = o.createdAt ? new Date(o.createdAt) : null;
+  return (
+    <li className="flex items-center justify-between gap-2 text-[11px]">
+      <span className="num">{o.sourceAmount ?? o.destinationAmount ?? "…"} {o.asset}</span>
+      <span className={st.done ? "text-up" : "text-warn animate-pulse"}>{st.text}</span>
+      <span className="text-dim num">{when && !Number.isNaN(when.getTime()) ? when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span>
+    </li>
+  );
+}
+
 /** an asset whose minimum deposit we could not verify: no address in-app, Unit's own dialog instead */
 function UnitLinkPanel({ mode, asset, chainLabel }: { mode: FundsMode; asset: string; chainLabel: string }) {
   const verb = mode === "deposit" ? "deposit" : "withdrawal";
@@ -440,8 +453,11 @@ function UnitLinkPanel({ mode, asset, chainLabel }: { mode: FundsMode; asset: st
 }
 
 /** native-asset deposit: the user's Unit address on the source chain, with a QR for mobile wallets */
-function UnitPanel({ asset: info, q, spot, copied, onCopy }: { asset: UnitAsset; q: UnitQ; spot: Balance["spot"] | undefined; copied: boolean; onCopy: (t: string) => void }) {
+function UnitPanel({ asset: info, q, spot, copied, onCopy, hlAddress }: { asset: UnitAsset; q: UnitQ; spot: Balance["spot"] | undefined; copied: boolean; onCopy: (t: string) => void; hlAddress: string }) {
   const asset = info.symbol;
+  // Unit's own record of this account's deposits: the answer to "has it shown up yet"
+  const ops = useQuery({ queryKey: ["unit-ops", hlAddress], queryFn: () => fetchUnitOperations(hlAddress, api), enabled: !!q.data, refetchInterval: 15_000, retry: 0 });
+  const mine = (ops.data ?? []).filter((o) => o.asset === asset && (!o.destinationChain || /hyperliquid/i.test(o.destinationChain))).slice(0, 5);
   const [qr, setQr] = useState<string | null>(null);
   // spot balance of this coin now vs when the panel opened: the difference is what arrived while watching
   const entry = spotEntry(info, spot);
@@ -502,6 +518,13 @@ function UnitPanel({ asset: info, q, spot, copied, onCopy }: { asset: UnitAsset;
             <div className="mt-1.5 text-dim animate-pulse">Watching for a deposit… it shows here {q.data.confirmations ? `about ${q.data.confirmations.replace(/^~/, "")} after you send` : "once Unit credits it"}.</div>
           )}
           <div className="mt-1.5 text-dim leading-snug">To trade perps with it, sell {asset} for USDC on <a className="text-brand hover:underline" href={`${HL_APP_URL_CLIENT}/trade`} target="_blank" rel="noreferrer">Hyperliquid spot</a> ({asset}/USDC), then it is margin here.</div>
+          {mine.length > 0 && (
+            <ul className="mt-2 border-t border-line pt-2 space-y-1" data-testid="unit-ops">
+              {mine.map((o) => <OpRow key={o.id} o={o} />)}
+            </ul>
+          )}
+          {ops.data && mine.length === 0 && <div className="mt-2 border-t border-line pt-2 text-dim">Unit has no {asset} deposit on record for this account yet. It appears here once the Solana transaction is seen.</div>}
+          {ops.error && <div className="mt-2 border-t border-line pt-2 text-dim">Unit&apos;s deposit tracker is not answering right now; the balance above still updates on its own.</div>}
         </div>
       )}
       {q.data && (

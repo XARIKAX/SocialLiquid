@@ -160,3 +160,68 @@ export async function fetchUnitWithdrawAddress(symbol: string, destination: stri
   }
   throw new Error(`Could not get a ${asset.symbol} withdrawal address from Unit: ${errors.join(" · ")}`);
 }
+
+export type UnitOperation = {
+  id: string;
+  asset: string;
+  sourceChain: string;
+  destinationChain: string;
+  sourceAmount: string | null;
+  destinationAmount: string | null;
+  state: string;
+  createdAt: string | null;
+  sourceTx: string | null;
+  destinationTx: string | null;
+};
+
+/** Unit's /operations/:address rows as we show them; unknown shapes are skipped rather than guessed at */
+export function parseUnitOperations(body: unknown): UnitOperation[] {
+  const rows = (body && typeof body === "object" && Array.isArray((body as { operations?: unknown }).operations) ? (body as { operations: unknown[] }).operations : Array.isArray(body) ? body : []) as Record<string, unknown>[];
+  const str = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : null);
+  const out: UnitOperation[] = [];
+  for (const r of rows) {
+    if (!r || typeof r !== "object") continue;
+    const asset = str(r.asset);
+    const state = str(r.state) ?? str(r.status);
+    if (!asset || !state) continue;
+    out.push({
+      id: str(r.operationId) ?? str(r.id) ?? `${asset}-${str(r.opCreatedAt) ?? out.length}`,
+      asset: asset.toUpperCase(),
+      sourceChain: str(r.sourceChain) ?? "",
+      destinationChain: str(r.destinationChain) ?? "",
+      sourceAmount: str(r.sourceAmount),
+      destinationAmount: str(r.destinationAmount),
+      state,
+      createdAt: str(r.opCreatedAt) ?? str(r.createdAt),
+      sourceTx: str(r.sourceTxHash),
+      destinationTx: str(r.destinationTxHash),
+    });
+  }
+  return out;
+}
+
+/** human wording for Unit's operation states (its deposit lifecycle), falling back to the raw state */
+export function unitStateLabel(state: string): { text: string; done: boolean } {
+  const s = state.toLowerCase();
+  if (s === "done" || s === "complete" || s === "completed" || s === "success") return { text: "Credited", done: true };
+  if (s.includes("discover")) return { text: "Seen on chain, waiting for confirmations", done: false };
+  if (s.includes("final")) return { text: "Waiting for source-chain finality", done: false };
+  if (s.includes("build") || s.includes("sign") || s.includes("broadcast") || s.includes("dsttx") || s.includes("dst_tx")) return { text: "Guardians are crediting it", done: false };
+  if (s.includes("fail") || s.includes("revert") || s.includes("reject")) return { text: `Failed (${state})`, done: false };
+  return { text: state, done: false };
+}
+
+/** the user's recent Unit operations: browser first, then our server proxy */
+export async function fetchUnitOperations(hlAddress: string, apiFetch: <T>(path: string) => Promise<T>): Promise<UnitOperation[]> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 10_000);
+    const res = await fetch(`${UNIT_API_URL_CLIENT}/operations/${hlAddress.toLowerCase()}`, { signal: ctrl.signal, headers: { accept: "application/json" } });
+    clearTimeout(t);
+    if (res.ok) return parseUnitOperations(await res.json());
+  } catch {
+    /* fall through to the server */
+  }
+  const r = await apiFetch<{ operations: UnitOperation[] }>("/api/funds/unit/ops");
+  return r.operations;
+}
