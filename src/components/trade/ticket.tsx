@@ -360,7 +360,12 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
       <dl className="text-xs space-y-1 px-0.5">
         <Row k={isSpot ? (side === "LONG" ? "Available USDC · spot" : `Available ${market?.base ?? coin} · spot`) : "Available to Trade"} v={signedIn ? (isSpot && side === "SHORT" ? `${avail} ${market?.base ?? coin}` : `${fmtUsd(avail)} USDC`) : "–"} />
         {!isSpot && usdcSpotAvail(bal.data?.spot) > 0.01 && (
-          <Row k="In spot" v={<span>{fmtUsd(usdcSpotAvail(bal.data?.spot))} · <button className="text-brand hover:underline" onClick={() => openConvert("USDC")} data-testid="ticket-move-usdc">Move to perps</button></span>} />
+          <Row
+            k="In spot"
+            v={bal.data?.unified
+              ? <span>{fmtUsd(usdcSpotAvail(bal.data?.spot))} · <span className="text-muted">unified, already margin</span></span>
+              : <span>{fmtUsd(usdcSpotAvail(bal.data?.spot))} · <button className="text-brand hover:underline" onClick={() => openConvert("USDC")} data-testid="ticket-move-usdc">Move to perps</button></span>}
+          />
         )}
         {isSpot ? (
           <Row k="You hold" v={`${spotTok ? spotTok.total : 0} ${market?.base ?? coin}`} />

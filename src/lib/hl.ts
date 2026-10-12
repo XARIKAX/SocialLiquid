@@ -266,6 +266,24 @@ export async function dexAbstraction(address: string): Promise<boolean | null> {
   }
 }
 
+/**
+ * hyperliquid's account abstraction mode. "unifiedAccount" and "portfolioMargin" merge the spot and perps
+ * balances into one margin pool: spot USDC already backs perps, and usdClassTransfer is rejected outright
+ * ("Action disabled when unified account is active"). null when hyperliquid did not answer.
+ */
+export type Abstraction = "unifiedAccount" | "portfolioMargin" | "disabled" | "default";
+export async function userAbstraction(address: string): Promise<Abstraction | null> {
+  if (HL_MOCK) return "default";
+  try {
+    return (await info().userAbstraction({ user: address as `0x${string}` })) as Abstraction;
+  } catch {
+    return null;
+  }
+}
+
+/** true when spot and perps share one margin pool, so there is nothing to move and no transfer to offer */
+export const isUnified = (a: Abstraction | null | undefined) => a === "unifiedAccount" || a === "portfolioMargin";
+
 /** spot token registry (name → tokenId etc.), the "NAME:tokenId" half of a spotSend. cached 10 min. */
 export async function spotTokens(): Promise<Record<string, SpotToken>> {
   if (HL_MOCK) return mock.spotTokens();
