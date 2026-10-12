@@ -4,27 +4,19 @@ import type { CSSProperties, ReactNode } from "react";
 /** inline style helper for css custom properties (--d, --t, ...) */
 export const vars = (v: Record<string, string | number>) => v as CSSProperties;
 
-/** the droplet mark: gradient body, a specular highlight, a soft glow */
-export function Mark({ size = 22, id = "m" }: { size?: number; id?: string }) {
+/** the brand mark, the glass "S" (public/brand/mark.webp, 192px tall). `size` is its height in px */
+export const MARK_RATIO = 0.8229;
+export function Mark({ size = 22, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="lp-mark">
-      <defs>
-        <linearGradient id={`${id}-g`} x1="0.2" y1="0" x2="0.8" y2="1">
-          <stop offset="0" stopColor="#d4fff4" />
-          <stop offset="0.45" stopColor="#6ff2d3" />
-          <stop offset="1" stopColor="#1f9c84" />
-        </linearGradient>
-      </defs>
-      <path d="M12 2.2s-7 7.6-7 12.6a7 7 0 0 0 14 0c0-5-7-12.6-7-12.6z" fill={`url(#${id}-g)`} />
-      <path d="M8.6 14.6c0 2.1 1.4 3.7 3.2 4.1" fill="none" stroke="#f2fffb" strokeOpacity="0.85" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src="/brand/mark.webp" alt="" aria-hidden width={Math.round(size * MARK_RATIO)} height={size} decoding="async" draggable={false} className={`lp-mark ${className}`} />
   );
 }
 
-export function Wordmark({ className = "", size = 19, id }: { className?: string; size?: number; id?: string }) {
+export function Wordmark({ className = "", size = 19 }: { className?: string; size?: number }) {
   return (
     <span className={`lp-wordmark ${className}`} style={{ fontSize: size }}>
-      <Mark size={Math.round(size * 1.2)} id={id} />
+      <Mark size={Math.round(size * 1.18)} />
       <span>
         social<span className="lp-wordmark-liquid">Liquid</span>
       </span>

@@ -13,7 +13,7 @@
   background-clip: text;
   color: transparent;
 }
-.lp-mark { filter: drop-shadow(0 0 8px rgb(77 227 193 / 0.55)); flex-shrink: 0; }
+.lp-mark { display: block; flex-shrink: 0; user-select: none; filter: drop-shadow(0 0 7px rgb(40 160 255 / 0.5)); }
 
 /* ---------- nav: transparent over the hero, frosted once you scroll ----------
    the frosted pill is a pseudo-element: it fades in and tightens to 1120px on a scaleX

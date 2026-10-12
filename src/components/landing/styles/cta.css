@@ -513,7 +513,7 @@
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
 }
-.lp-cta-orb .lp-mark { position: relative; z-index: 1; filter: drop-shadow(0 0 10px rgb(77 227 193 / 0.85)) drop-shadow(0 2px 4px rgb(0 0 0 / 0.5)); }
+.lp-cta-orb .lp-mark { position: relative; z-index: 1; filter: drop-shadow(0 0 12px rgb(40 160 255 / 0.75)) drop-shadow(0 2px 4px rgb(0 0 0 / 0.5)); }
 
 /* ---------- copy ---------- */
 .lp-cta-copy {
@@ -605,7 +605,7 @@
   .lp-cta-lead { max-width: 330px; }
   .lp-cta-ctas { flex-direction: column; align-items: stretch; width: 100%; max-width: 320px; }
   .lp-cta-sat-alt { display: none; }
-  .lp-cta-orb .lp-mark { width: 32px; height: 32px; }
+  .lp-cta-orb .lp-mark { width: auto; height: 34px; }
   .lp-cta-orb::after { inset: -7px; }
   .lp-cta-node-dim { display: none; }
   .lp-cta-comet { display: none; }

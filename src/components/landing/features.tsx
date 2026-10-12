@@ -572,7 +572,7 @@ function ReceiptCard() {
           <div className="lp-feat-ticket-shape">
             <div className="lp-feat-paper lp-mono">
               <div className="lp-feat-paper-brand">
-                <Mark size={14} id="lp-feat-mk" />
+                <Mark size={15} />
                 <span>socialLiquid</span>
                 <small>Receipt</small>
               </div>

@@ -53,12 +53,12 @@ export const wagmiConfig = createConfig({
             walletConnect({
               projectId: WC_ID,
               showQrModal: true,
-              metadata: { name: "socialLiquid", description: "social trading for perps", url: typeof window !== "undefined" ? window.location.origin : "https://socialliquid.xyz", icons: [] },
+              metadata: { name: "socialLiquid", description: "the social layer for hyperliquid", url: typeof window !== "undefined" ? window.location.origin : "https://socialliquid.fun", icons: [`${typeof window !== "undefined" ? window.location.origin : "https://socialliquid.fun"}/brand/mark-512.png`] },
             }),
           ),
         ]
       : []),
-    lazy(coinbaseWallet({ appName: "socialLiquid", preference: "all" })),
+    lazy(coinbaseWallet({ appName: "socialLiquid", appLogoUrl: typeof window !== "undefined" ? `${window.location.origin}/brand/mark-512.png` : "https://socialliquid.fun/brand/mark-512.png", preference: "all" })),
   ],
   transports: { [arbitrum.id]: http(), [arbitrumSepolia.id]: http(), [mainnet.id]: http(), [hyperEvm.id]: http(), [base.id]: http(), [optimism.id]: http(), [polygon.id]: http(), [avalanche.id]: http() },
   ssr: true,

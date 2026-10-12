@@ -45,7 +45,7 @@ export function Footer({ d }: { d: LandingData }) {
         <div className="lp-footer-top">
           <div className="lp-footer-brand" data-reveal>
             <Link href="/" className="lp-footer-logo" aria-label="socialLiquid home">
-              <Wordmark size={24} id="footer-mark" />
+              <Wordmark size={24} />
             </Link>
             <p className="lp-footer-tag">
               <span className="lp-lit">The social layer</span> <em className="lp-grad not-italic">for Hyperliquid.</em>
@@ -91,7 +91,7 @@ export function Footer({ d }: { d: LandingData }) {
           </div>
           <div className="lp-footer-legal-end">
             <span className="lp-footer-built">
-              <Mark size={15} id="footer-built" />
+              <Mark size={16} />
               Built on Hyperliquid
             </span>
             <FooterTop />

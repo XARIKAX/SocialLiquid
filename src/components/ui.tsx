@@ -164,9 +164,11 @@ import { Icon } from "./icons";
 
 export function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   const s = size === "lg" ? "text-2xl" : size === "sm" ? "text-base" : "text-[19px]";
+  const px = size === "lg" ? 28 : size === "sm" ? 19 : 22;
   return (
-    <span className={`inline-flex items-center gap-1.5 font-semibold tracking-[-0.03em] ${s} select-none`}>
-      <span className="text-brand"><Icon.drop /></span>
+    <span className={`inline-flex items-center gap-2 font-semibold tracking-[-0.03em] ${s} select-none`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brand/mark.webp" alt="" aria-hidden width={Math.round(px * 0.8229)} height={px} decoding="async" draggable={false} className="logo-mark shrink-0" />
       <span>
         social<span className="text-brand">Liquid</span>
       </span>

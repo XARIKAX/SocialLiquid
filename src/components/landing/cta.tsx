@@ -313,7 +313,7 @@ function Sky({ traders }: { traders: LandingData["traders"] }) {
       <div className="lp-cta-core">
         <span className="lp-cta-core-halo" />
         <span className="lp-cta-orb">
-          <Mark size={42} id="lp-cta-mark" />
+          <Mark size={44} />
         </span>
       </div>
 

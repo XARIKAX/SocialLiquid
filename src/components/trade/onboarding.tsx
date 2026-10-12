@@ -127,7 +127,7 @@ function HandleStep({ onDone }: { onDone: () => void }) {
         }}
       >
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dim text-xs">socialliquid.xyz/t/</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dim text-xs">socialliquid.fun/t/</span>
           <input className="input pl-[118px]" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="handle" maxLength={20} autoFocus />
         </div>
         <div className="relative">

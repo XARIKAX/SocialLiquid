@@ -229,3 +229,7 @@ input[type="range"].slider::-moz-range-thumb {
 @media (prefers-reduced-motion: reduce) {
   .toast-in { animation: none; }
 }
+
+/* ---------- brand mark ---------- */
+.logo-mark { filter: drop-shadow(0 0 6px rgb(40 160 255 / 0.45)); user-select: none; }
+[data-theme="light"] .logo-mark { filter: none; }

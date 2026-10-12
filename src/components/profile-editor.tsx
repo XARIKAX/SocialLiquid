@@ -180,7 +180,7 @@ function ProfileEditor({ mandatory, onClose }: { mandatory: boolean; onClose: ()
               </span>
             </label>
           </div>
-          <p className="text-[11px] text-dim mt-1 num">socialliquid.xyz/t/{handle.toLowerCase() || "handle"}</p>
+          <p className="text-[11px] text-dim mt-1 num">socialliquid.fun/t/{handle.toLowerCase() || "handle"}</p>
 
           <label className="block mt-3">
             <span className="text-[11px] text-muted">Bio <span className="text-dim">· optional</span></span>
