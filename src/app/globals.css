@@ -462,3 +462,31 @@ input[type="range"].slider::-moz-range-thumb {
 @media (prefers-reduced-motion: reduce) {
   .float-card, .toast-in { animation: none; }
 }
+
+/* ---------- hero photo ---------- */
+.hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* keep the glowing lead fish (right of centre, lower half) in frame at every aspect ratio */
+  object-position: 70% 60%;
+}
+@media (max-width: 640px) {
+  .hero-img { object-position: 58% 72%; }
+}
+.hero-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    /* top to bottom: dark behind the copy, clear by the time the school and the lead fish appear */
+    linear-gradient(180deg, rgb(3 9 11 / 0.9) 0%, rgb(3 9 11 / 0.72) 32%, rgb(3 9 11 / 0.3) 58%, rgb(3 9 11 / 0.04) 78%, transparent 100%),
+    /* a little extra behind the text column on the left */
+    radial-gradient(55% 60% at 22% 38%, rgb(3 9 11 / 0.55), transparent 70%),
+    /* seam into the page below, bottom-right stays open */
+    linear-gradient(180deg, transparent 90%, rgb(5 5 7 / 0.7) 100%);
+}
+.wordmark-left {
+  font-size: clamp(52px, 8.2vw, 116px);
+  line-height: 0.92;
+}

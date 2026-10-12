@@ -50,35 +50,32 @@ function Nav() {
 
 /* ---------- hero ---------- */
 function Hero({ items }: { items: FeedItem[] }) {
-  const cards = items.filter((i) => i.position && i.type !== "THESIS").slice(0, 3);
-  const pos = [
-    { className: "hidden lg:block left-[5%] top-[44%]", tilt: "-3deg", dur: "7s", delay: "0s" },
-    { className: "hidden lg:block right-[5%] top-[50%]", tilt: "2.5deg", dur: "8.5s", delay: "1.4s" },
-    { className: "hidden md:block left-[14%] bottom-[12%]", tilt: "1.5deg", dur: "9s", delay: "2.3s" },
-  ];
+  void items;
   return (
-    <section className="relative min-h-[100svh] hero-bg overflow-hidden flex flex-col">
-      <div className="stars" />
-      <div className="stars-2" />
-      <div className="planet" aria-hidden />
-      <div className="planet-haze" aria-hidden />
-      {cards.map((it, i) => (
-        <FloatCard key={it.id} it={it} {...pos[i]} />
-      ))}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-5 pt-28 pb-24">
-        <h1 className="wordmark">
-          social<span className="wordmark-liquid">Liquid</span>
-        </h1>
-        <p className="mt-5 text-[clamp(24px,3.2vw,40px)] font-medium tracking-[-0.03em] text-fg">the social layer for Hyperliquid.</p>
-        <p className="mt-3 max-w-[600px] text-[clamp(15px,1.4vw,19px)] text-muted text-balance leading-snug">
-          Follow the best traders on Hyperliquid, see every position the second it opens, and trade alongside them.
-        </p>
-        <div className="mt-9 flex items-center gap-3 flex-wrap justify-center">
-          <Link href="/trade" className="btn btn-primary h-12 px-7 text-[15px] rounded-xl shadow-[0_0_50px_-10px_rgb(77_227_193/0.7)]">Start trading</Link>
-          <Link href="/leaderboard" className="btn h-12 px-7 text-[15px] rounded-xl glass">See the leaderboard</Link>
+    <section className="relative overflow-hidden bg-[#03090b]">
+      {/* a school following one glowing fish: the whole product in one frame. webp, eager, high priority: it is above the fold */}
+      <picture className="absolute inset-0 pointer-events-none select-none" aria-hidden>
+        <source media="(max-width: 640px)" srcSet="/landing/hero-sm.webp" type="image/webp" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/landing/hero.webp" alt="" width={1376} height={768} loading="eager" fetchPriority="high" decoding="async" className="hero-img" />
+      </picture>
+      <div className="hero-shade" aria-hidden />
+      <div className="relative z-10 max-w-[1180px] mx-auto px-5 md:px-8 pt-28 md:pt-36 pb-56 md:pb-64 lg:pb-72">
+        <div className="max-w-[640px]">
+          <div className="mono-label text-brand">Live on Hyperliquid mainnet</div>
+          <h1 className="wordmark wordmark-left mt-4">
+            social<span className="wordmark-liquid">Liquid</span>
+          </h1>
+          <p className="mt-4 text-[clamp(22px,2.6vw,34px)] font-medium tracking-[-0.03em] text-fg">the social layer for Hyperliquid.</p>
+          <p className="mt-3 max-w-[520px] text-[clamp(15px,1.3vw,18px)] text-fg-2/90 leading-snug">
+            Follow the best traders on Hyperliquid, see every position the second it opens, and trade alongside them.
+          </p>
+          <div className="mt-8 flex items-center gap-3 flex-wrap">
+            <Link href="/trade" className="btn btn-primary h-12 px-7 text-[15px] rounded-xl shadow-[0_0_50px_-10px_rgb(77_227_193/0.7)]">Start trading</Link>
+            <Link href="/leaderboard" className="btn h-12 px-7 text-[15px] rounded-xl glass">See the leaderboard</Link>
+          </div>
         </div>
       </div>
-      <div className="relative z-10 pb-14 text-center mono-label text-brand">Live on Hyperliquid mainnet</div>
     </section>
   );
 }
