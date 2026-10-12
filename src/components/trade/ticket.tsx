@@ -1,6 +1,6 @@
 "use client";
 import "./ticket.css";
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useChainId } from "wagmi";
 import { useAuth } from "@/hooks/use-auth";
@@ -97,7 +97,10 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const spotUsdc = bal.data?.spot?.find((b) => b.coin === "USDC");
   const spotTok = market?.token ? bal.data?.spot?.find((b) => b.coin === market.token) : undefined;
   const szDec = market?.szDecimals ?? 4;
-  const uid = useId();
+  /* ids for the label / field pairs. a page has one ticket per market, so the market's id keeps them unique; and
+     unlike useId they do not hang on where the ticket sits in the tree, so the server html and the client always
+     agree on them (a useId here was split by tree differences above the ticket and failed hydration) */
+  const uid = `tm-tk-${coin.replace(/[^A-Za-z0-9_-]/g, "_")}`;
 
   const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
   const [type, setType] = useState<OrderType>("market");
@@ -965,8 +968,8 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
               {type === "chase" && <p className="tm-tk-why-note">{myPos ? "A chase goes out without the thesis." : "A chase goes out without the thesis. Post it here once it fills."}</p>}
               {myPos && (
                 <div className="tm-tk-why-pos">
-                  <span className="min-w-0">
-                    {liveThesis ? "Thesis live on" : "On"} your open <b className={myPos.szi > 0 ? "tm-tk-up" : "tm-tk-down"}>{myPos.szi > 0 ? "Long" : "Short"}</b> {Math.abs(myPos.szi)} {label}
+                  <span className="min-w-0" title={liveThesis ? `Your live thesis: ${liveThesis.text}` : undefined}>
+                    {liveThesis ? "Thesis live ·" : "On your open"} <b className={myPos.szi > 0 ? "tm-tk-up" : "tm-tk-down"}>{myPos.szi > 0 ? "Long" : "Short"}</b> {Math.abs(myPos.szi)} {label}
                   </span>
                   <button type="button" className="tm-tk-why-post" onClick={postOnPosition} disabled={thesisBusy || !thesis.trim()} aria-busy={thesisBusy} title={`Post this thesis on your open ${label} position now, without a new order`}>
                     {thesisBusy ? "Posting…" : liveThesis ? "Add" : "Post now"}
