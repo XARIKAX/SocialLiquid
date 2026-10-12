@@ -305,14 +305,14 @@ function Orbit({ traders, count }: { traders: { address: string; displayName: st
           <div className="ring w-[100%] h-[100%]" />
           <div className="orbit" style={{ ["--dur" as string]: "70s" }}>
             {ring1.map((t, i) => (
-              <span key={t.address} className="orbit-item" style={{ ["--a" as string]: `${(i / Math.max(1, ring1.length)) * 360}deg`, ["--r" as string]: "39%" }}>
+              <span key={t.address} className="orbit-item" style={{ ["--a" as string]: `${(i / Math.max(1, ring1.length)) * 360}deg`, ["--r" as string]: "calc(min(92vw, 760px) * 0.39)" }}>
                 <Dot a={t.address} size={34} />
               </span>
             ))}
           </div>
           <div className="orbit orbit-r" style={{ ["--dur" as string]: "110s" }}>
             {ring2.map((t, i) => (
-              <span key={t.address} className="orbit-item" style={{ ["--a" as string]: `${(i / Math.max(1, ring2.length)) * 360 + 20}deg`, ["--r" as string]: "50%" }}>
+              <span key={t.address} className="orbit-item" style={{ ["--a" as string]: `${(i / Math.max(1, ring2.length)) * 360 + 20}deg`, ["--r" as string]: "calc(min(92vw, 760px) * 0.5)" }}>
                 <Dot a={t.address} size={44} />
               </span>
             ))}
