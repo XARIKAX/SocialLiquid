@@ -42,6 +42,10 @@ export type FeedItem = {
     realisedPnl: number | null;
     unrealisedPnl: number;
     liquidated: boolean;
+    /** who this position copies, when it was opened through "copy" */
+    copiedFrom: { address: string; handle: string | null; displayName: string | null } | null;
+    /** how many positions copied this one */
+    copiers: number;
   } | null;
   thesis: { id: string; text: string; outcome: string; likes: number; likedByMe: boolean; createdAt: string } | null;
 };
@@ -77,7 +81,11 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
       thesis: { include: { _count: { select: { likes: true } }, likes: f.viewerId ? { where: { userId: f.viewerId }, select: { userId: true } } : false } },
     },
   });
-  const users = await usersByAddress(rows.map((r) => r.address));
+  const copiedFromAddrs = rows.map((r) => r.position?.copiedFromAddress).filter((a): a is string => !!a);
+  const users = await usersByAddress([...rows.map((r) => r.address), ...copiedFromAddrs]);
+  const posIds = rows.map((r) => r.position?.id).filter((x): x is string => !!x);
+  const copierRows = posIds.length ? await prisma.position.groupBy({ by: ["copiedFromPositionId"], where: { copiedFromPositionId: { in: posIds } }, _count: { _all: true } }) : [];
+  const copiers = new Map(copierRows.map((c) => [c.copiedFromPositionId as string, c._count._all]));
   const items: FeedItem[] = rows.map((r) => ({
     id: r.id,
     type: r.type,
@@ -99,6 +107,10 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
           realisedPnl: r.position.realisedPnl === null ? null : Number(r.position.realisedPnl),
           unrealisedPnl: Number(r.position.unrealisedPnl),
           liquidated: r.position.liquidated,
+          copiedFrom: r.position.copiedFromAddress
+            ? { address: r.position.copiedFromAddress, handle: users.get(r.position.copiedFromAddress)?.handle ?? null, displayName: users.get(r.position.copiedFromAddress)?.displayName ?? null }
+            : null,
+          copiers: copiers.get(r.position.id) ?? 0,
         }
       : null,
     thesis: r.thesis

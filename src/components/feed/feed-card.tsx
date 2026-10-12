@@ -10,6 +10,15 @@ import { Avatar, CoinIcon, EventPill, Icon, OutcomePill, Pnl, TraderLink } from 
 
 type Payload = { side?: string; sizeUsd?: number; size?: number; leverage?: number; entryPx?: number; closePx?: number | null; realisedPnl?: number; holdMs?: number; text?: string };
 
+/** /m/[coin]?copy=… prefills the ticket with the same side and leverage and records the copy on the resulting position */
+export function copyHref(item: FeedItem): string {
+  const p = item.payload as { side?: string; leverage?: number };
+  const pos = item.position!;
+  const name = item.user?.displayName ?? item.user?.handle ?? item.address.slice(0, 6) + "…" + item.address.slice(-4);
+  const q = new URLSearchParams({ copy: pos.id, from: item.address, side: String(pos.side ?? p.side ?? "LONG"), lev: String(pos.leverage ?? p.leverage ?? 10), name });
+  return `/m/${item.coin}?${q.toString()}`;
+}
+
 export function FeedCard({ item, mid, onNavigate, signedIn }: { item: FeedItem; mid?: number; onNavigate?: () => void; signedIn: boolean }) {
   const p = item.payload as Payload;
   const pos = item.position;
@@ -64,6 +73,26 @@ export function FeedCard({ item, mid, onNavigate, signedIn }: { item: FeedItem; 
             )}
             {isThesis && pos && !pos.closedAt && <span className="w-1.5 h-1.5 rounded-full bg-thesis live-dot" />}
             {!isThesis && live !== null && <Pnl value={live} className="ml-auto text-xs font-medium" />}
+          </div>
+        )}
+        {pos && !pos.closedAt && (pos.copiedFrom || pos.copiers > 0 || !isClosed) && (
+          <div className="flex items-center gap-2 mt-1.5 text-[11px] text-dim flex-wrap">
+            {pos.copiedFrom && (
+              <span className="inline-flex items-center gap-1">
+                <Icon.copy /> copied <TraderLink address={pos.copiedFrom.address} handle={pos.copiedFrom.handle} displayName={pos.copiedFrom.displayName} className="text-fg-2 font-medium" />
+              </span>
+            )}
+            {pos.copiers > 0 && <span className="num">{pos.copiers} {pos.copiers === 1 ? "trader" : "traders"} copied this</span>}
+            {!isClosed && (
+              <Link
+                href={copyHref(item)}
+                onClick={onNavigate}
+                className="ml-auto btn h-7 px-2.5 text-[11px] font-semibold border-brand/40 text-brand hover:bg-brand/10"
+                title={`Open the same ${side === "SHORT" ? "short" : "long"} on ${item.coin}`}
+              >
+                <Icon.copy /> Copy
+              </Link>
+            )}
           </div>
         )}
 

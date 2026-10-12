@@ -267,6 +267,15 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                       <div className="num font-semibold">{fmtUsd(o.sizeUsd)}</div>
                       <div className={`num text-[11px] ${pnl >= 0 ? "text-up" : "text-down"}`}>{fmtUsd(pnl, { sign: true })} · {roe >= 0 ? "▲" : "▼"} {Math.abs(roe * 100).toFixed(2)}%</div>
                     </div>
+                    {!p.isMe && o.id && (
+                      <Link
+                        href={`/m/${o.coin}?${new URLSearchParams({ copy: o.id, from: p.address, side: o.side, lev: String(o.leverage), name }).toString()}`}
+                        className="btn h-8 px-2.5 text-[11px] font-semibold border-brand/40 text-brand hover:bg-brand/10 shrink-0"
+                        title={`Open the same ${o.side === "SHORT" ? "short" : "long"} on ${o.coin}`}
+                      >
+                        <Icon.copy /> Copy
+                      </Link>
+                    )}
                   </div>
                 );
               })}

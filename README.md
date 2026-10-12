@@ -82,6 +82,10 @@ connecting a wallet reads the address; signing the nonce claims it. a claimed ac
 
 wallets: every extension that announces itself over eip-6963 gets its own row (metamask, phantom's evm account, rabby, and anything else installed), with install links for the big three when they are missing, plus walletconnect (needs `NEXT_PUBLIC_WALLETCONNECT_ID`, free at cloud.reown.com, covers phantom mobile, rainbow, trust, ledger and 400+ others) and coinbase wallet. hyperliquid accounts are evm addresses, so phantom connects with its ethereum account.
 
+## copy trading
+
+every open position on the feed and on a profile has a copy button. it opens `/m/[coin]?copy=<positionId>&from=<address>&side=&lev=` and the ticket prefills side and leverage (pushed to the exchange once trading is enabled), shows a "copying <trader>" chip and leaves the size to you. the order goes through the normal route with `copyOf`; after the fill the resulting position records `copiedFromAddress` / `copiedFromPositionId` (only when the source is someone else's position in the same coin). the feed shows "copied <trader>" on the copy and "n traders copied this" on the original.
+
 ## deposits and withdrawals
 
 both happen inside the app and never touch socialLiquid. a deposit is a plain USDC transfer from the connected wallet to hyperliquid's bridge contract on arbitrum (min 5 USDC, credited in about a minute; the modal switches the wallet to arbitrum, shows the wallet's USDC balance and waits for the hyperliquid balance to move). a withdrawal is hyperliquid's `withdraw3` action signed by the main wallet, never by the agent key ($1 fee, USDC on arbitrum in about five minutes). other chains go through hyperliquid's own cross-chain routes; the balance shows up here either way. `HL_MOCK` credits and debits a synthetic ledger through `/api/mock/funds`.

@@ -96,10 +96,14 @@ model Position {
   unrealisedPnl Decimal @default(0) @db.Decimal(30, 6)
   liquidated  Boolean   @default(false)
   updatedAt   DateTime  @updatedAt
+  /// set when the position was opened through "copy": the trader and position it mirrors
+  copiedFromAddress    String?
+  copiedFromPositionId String?
 
   theses     Thesis[]
   feedEvents FeedEvent[]
 
+  @@index([copiedFromPositionId])
   @@index([address, coin, closedAt])
   @@index([coin, closedAt])
   @@index([closedAt])
