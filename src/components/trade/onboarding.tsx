@@ -44,7 +44,7 @@ function explain(e: unknown): string {
 }
 
 
-type Prepare = { agentAddress: string; agentName: string; needsAgentApproval: boolean; needsBuilderApproval: boolean; builder: string; builderFeeTenthsBp: number; maxFeeRate: string };
+type Prepare = { agentAddress: string; agentName: string; needsAgentApproval: boolean; needsBuilderApproval: boolean; builder: string; builderEnabled: boolean; builderFeeTenthsBp: number; maxFeeRate: string };
 
 export type Stage = "connect" | "signin" | "invite" | "handle" | "enable" | "ready";
 
@@ -249,7 +249,7 @@ function EnableTradingStep({ onDone }: { onDone: () => void }) {
         if (!mockMode) await withTimeout(approveBuilderFeeWithWallet(needWallet(wallet), chainId, prep.builder, prep.maxFeeRate), "the wallet did not answer the builder-fee approval");
         builderSigned = true;
         push("Builder fee approved");
-      } else push("Builder fee already approved");
+      } else push(prep.builderEnabled ? "Builder fee already approved" : "No builder fee on this deployment");
       push("Confirming on chain…");
       const c = await api<{ agentApproved: boolean; builderApproved: boolean }>("/api/agent/confirm", { method: "POST", json: { agentSigned, builderSigned } });
       if (!c.agentApproved || !c.builderApproved) throw new Error(`Approval not visible on chain yet (agent ${c.agentApproved ? "ok" : "missing"}, builder fee ${c.builderApproved ? "ok" : "missing"}). Wait a few seconds and press again.`);

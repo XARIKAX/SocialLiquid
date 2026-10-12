@@ -1,5 +1,5 @@
 import { handler, json, HttpError } from "@/lib/api";
-import { BUILDER_ADDRESS, BUILDER_FEE_TENTHS_BP, IS_TESTNET } from "@/lib/env";
+import { BUILDER_ADDRESS, BUILDER_ENABLED, BUILDER_FEE_CHARGED, IS_TESTNET } from "@/lib/env";
 import { getSession, hasInvite } from "@/lib/session";
 import { AGENT_NAME, approvalStatus, builderEligibility, getOrCreateAgent } from "@/lib/trade";
 import { prisma } from "@/lib/db";
@@ -25,7 +25,8 @@ export const POST = handler(async () => {
     needsAgentApproval: !status.agentApproved,
     needsBuilderApproval: !status.builderApproved,
     builder: BUILDER_ADDRESS,
-    builderFeeTenthsBp: BUILDER_FEE_TENTHS_BP,
+    builderEnabled: BUILDER_ENABLED,
+    builderFeeTenthsBp: BUILDER_FEE_CHARGED,
     maxFeeRate: "0.1%",
     hyperliquidChain: IS_TESTNET ? "Testnet" : "Mainnet",
   });

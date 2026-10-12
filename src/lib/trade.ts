@@ -3,13 +3,13 @@
  * market, limit (gtc / ioc / alo), stop market, stop limit, scale ladders, twap, reduce only,
  * attached tp / sl, position tp / sl, leverage + margin mode, cancel.
  * the agent key is generated server side, stored aes-encrypted, and only ever used here.
- * every order carries builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP }.
+ * orders carry builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } when a builder is configured, nothing otherwise.
  */
 import * as hl from "@nktkas/hyperliquid";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { prisma } from "./db";
 import { decrypt, encrypt } from "./crypto";
-import { BUILDER_ADDRESS, BUILDER_FEE_TENTHS_BP, HL_MOCK } from "./env";
+import { BUILDER_ADDRESS, BUILDER_ENABLED, BUILDER_FEE_CHARGED, BUILDER_FEE_TENTHS_BP, HL_MOCK } from "./env";
 import * as HL from "./hl";
 import * as mock from "./hl-mock";
 import { HttpError } from "./api";
@@ -29,6 +29,9 @@ export async function getOrCreateAgent(userId: string) {
   return prisma.agentKey.create({ data: { userId, agentAddress: account.address.toLowerCase(), encryptedPrivKey: encrypt(pk) } });
 }
 
+/** the builder field hyperliquid expects on an order, or nothing when this deployment runs without a builder code */
+export const builderArg = () => (BUILDER_ENABLED ? { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } : undefined);
+
 export async function approvalStatus(userAddress: string, agentAddress: string) {
   const [agents, fee] = await Promise.all([
     HL.extraAgents(userAddress).catch(() => [] as { address: string }[]),
@@ -36,7 +39,7 @@ export async function approvalStatus(userAddress: string, agentAddress: string) 
   ]);
   return {
     agentApproved: agents.some((a) => a.address.toLowerCase() === agentAddress.toLowerCase()),
-    builderApproved: fee >= BUILDER_FEE_TENTHS_BP,
+    builderApproved: !BUILDER_ENABLED || fee >= BUILDER_FEE_TENTHS_BP,
     approvedFeeTenthsBp: fee,
   };
 }
@@ -52,7 +55,7 @@ let builderCache: { at: number; value: BuilderEligibility } | null = null;
  * "approval not visible yet". checked before we ask the wallet for anything. cached: it moves rarely.
  */
 export async function builderEligibility(): Promise<BuilderEligibility> {
-  if (HL_MOCK) return { ok: true, accountValue: null };
+  if (HL_MOCK || !BUILDER_ENABLED) return { ok: true, accountValue: null };
   if (/^0x0{40}$/i.test(BUILDER_ADDRESS))
     return {
       ok: false,
@@ -158,7 +161,7 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
 
   // ---------- mock exchange ----------
   if (HL_MOCK) {
-    const common = { user: address, coin: input.coin, isBuy, leverage, builderFeeTenthsBp: BUILDER_FEE_TENTHS_BP, reduceOnly: input.reduceOnly };
+    const common = { user: address, coin: input.coin, isBuy, leverage, builderFeeTenthsBp: BUILDER_FEE_CHARGED, reduceOnly: input.reduceOnly };
     if (input.type === "twap") {
       const twapId = await mock.mockTwap(address, input.coin, isBuy, Number(szStr), input.twap!.minutes, !!input.reduceOnly, input.twap!.randomize, leverage);
       return { status: "twap", twapId, sz: szStr, px: fmt(mid) };
@@ -195,7 +198,7 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
     await ex.updateLeverage({ asset, isCross, leverage }).catch((e: Error) => console.warn("[trade] updateLeverage:", e.message));
   }
   if (isSpot && (input.type.startsWith("stop") || input.type.startsWith("takeProfit") || input.tp || input.sl)) throw new HttpError(400, "spot orders have no triggers; use market or limit");
-  const builder = { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP };
+  const builder = builderArg();
 
   if (input.type === "twap") {
     const res = await ex.twapOrder({ twap: { a: asset, b: isBuy, s: szStr, r: !!input.reduceOnly, m: input.twap!.minutes, t: input.twap!.randomize } });
@@ -327,7 +330,7 @@ export async function positionTpsl(userId: string, address: string, coin: string
   const closeBuy = szi < 0;
   const fmt = (px: number) => HL.formatPx(px, szDecimals);
   if (HL_MOCK) {
-    const common = { user: address, coin, isBuy: closeBuy, sz: Number(szStr), leverage: pos.position.leverage.value, builderFeeTenthsBp: BUILDER_FEE_TENTHS_BP, reduceOnly: true, isPositionTpsl: true };
+    const common = { user: address, coin, isBuy: closeBuy, sz: Number(szStr), leverage: pos.position.leverage.value, builderFeeTenthsBp: BUILDER_FEE_CHARGED, reduceOnly: true, isPositionTpsl: true };
     if (tp) await mock.mockPlaceOrder({ ...common, limitPx: Number(fmt(tp * (closeBuy ? 1.1 : 0.9))), trigger: { triggerPx: tp, isMarket: true, tpsl: "tp" } });
     if (sl) await mock.mockPlaceOrder({ ...common, limitPx: Number(fmt(sl * (closeBuy ? 1.1 : 0.9))), trigger: { triggerPx: sl, isMarket: true, tpsl: "sl" } });
     return { ok: true };
@@ -339,7 +342,7 @@ export async function positionTpsl(userId: string, address: string, coin: string
   if (tp) orders.push(mk(tp, "tp"));
   if (sl) orders.push(mk(sl, "sl"));
   if (!orders.length) throw new HttpError(400, "tp or sl required");
-  const res = await ex.order({ orders, grouping: "positionTpsl", builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } });
+  const res = await ex.order({ orders, grouping: "positionTpsl", builder: builderArg() });
   const statuses = (res as unknown as { response: { data: { statuses: OrderStatus[] } } }).response.data.statuses;
   const err = statuses.find((s) => typeof s === "object" && "error" in s) as { error: string } | undefined;
   if (err) throw new HttpError(400, err.error);
@@ -379,7 +382,7 @@ export async function sellSpotForUsdc(userId: string, address: string, coin: str
   if (!Number.isFinite(spotMid) || spotMid <= 0) throw new HttpError(400, `no price for ${coin}`);
   const ex = exchangeFor(agent.encryptedPrivKey);
   const px = HL.formatSpotPx(spotMid * 0.98, pair.szDecimals);
-  const res = await ex.order({ orders: [{ a: pair.assetId, b: false, p: px, s: szStr, r: false, t: { limit: { tif: "Ioc" } } }], grouping: "na", builder: { b: BUILDER_ADDRESS, f: BUILDER_FEE_TENTHS_BP } });
+  const res = await ex.order({ orders: [{ a: pair.assetId, b: false, p: px, s: szStr, r: false, t: { limit: { tif: "Ioc" } } }], grouping: "na", builder: builderArg() });
   const first = (res as unknown as { response: { data: { statuses: OrderStatus[] } } }).response.data.statuses[0];
   if (typeof first === "object" && "error" in first) throw new HttpError(400, first.error);
   if (typeof first === "object" && "filled" in first) {

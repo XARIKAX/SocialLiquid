@@ -1,7 +1,7 @@
 import { json } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import * as HL from "@/lib/hl";
-import { BUILDER_ADDRESS, BUILDER_FEE_TENTHS_BP, HL_API_URL, HL_MOCK, IS_TESTNET } from "@/lib/env";
+import { BUILDER_ADDRESS, BUILDER_ENABLED, BUILDER_FEE_TENTHS_BP, HL_API_URL, HL_MOCK, IS_TESTNET } from "@/lib/env";
 import { unitHealth } from "@/lib/unit-server";
 
 export const dynamic = "force-dynamic";
@@ -23,12 +23,11 @@ export async function GET() {
   // builder code: the fee only accrues to a configured address, and hyperliquid only lets users approve a builder
   // whose perps account holds at least 100 USDC. report both so a misconfiguration is visible before launch.
   {
-    const zero = /^0x0{40}$/i.test(BUILDER_ADDRESS);
-    const builder: Record<string, unknown> = { address: BUILDER_ADDRESS, feePerSide: `${BUILDER_FEE_TENTHS_BP / 1000}%`, configured: !zero };
-    if (zero) {
-      ok = false;
-      builder.problem = "BUILDER_ADDRESS is the zero address: set it (and NEXT_PUBLIC_BUILDER_ADDRESS) to a wallet you control";
-    } else {
+    const builder: Record<string, unknown> = BUILDER_ENABLED
+      ? { address: BUILDER_ADDRESS, feePerSide: `${BUILDER_FEE_TENTHS_BP / 1000}%`, configured: true }
+      : { configured: false, note: "running without a builder code: orders carry no builder field and enabling trading needs one signature, not two. Set BUILDER_ADDRESS (funded with 100 USDC in its perps account) and BUILDER_FEE_TENTHS_BP to collect a fee." };
+    // a deployment can legitimately run with no builder code, so only a configured one is checked
+    if (BUILDER_ENABLED) {
       try {
         const st = await HL.clearinghouseState(BUILDER_ADDRESS);
         const value = Number(st.marginSummary.accountValue);
