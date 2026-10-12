@@ -191,7 +191,9 @@ export function Tokens({ onNavigate, full }: { onNavigate?: () => void; full?: b
 
 function MiniLeaderboard({ onNavigate }: { onNavigate?: () => void }) {
   const [src, setSrc] = useState<"hl" | "own">("hl");
-  const hl = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<{ rows: HlBoardRow[] }>("/api/leaderboard/hl").then((r) => r.rows), refetchInterval: 60_000 });
+  // same key and shape as the /leaderboard page so both can be mounted at once and share the cache
+  const hlq = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<{ rows: HlBoardRow[]; updatedAt: string | null }>("/api/leaderboard/hl"), refetchInterval: 60_000 });
+  const hl = { isLoading: hlq.isLoading, isError: hlq.isError, error: hlq.error, data: hlq.data?.rows };
   const own = useQuery({ queryKey: ["leaderboard", "pnl7d"], queryFn: () => api<{ rows: LeaderboardRow[] }>("/api/leaderboard?by=pnl7d").then((r) => r.rows), refetchInterval: 30_000 });
   const header = (
     <div className="px-4 h-9 flex items-center gap-2 text-[11px] text-dim border-b border-line">
