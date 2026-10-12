@@ -59,6 +59,9 @@ function Hero({ video }: { video: boolean }) {
         {video && (
           // the still is the poster so there is no flash before the first frame. prefers-reduced-motion hides this and shows the picture below.
           <video className="hero-video" autoPlay muted loop playsInline preload="auto" poster="/landing/hero.webp" disablePictureInPicture>
+            {/* phones get a 540p cut (~a fifth of the bytes); desktops the 1080p master. webm first, mp4 fallback. */}
+            <source src="/socialliquid-hero-loop-sm.webm" type="video/webm" media="(max-width: 640px)" />
+            <source src="/socialliquid-hero-loop-sm.mp4" type="video/mp4" media="(max-width: 640px)" />
             <source src="/socialliquid-hero-loop.webm" type="video/webm" />
             <source src="/socialliquid-hero-loop.mp4" type="video/mp4" />
           </video>
