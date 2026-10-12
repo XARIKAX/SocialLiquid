@@ -123,10 +123,22 @@ export function Chip({ label, children, className = "", tone }: { label: string;
 
 export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <button type="button" onClick={() => onChange(!on)} className={`toggle ${on ? "toggle-on" : ""}`}>
-      <span className="toggle-box">{on && <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="#000" strokeWidth="2"><path d="M1.5 5.5l2.5 2.5 4.5-5" /></svg>}</span>
+    <button type="button" role="checkbox" aria-checked={on} onClick={() => onChange(!on)} className={`toggle ${on ? "toggle-on" : ""}`}>
+      <span className="toggle-box">{on && <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="#04251f" strokeWidth="2.2"><path d="M1.5 5.5l2.5 2.5 4.5-5" /></svg>}</span>
       {label}
     </button>
+  );
+}
+
+/** a pill switch with a lit knob; pass `label` to render it inline with text, or wire aria-label yourself */
+export function Switch({ on, onChange, label, className = "", disabled }: { on: boolean; onChange: (v: boolean) => void; label?: string; className?: string; disabled?: boolean }) {
+  const sw = <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)} className="switch disabled:opacity-40" />;
+  if (!label) return sw;
+  return (
+    <label className={`flex items-center justify-between gap-3 text-xs text-muted cursor-pointer select-none ${className}`}>
+      <span>{label}</span>
+      {sw}
+    </label>
   );
 }
 
