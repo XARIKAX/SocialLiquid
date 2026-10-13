@@ -312,7 +312,7 @@ export type HlBoardRow = {
 };
 export type HlBoardWindow = "day" | "week" | "month" | "allTime";
 export type HlBoardSort = "pnl" | "roi" | "vlm" | "accountValue";
-export type HlBoardQuery = { window?: HlBoardWindow; sort?: HlBoardSort; q?: string; claimedOnly?: boolean; limit?: number; viewerId?: string };
+export type HlBoardQuery = { window?: HlBoardWindow; sort?: HlBoardSort; q?: string; claimedOnly?: boolean; limit?: number; viewerId?: string; /** include accounts that lost money in the window (hidden by default: a leaderboard lists winners) */ all?: boolean };
 
 const HL_BOARD_REFRESH_MS = Number(process.env.HL_LEADERBOARD_REFRESH_MS ?? 60 * 60_000);
 const HL_BOARD_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 100);
@@ -327,12 +327,12 @@ function refreshHlBoardOnce(): Promise<number> {
   return hlBoardRefreshing;
 }
 
-export type HlBoard = { rows: HlBoardRow[]; updatedAt: string | null; source: "leaderboard" | "portfolio" | null; error: string | null; window: HlBoardWindow; sort: HlBoardSort; total: number };
+export type HlBoard = { rows: HlBoardRow[]; updatedAt: string | null; source: "leaderboard" | "portfolio" | null; error: string | null; window: HlBoardWindow; sort: HlBoardSort; total: number; /** why the fallback is showing, when it is */ note: string | null };
 
 export async function hlLeaderboard(opts: HlBoardQuery = {}): Promise<HlBoard> {
   const window: HlBoardWindow = opts.window ?? "month";
   const sort: HlBoardSort = opts.sort ?? "pnl";
-  const empty = (error: string | null): HlBoard => ({ rows: [], updatedAt: null, source: null, error, window, sort, total: 0 });
+  const empty = (error: string | null): HlBoard => ({ rows: [], updatedAt: null, source: null, error, window, sort, total: 0, note: null });
   let entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
   if (!entries.length) {
     // first visitor on a fresh database: fetch hyperliquid's board right now
@@ -374,6 +374,8 @@ export async function hlLeaderboard(opts: HlBoardQuery = {}): Promise<HlBoard> {
       isFollowing: !!user.id && following.has(user.id),
     };
   });
+  // a leaderboard lists winners: accounts that lost money in this window only show with all=1
+  if (!opts.all) rows = rows.filter((r) => r.pnl > 0);
   // hyperliquid ranks every window by pnl; roi/volume/account value sorts are ours, on the same pool
   rows.sort((a, b) => (sort === "roi" ? b.roi - a.roi : sort === "vlm" ? b.vlm - a.vlm : sort === "accountValue" ? b.accountValue - a.accountValue : b.pnl - a.pnl));
   rows = rows.map((r, i) => ({ ...r, rank: i + 1 }));
@@ -384,5 +386,6 @@ export async function hlLeaderboard(opts: HlBoardQuery = {}): Promise<HlBoard> {
     rows = rows.filter((r) => r.user.address.includes(q) || (r.user.handle ?? "").toLowerCase().includes(q) || (r.user.displayName ?? "").toLowerCase().includes(q));
   }
   if (opts.limit) rows = rows.slice(0, opts.limit);
-  return { rows, updatedAt: entries[0].updatedAt.toISOString(), source: entries[0].source === "portfolio" ? "portfolio" : "leaderboard", error: null, window, sort, total };
+  const source = entries[0].source === "portfolio" ? "portfolio" : "leaderboard";
+  return { rows, updatedAt: entries[0].updatedAt.toISOString(), source, error: null, window, sort, total, note: source === "portfolio" ? `showing the featured traders only: hyperliquid's leaderboard feed could not be read (${getHlBoardStatus().lastError ?? "unknown reason"}); retried hourly` : null };
 }

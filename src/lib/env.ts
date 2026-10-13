@@ -40,4 +40,4 @@ export const HL_APP_URL = IS_TESTNET
   ? "https://app.hyperliquid-testnet.xyz"
   : "https://app.hyperliquid.xyz";
 /** the feed behind app.hyperliquid.xyz/leaderboard. always mainnet: the board we mirror is the real one even on a testnet build. */
-export const HL_LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard";
+export const HL_LEADERBOARD_URL = process.env.HL_LEADERBOARD_URL ?? "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard";

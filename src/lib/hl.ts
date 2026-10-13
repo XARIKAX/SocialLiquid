@@ -5,6 +5,7 @@
  */
 import * as hl from "@nktkas/hyperliquid";
 import { HL_LEADERBOARD_URL, HL_MOCK, IS_TESTNET } from "./env";
+import { createRowExtractor } from "./lb-stream";
 import type {
   HlBookLevel,
   HlFundingPayment,
@@ -429,6 +430,77 @@ export async function leaderboard(): Promise<HlLeaderboardRow[]> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** hyperliquid's own leaderboard rule: hide accounts under 100k account value with under 10M 30d volume */
+export function leaderboardEligible(r: HlLeaderboardRow): boolean {
+  const m = r.windowPerformances.find(([k]) => k === "month")?.[1];
+  return Number(r.accountValue) >= 100_000 || Number(m?.vlm ?? 0) >= 10_000_000;
+}
+
+const LB_WINDOWS = ["day", "week", "month", "allTime"] as const;
+
+/**
+ * the top `n` eligible accounts of every window (24h, 7d, 30d, all time), streamed out of the leaderboard feed without
+ * ever parsing the whole file: rows are read one at a time and only a bounded shortlist per window is kept, so this
+ * runs in a few MB of heap on any worker. returns the union, unsorted.
+ */
+export async function leaderboardTop(n: number): Promise<HlLeaderboardRow[]> {
+  if (HL_MOCK) return (await mock.leaderboard()).filter(leaderboardEligible);
+  const keep = Math.max(10, Math.ceil(n * 1.5));
+  const tops: Record<(typeof LB_WINDOWS)[number], HlLeaderboardRow[]> = { day: [], week: [], month: [], allTime: [] };
+  const trim = (final = false) => {
+    for (const w of LB_WINDOWS) {
+      const list = tops[w];
+      if (final || list.length > keep * 4) {
+        list.sort((a, b) => leaderboardPnl(b, w) - leaderboardPnl(a, w));
+        tops[w] = list.slice(0, keep);
+      }
+    }
+  };
+  let seen = 0;
+  let bad = 0;
+  const extractor = createRowExtractor(
+    (row) => {
+      const r = row as HlLeaderboardRow;
+      seen++;
+      if (!r || typeof r.ethAddress !== "string" || !Array.isArray(r.windowPerformances) || !leaderboardEligible(r)) return;
+      for (const w of LB_WINDOWS) tops[w].push(r);
+      if (seen % 2000 === 0) trim();
+    },
+    () => {
+      bad++;
+    },
+  );
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 180_000);
+  try {
+    const res = await fetch(HL_LEADERBOARD_URL, { headers: { accept: "application/json" }, cache: "no-store", signal: ctl.signal });
+    if (!res.ok) throw new Error(`leaderboard feed ${res.status}`);
+    if (!res.body) throw new Error("leaderboard feed: no body");
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      extractor.push(dec.decode(value, { stream: true }));
+      if (extractor.done) {
+        await reader.cancel().catch(() => {});
+        break;
+      }
+    }
+    extractor.push(dec.decode());
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!extractor.started) throw new Error("leaderboard feed: unexpected shape (no leaderboardRows)");
+  if (seen === 0) throw new Error("leaderboard feed: no rows");
+  if (bad) console.warn(`[hl] leaderboard feed: ${bad} unparsable rows skipped`);
+  trim(true);
+  const union = new Map<string, HlLeaderboardRow>();
+  for (const w of LB_WINDOWS) for (const r of tops[w]) union.set(r.ethAddress.toLowerCase(), r);
+  console.log(`[hl] leaderboard feed: ${seen} rows streamed, ${union.size} kept for the board pool`);
+  return [...union.values()];
 }
 
 const vaultCache = new Map<string, boolean>();

@@ -116,6 +116,11 @@ function HlBoard() {
           ))}
         </div>
       )}
+      {board.data?.note && (
+        <div className="card px-4 py-2.5 text-xs text-warn flex items-center gap-2" data-testid="hl-fallback">
+          <Icon.bell /> {board.data.note}
+        </div>
+      )}
       <section className="card overflow-hidden">
         {board.isLoading && <Skeleton rows={10} h={48} />}
         {board.isError && <Empty title="Leaderboard unavailable" hint={(board.error as Error).message} />}

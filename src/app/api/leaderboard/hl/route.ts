@@ -15,5 +15,5 @@ export const GET = handler(async (req: Request) => {
   const window = z.enum(["day", "week", "month", "allTime"]).catch("month").parse(u.searchParams.get("window") ?? "month");
   const sort = z.enum(["pnl", "roi", "vlm", "accountValue"]).catch("pnl").parse(u.searchParams.get("sort") ?? "pnl");
   const limit = Math.min(500, Math.max(1, Number(u.searchParams.get("limit") ?? 100) || 100));
-  return json(await hlLeaderboard({ window, sort, q: u.searchParams.get("q") ?? undefined, claimedOnly: u.searchParams.get("claimed") === "1", limit, viewerId: s?.userId }));
+  return json(await hlLeaderboard({ window, sort, q: u.searchParams.get("q") ?? undefined, claimedOnly: u.searchParams.get("claimed") === "1", all: u.searchParams.get("all") === "1", limit, viewerId: s?.userId }));
 });

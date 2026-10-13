@@ -318,7 +318,7 @@ export async function refreshHlLeaderboard(topN = 100): Promise<number> {
   let rows: BoardRow[] = [];
   if (process.env.HL_LEADERBOARD_SOURCE !== "portfolio") {
     try {
-      rows = rowsFromLeaderboard(await hlLeaderboardPool(await HL.leaderboard(), topN));
+      rows = rowsFromLeaderboard(await hlLeaderboardPool(await HL.leaderboardTop(topN), topN));
       if (!rows.length) throw new Error("leaderboard feed returned no eligible rows");
     } catch (e) {
       hlBoardStatus.lastError = `leaderboard feed: ${(e as Error).message}`;
@@ -348,7 +348,7 @@ export async function refreshHlLeaderboard(topN = 100): Promise<number> {
 export async function seedTrackedAddresses(count: number): Promise<number> {
   let rows: { address: string; displayName: string | null }[] = [];
   try {
-    rows = hlLeaderboardRanked(await HL.leaderboard())
+    rows = hlLeaderboardRanked(await HL.leaderboardTop(count))
       .slice(0, count)
       .map((r) => ({ address: r.ethAddress.toLowerCase(), displayName: r.displayName }));
   } catch (e) {

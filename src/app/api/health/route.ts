@@ -1,4 +1,5 @@
 import { builderEligibility } from "@/lib/trade";
+import { getHlBoardStatus } from "@/lib/indexer";
 import { json } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import * as HL from "@/lib/hl";
@@ -64,6 +65,14 @@ export async function GET() {
   } catch (e) {
     ok = false;
     out.hyperliquid = `error: ${(e as Error).message}`;
+  }
+  // the leaderboard mirror: where the rows came from and why the fallback is showing, if it is
+  try {
+    const [n, first] = await Promise.all([prisma.hlLeaderboardEntry.count(), prisma.hlLeaderboardEntry.findFirst({ orderBy: { rank: "asc" }, select: { source: true, updatedAt: true } })]);
+    const st = getHlBoardStatus();
+    out.leaderboard = { rows: n, source: first?.source ?? null, updatedAt: first?.updatedAt ?? null, lastError: st.lastError, lastAttemptAt: st.lastAttemptAt ? new Date(st.lastAttemptAt).toISOString() : null, note: first?.source === "portfolio" ? "fallback: featured traders rebuilt from the portfolio api because the leaderboard feed failed; the worker retries hourly" : null };
+  } catch (e) {
+    out.leaderboard = `error: ${(e as Error).message}`;
   }
   // native-asset deposits (BTC, ETH, SOL…) ask Unit for addresses; the browser asks first, the server is the fallback
   {
