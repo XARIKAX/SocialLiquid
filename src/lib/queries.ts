@@ -64,6 +64,8 @@ export type FeedFilters = {
   before?: string;
   limit?: number;
   viewerId?: string;
+  /** the viewer's own address: their own events always pass the size filter */
+  viewerAddress?: string;
 };
 
 export async function feed(f: FeedFilters): Promise<FeedItem[]> {
@@ -138,8 +140,10 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
         }
       : null,
   }));
+  // the size filter is a whale filter for trades: theses are content and always show, and so does everything you posted yourself
   const min = f.minUsd ?? 0;
-  const filtered = min > 0 ? items.filter((i) => Number(i.payload.sizeUsd ?? i.position?.sizeUsd ?? 0) >= min) : items;
+  const me = f.viewerAddress?.toLowerCase();
+  const filtered = min > 0 ? items.filter((i) => i.type === "THESIS" || (me && i.address === me) || Number(i.payload.sizeUsd ?? i.position?.sizeUsd ?? 0) >= min) : items;
   return plain(filtered.slice(0, f.limit ?? 50));
 }
 
