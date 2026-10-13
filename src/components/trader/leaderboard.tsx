@@ -1,15 +1,16 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/client";
 import type { HlBoard, HlBoardRow, LeaderboardRow } from "@/lib/queries";
 import { fmtDuration, fmtPct, fmtUsd, userLabel, userPath } from "@/lib/format";
-import { Avatar, Empty, Icon, Pnl, Skeleton } from "../ui";
+import { Avatar, Empty, Icon, Pnl, Skeleton, Toggle } from "../ui";
 import { HL_APP_URL } from "@/lib/env";
 
 const BY = [
-  { key: "hl", label: "Hyperliquid 30D" },
+  { key: "hl", label: "Hyperliquid" },
   { key: "pnl7d", label: "7d PnL" },
   { key: "winRate", label: "Win rate" },
   { key: "thesisAccuracy", label: "Thesis accuracy" },
@@ -30,7 +31,7 @@ export function LeaderboardTable() {
           ))}
         </span>
         <span className="ml-auto text-xs text-dim">
-          {by === "hl" ? "Hyperliquid's own ranking · 30-day window · refreshed hourly" : "Minimum 5 closed trades to rank · computed from on-chain fills"}
+          {by === "hl" ? "Hyperliquid's own ranking · 24h, 7d, 30d and all-time windows · refreshed hourly" : "Minimum 5 closed trades to rank · computed from on-chain fills"}
         </span>
       </div>
       {by === "hl" ? <HlBoard /> : <OwnBoard by={by} />}
@@ -41,14 +42,65 @@ export function LeaderboardTable() {
 const fmtMoney = (n: number) => fmtUsd(n);
 const fmtRoi = (n: number) => `${(n * 100).toFixed(2)}%`;
 
-/** mirror of app.hyperliquid.xyz/leaderboard (30D): same rows, same figures, same exclusion rule */
+const WINDOWS = [["day", "24H"], ["week", "7D"], ["month", "30D"], ["allTime", "All time"]] as const;
+type Win = (typeof WINDOWS)[number][0];
+type Sort = "pnl" | "roi" | "vlm" | "accountValue";
+const WIN_LABEL: Record<Win, string> = { day: "24H", week: "7D", month: "30D", allTime: "All" };
+
+/** follow / unfollow straight from a board row */
+function FollowButton({ row, onChange }: { row: HlBoardRow; onChange: (next: boolean) => void }) {
+  const { signedIn, address } = useAuth();
+  const [busy, setBusy] = useState(false);
+  if (address && row.user.address === address.toLowerCase()) return <span className="text-[11px] text-dim">you</span>;
+  const toggle = async () => {
+    if (!signedIn || busy) return;
+    setBusy(true);
+    try {
+      await api("/api/follow", { method: "POST", json: { address: row.user.address, follow: !row.isFollowing } });
+      onChange(!row.isFollowing);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button className={`btn btn-sm h-7 px-2.5 text-[11px] ${row.isFollowing ? "" : "bg-thesis border-thesis text-white hover:brightness-110"}`} onClick={toggle} disabled={!signedIn || busy} title={signedIn ? "" : "sign in to follow"} data-testid={`follow-${row.user.address}`}>
+      {row.isFollowing ? "Following" : "Follow"}
+    </button>
+  );
+}
+
+/** mirror of app.hyperliquid.xyz/leaderboard: every window, hyperliquid's figures, sortable, searchable, follow in place */
 function HlBoard() {
-  const q = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<HlBoard>("/api/leaderboard/hl"), refetchInterval: 60_000 });
-  const rows = q.data?.rows ?? [];
-  const top3 = rows.slice(0, 3);
-  const updated = q.data?.updatedAt ? new Date(q.data.updatedAt) : null;
+  const [win, setWin] = useState<Win>("month");
+  const [sort, setSort] = useState<Sort>("pnl");
+  const [q, setQ] = useState("");
+  const [claimed, setClaimed] = useState(false);
+  const qc = useQueryClient();
+  const key = ["leaderboard", "hl", win, sort, q, claimed];
+  const board = useQuery({ queryKey: key, queryFn: () => api<HlBoard>(`/api/leaderboard/hl?window=${win}&sort=${sort}&limit=200${q ? `&q=${encodeURIComponent(q)}` : ""}${claimed ? "&claimed=1" : ""}`), refetchInterval: 60_000, placeholderData: (d) => d });
+  const rows = board.data?.rows ?? [];
+  const top3 = !q && !claimed ? rows.slice(0, 3) : [];
+  const updated = board.data?.updatedAt ? new Date(board.data.updatedAt) : null;
+  const setFollow = (addr: string, next: boolean) =>
+    qc.setQueriesData<HlBoard>({ queryKey: ["leaderboard", "hl"] }, (d) => (d ? { ...d, rows: d.rows.map((r) => (r.user.address === addr ? { ...r, isFollowing: next, followers: Math.max(0, r.followers + (next ? 1 : -1)) } : r)) } : d));
+  const Th = ({ k, children, right = true }: { k?: Sort; children: React.ReactNode; right?: boolean }) => (
+    <th className={`${right ? "text-right" : "text-left"} font-medium px-3 py-2.5 ${k ? "cursor-pointer select-none hover:text-fg" : ""} ${k && sort === k ? "text-fg" : ""}`} onClick={k ? () => setSort(k) : undefined} aria-sort={k && sort === k ? "descending" : undefined}>
+      {children}
+      {k && sort === k && <span className="text-brand ml-1">↓</span>}
+    </th>
+  );
   return (
     <>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="seg" data-testid="hl-windows">
+          {WINDOWS.map(([w, label]) => (
+            <button key={w} className={`seg-item h-8 ${win === w ? "seg-active" : ""}`} onClick={() => setWin(w)}>{label}</button>
+          ))}
+        </span>
+        <input className="input h-8 w-56 text-[13px]" placeholder="Search trader or address" value={q} onChange={(e) => setQ(e.target.value)} aria-label="search traders" />
+        <Toggle on={claimed} onChange={setClaimed} label="On socialLiquid" />
+        <span className="ml-auto text-xs text-dim num">{board.data ? `${board.data.total} traders in the pool` : ""}</span>
+      </div>
       {top3.length === 3 && (
         <div className="grid grid-cols-3 gap-3">
           {top3.map((r) => (
@@ -57,47 +109,49 @@ function HlBoard() {
               <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={40} />
               <span className="min-w-0 leading-tight">
                 <span className="block font-semibold truncate">{userLabel(r.user)}</span>
-                <span className="block text-[11px] text-muted num">{fmtMoney(r.accountValue)} · ROI {fmtRoi(r.roi30d)}</span>
+                <span className="block text-[11px] text-muted num">{fmtMoney(r.accountValue)} · ROI {fmtRoi(r.roi)}</span>
               </span>
-              <Pnl value={r.pnl30d} compact className="ml-auto text-[15px] font-semibold" />
+              <Pnl value={r.pnl} compact className="ml-auto text-[15px] font-semibold" />
             </Link>
           ))}
         </div>
       )}
       <section className="card overflow-hidden">
-        {q.isLoading && <Skeleton rows={10} h={48} />}
-        {q.isError && <Empty title="Leaderboard unavailable" hint={(q.error as Error).message} />}
-        {q.data && rows.length === 0 && <Empty title="Leaderboard unavailable" hint={q.data.error ? `Hyperliquid did not answer: ${q.data.error}` : "Hyperliquid's leaderboard is mirrored on the first request and refreshed hourly. Refresh in a moment."} />}
+        {board.isLoading && <Skeleton rows={10} h={48} />}
+        {board.isError && <Empty title="Leaderboard unavailable" hint={(board.error as Error).message} />}
+        {board.data && rows.length === 0 && <Empty title={q || claimed ? "No traders match" : "Leaderboard unavailable"} hint={q || claimed ? "Try another name, or turn the socialLiquid filter off." : board.data.error ? `Hyperliquid did not answer: ${board.data.error}` : "Hyperliquid's leaderboard is mirrored on the first request and refreshed hourly. Refresh in a moment."} />}
         {rows.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-[13px] min-w-[760px]">
+            <table className="w-full text-[13px] min-w-[860px]" data-testid="hl-board">
               <thead className="text-[11px] text-dim">
                 <tr className="border-b border-line">
                   <th className="text-left font-medium px-4 py-2.5 w-12">Rank</th>
-                  <th className="text-left font-medium px-3 py-2.5">Trader</th>
-                  <th className="text-right font-medium px-3 py-2.5">Account Value</th>
-                  <th className="text-right font-medium px-3 py-2.5">PNL (30D)</th>
-                  <th className="text-right font-medium px-3 py-2.5">ROI (30D)</th>
-                  <th className="text-right font-medium px-3 py-2.5">Volume (30D)</th>
-                  <th className="text-right font-medium px-4 py-2.5">7D PNL</th>
+                  <Th right={false}>Trader</Th>
+                  <Th k="accountValue">Account Value</Th>
+                  <Th k="pnl">PNL ({WIN_LABEL[win]})</Th>
+                  <Th k="roi">ROI ({WIN_LABEL[win]})</Th>
+                  <Th k="vlm">Volume ({WIN_LABEL[win]})</Th>
+                  <th className="text-right font-medium px-3 py-2.5">Followers</th>
+                  <th className="text-right font-medium px-4 py-2.5"></th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.rank} className="border-b border-line/60 row-hover">
+                  <tr key={r.user.address} className="border-b border-line/60 row-hover" data-testid={`hl-row-${r.user.address}`}>
                     <td className={`num px-4 py-2.5 ${r.rank <= 3 ? "text-brand font-semibold" : "text-dim"}`}>{r.rank}</td>
                     <td className="px-3 py-2.5">
                       <Link href={userPath(r.user)} className="flex items-center gap-2.5 hover:underline underline-offset-2">
                         <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={28} />
                         <span className="font-medium">{userLabel(r.user)}</span>
-                        {!r.user.claimed && <span className="pill pill-neutral">Unclaimed</span>}
+                        {r.user.claimed ? <span className="pill pill-up" title="claimed on socialLiquid: posts theses, can be copied with attribution">socialLiquid</span> : <span className="pill pill-neutral">Unclaimed</span>}
                       </Link>
                     </td>
                     <td className="num text-right px-3">{fmtMoney(r.accountValue)}</td>
-                    <td className="num text-right px-3"><Pnl value={r.pnl30d} className="font-semibold" /></td>
-                    <td className={`num text-right px-3 ${r.roi30d >= 0 ? "text-up" : "text-down"}`}>{fmtRoi(r.roi30d)}</td>
-                    <td className="num text-right px-3 text-muted">{fmtMoney(r.vlm30d)}</td>
-                    <td className="text-right px-4"><Pnl value={r.pnl7d} compact /></td>
+                    <td className="num text-right px-3"><Pnl value={r.pnl} className="font-semibold" /></td>
+                    <td className={`num text-right px-3 ${r.roi >= 0 ? "text-up" : "text-down"}`}>{fmtRoi(r.roi)}</td>
+                    <td className="num text-right px-3 text-muted">{fmtMoney(r.vlm)}</td>
+                    <td className="num text-right px-3 text-muted">{r.followers}</td>
+                    <td className="text-right px-4"><FollowButton row={r} onChange={(n) => setFollow(r.user.address, n)} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -107,9 +161,9 @@ function HlBoard() {
         {rows.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 text-[11px] text-dim border-t border-line">
             <span>
-              {q.data?.source === "portfolio"
+              {board.data?.source === "portfolio"
                 ? "Built from Hyperliquid's portfolio API for the featured traders: PNL and volume are exact, ROI = PNL / account value at the start of the window."
-                : "Excludes accounts with less than 100k USDC account value and less than 10M USDC trading volume. ROI = PNL / max(100, starting account value + maximum net deposits) for the time window."}
+                : "Hyperliquid's figures. Excludes accounts with less than 100k USDC account value and less than 10M USDC trading volume. ROI = PNL / max(100, starting account value + maximum net deposits) for the window. Pool: the top traders of every window, refreshed hourly."}
             </span>
             <span className="ml-auto flex items-center gap-1.5">
               {updated && <span suppressHydrationWarning>Updated {updated.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>}

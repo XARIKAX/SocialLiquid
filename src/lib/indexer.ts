@@ -219,6 +219,27 @@ export async function dropVaults(ranked: HlLeaderboardRow[], n: number): Promise
   return out;
 }
 
+export const HL_WINDOWS = ["day", "week", "month", "allTime"] as const;
+export type HlWindow = (typeof HL_WINDOWS)[number];
+
+/**
+ * the pool hyperliquid's leaderboard page can show: the top n eligible accounts of every window (24h, 7d, 30d, all time),
+ * so switching windows ranks real leaders instead of re-sorting the 30d top. vaults are dropped (checked in parallel, cached).
+ */
+export async function hlLeaderboardPool(rows: HlLeaderboardRow[], n: number): Promise<HlLeaderboardRow[]> {
+  const eligible = rows.filter(hlLeaderboardEligible);
+  const picked = new Map<string, HlLeaderboardRow>();
+  for (const w of HL_WINDOWS) {
+    const ranked = [...eligible].sort((a, b) => HL.leaderboardPnl(b, w) - HL.leaderboardPnl(a, w));
+    // take a little extra so vaults dropped below still leave n real accounts
+    for (const r of ranked.slice(0, Math.ceil(n * 1.3))) picked.set(r.ethAddress.toLowerCase(), r);
+  }
+  const list = [...picked.values()];
+  const flags: boolean[] = [];
+  for (let i = 0; i < list.length; i += 8) flags.push(...(await Promise.all(list.slice(i, i + 8).map((r) => HL.isVault(r.ethAddress).catch(() => false)))));
+  return list.filter((_, i) => !flags[i]);
+}
+
 /** same ordering as app.hyperliquid.xyz/leaderboard (30D, PnL desc) */
 export function hlLeaderboardRanked(rows: HlLeaderboardRow[]): HlLeaderboardRow[] {
   return rows.filter(hlLeaderboardEligible).sort((a, b) => HL.leaderboardPnl(b, "month") - HL.leaderboardPnl(a, "month"));
@@ -230,13 +251,24 @@ export function getHlBoardStatus(): HlBoardStatus {
   return { ...hlBoardStatus };
 }
 
-type BoardRow = { rank: number; address: string; displayName: string | null; accountValue: string; pnl30d: string; roi30d: string; vlm30d: string; pnl7d: string; source: string };
+type BoardRow = {
+  rank: number; address: string; displayName: string | null; accountValue: string; source: string;
+  pnl30d: string; roi30d: string; vlm30d: string;
+  pnl7d: string; roi7d: string; vlm7d: string;
+  pnl1d: string; roi1d: string; vlm1d: string;
+  pnlAll: string; roiAll: string; vlmAll: string;
+};
 
-function rowsFromLeaderboard(ranked: HlLeaderboardRow[]): BoardRow[] {
-  const perf = (r: HlLeaderboardRow, w: "week" | "month") => r.windowPerformances.find(([k]) => k === w)?.[1] ?? { pnl: "0", roi: "0", vlm: "0" };
+/** rows ranked by 30d pnl (hyperliquid's default), every window stored */
+function rowsFromLeaderboard(pool: HlLeaderboardRow[]): BoardRow[] {
+  const perf = (r: HlLeaderboardRow, w: HlWindow) => r.windowPerformances.find(([k]) => k === w)?.[1] ?? { pnl: "0", roi: "0", vlm: "0" };
+  const ranked = [...pool].sort((a, b) => HL.leaderboardPnl(b, "month") - HL.leaderboardPnl(a, "month"));
   return ranked.map((r, i) => {
-    const m = perf(r, "month");
-    return { rank: i + 1, address: r.ethAddress.toLowerCase(), displayName: r.displayName, accountValue: r.accountValue, pnl30d: m.pnl, roi30d: m.roi, vlm30d: m.vlm, pnl7d: perf(r, "week").pnl, source: "leaderboard" };
+    const m = perf(r, "month"), w = perf(r, "week"), d = perf(r, "day"), a = perf(r, "allTime");
+    return {
+      rank: i + 1, address: r.ethAddress.toLowerCase(), displayName: r.displayName, accountValue: r.accountValue, source: "leaderboard",
+      pnl30d: m.pnl, roi30d: m.roi, vlm30d: m.vlm, pnl7d: w.pnl, roi7d: w.roi, vlm7d: w.vlm, pnl1d: d.pnl, roi1d: d.roi, vlm1d: d.vlm, pnlAll: a.pnl, roiAll: a.roi, vlmAll: a.vlm,
+    };
   });
 }
 
@@ -252,19 +284,21 @@ async function rowsFromPortfolio(addresses: string[]): Promise<BoardRow[]> {
       const [p, st] = await Promise.all([HL.portfolio(address), HL.clearinghouseState(address)]);
       const last = (h: [number, string][]) => Number(h[h.length - 1]?.[1] ?? 0);
       const first = (h: [number, string][]) => Number(h[0]?.[1] ?? 0);
-      const m = p.month, w = p.week;
+      const m = p.month;
       if (!m) continue;
-      const pnl30 = last(m.pnlHistory);
-      const start = first(m.accountValueHistory);
+      const win = (k: string) => {
+        const x = p[k];
+        if (!x) return { pnl: "0", roi: "0", vlm: "0" };
+        const pnl = last(x.pnlHistory);
+        return { pnl: String(pnl), roi: String(pnl / Math.max(100, first(x.accountValueHistory))), vlm: x.vlm };
+      };
+      const M = win("month"), W = win("week"), D = win("day"), A = win("allTime");
       out.push({
         address,
         displayName: null,
         accountValue: st.marginSummary.accountValue,
-        pnl30d: String(pnl30),
-        roi30d: String(pnl30 / Math.max(100, start)),
-        vlm30d: m.vlm,
-        pnl7d: String(w ? last(w.pnlHistory) : 0),
         source: "portfolio",
+        pnl30d: M.pnl, roi30d: M.roi, vlm30d: M.vlm, pnl7d: W.pnl, roi7d: W.roi, vlm7d: W.vlm, pnl1d: D.pnl, roi1d: D.roi, vlm1d: D.vlm, pnlAll: A.pnl, roiAll: A.roi, vlmAll: A.vlm,
       });
     } catch (e) {
       console.warn(`[indexer] portfolio fetch failed for ${address.slice(0, 10)}:`, (e as Error).message);
@@ -279,12 +313,12 @@ async function rowsFromPortfolio(addresses: string[]): Promise<BoardRow[]> {
  * HL_LEADERBOARD_SOURCE=portfolio), the board is rebuilt for the featured traders from the portfolio api instead.
  * returns rows written, 0 if nothing could be fetched.
  */
-export async function refreshHlLeaderboard(topN = 10): Promise<number> {
+export async function refreshHlLeaderboard(topN = 100): Promise<number> {
   hlBoardStatus.lastAttemptAt = Date.now();
   let rows: BoardRow[] = [];
   if (process.env.HL_LEADERBOARD_SOURCE !== "portfolio") {
     try {
-      rows = rowsFromLeaderboard(await dropVaults(hlLeaderboardRanked(await HL.leaderboard()), topN));
+      rows = rowsFromLeaderboard(await hlLeaderboardPool(await HL.leaderboard(), topN));
       if (!rows.length) throw new Error("leaderboard feed returned no eligible rows");
     } catch (e) {
       hlBoardStatus.lastError = `leaderboard feed: ${(e as Error).message}`;

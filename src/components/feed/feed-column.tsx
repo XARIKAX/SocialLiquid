@@ -204,18 +204,27 @@ export function Tokens({ onNavigate, full }: { onNavigate?: () => void; full?: b
   );
 }
 
+const MINI_WINDOWS = [["day", "24H"], ["week", "7D"], ["month", "30D"], ["allTime", "All"]] as const;
+
 function MiniLeaderboard({ onNavigate }: { onNavigate?: () => void }) {
   const [src, setSrc] = useState<"hl" | "own">("hl");
-  // same key and shape as the /leaderboard page so both can be mounted at once and share the cache
-  const hlq = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<HlBoard>("/api/leaderboard/hl"), refetchInterval: 60_000 });
+  const [win, setWin] = useState<(typeof MINI_WINDOWS)[number][0]>("month");
+  const hlq = useQuery({ queryKey: ["leaderboard", "hl", win, "pnl", "", false, "mini"], queryFn: () => api<HlBoard>(`/api/leaderboard/hl?window=${win}&limit=25`), refetchInterval: 60_000, placeholderData: (d) => d });
   const hl = { isLoading: hlq.isLoading, isError: hlq.isError, error: hlq.error, data: hlq.data?.rows };
   const own = useQuery({ queryKey: ["leaderboard", "pnl7d"], queryFn: () => api<{ rows: LeaderboardRow[] }>("/api/leaderboard?by=pnl7d").then((r) => r.rows), refetchInterval: 30_000 });
   const header = (
     <div className="px-4 h-9 flex items-center gap-2 text-[11px] text-dim border-b border-line">
       <span className="seg h-7">
-        <button className={`seg-item h-6 px-2 ${src === "hl" ? "seg-active" : ""}`} onClick={() => setSrc("hl")}>Hyperliquid 30D</button>
-        <button className={`seg-item h-6 px-2 ${src === "own" ? "seg-active" : ""}`} onClick={() => setSrc("own")}>7d PnL</button>
+        <button className={`seg-item h-6 px-2 ${src === "hl" ? "seg-active" : ""}`} onClick={() => setSrc("hl")}>Hyperliquid</button>
+        <button className={`seg-item h-6 px-2 ${src === "own" ? "seg-active" : ""}`} onClick={() => setSrc("own")}>socialLiquid</button>
       </span>
+      {src === "hl" && (
+        <span className="seg h-7" data-testid="mini-windows">
+          {MINI_WINDOWS.map(([w, label]) => (
+            <button key={w} className={`seg-item h-6 px-1.5 ${win === w ? "seg-active" : ""}`} onClick={() => setWin(w)}>{label}</button>
+          ))}
+        </span>
+      )}
       <Link href="/leaderboard" onClick={onNavigate} className="ml-auto hover:text-fg">Full board →</Link>
     </div>
   );
@@ -227,14 +236,14 @@ function MiniLeaderboard({ onNavigate }: { onNavigate?: () => void }) {
         {hl.isError && <Empty title="Leaderboard unavailable" hint={(hl.error as Error).message} />}
         {!hl.isError && !hl.data?.length && <Empty title="Leaderboard unavailable" hint={hlq.data?.error ? `Hyperliquid did not answer: ${hlq.data.error}` : "Hyperliquid's leaderboard is mirrored on the first request. Refresh in a moment."} />}
         {hl.data?.map((r) => (
-          <Link key={r.rank} href={userPath(r.user)} onClick={onNavigate} className="flex items-center gap-2.5 px-4 h-12 row-hover">
+          <Link key={r.user.address} href={userPath(r.user)} onClick={onNavigate} className="flex items-center gap-2.5 px-4 h-12 row-hover" data-testid="mini-row">
             <span className={`num text-xs w-5 ${r.rank <= 3 ? "text-brand font-semibold" : "text-dim"}`}>{r.rank}</span>
             <Avatar address={r.user.address} url={r.user.avatarUrl} handle={r.user.handle ?? r.user.displayName} size={26} />
             <span className="min-w-0 leading-tight">
               <span className="block truncate text-[13px] font-medium">{userLabel(r.user)}</span>
-              <span className="block text-[11px] text-dim num">{fmtUsd(r.accountValue, { compact: true })} · ROI {(r.roi30d * 100).toFixed(1)}%</span>
+              <span className="block text-[11px] text-dim num">{fmtUsd(r.accountValue, { compact: true })} · ROI {(r.roi * 100).toFixed(1)}%</span>
             </span>
-            <Pnl value={r.pnl30d} compact className="ml-auto text-[13px] font-semibold" />
+            <Pnl value={r.pnl} compact className="ml-auto text-[13px] font-semibold" />
           </Link>
         ))}
       </div>

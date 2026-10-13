@@ -292,17 +292,30 @@ export async function resolveTrader(handleOrAddress: string) {
 // ---------- hyperliquid leaderboard mirror (30d top N, figures as reported by hyperliquid) ----------
 
 export type HlBoardRow = {
+  /** rank within the requested window and sort */
   rank: number;
+  /** hyperliquid's own 30d rank for this account in the mirrored pool */
+  rank30d: number;
   user: UserLite;
   accountValue: number;
+  /** figures for the requested window */
+  pnl: number;
+  roi: number;
+  vlm: number;
+  /** kept for the 30d widgets */
   pnl30d: number;
   roi30d: number;
   vlm30d: number;
   pnl7d: number;
+  followers: number;
+  isFollowing: boolean;
 };
+export type HlBoardWindow = "day" | "week" | "month" | "allTime";
+export type HlBoardSort = "pnl" | "roi" | "vlm" | "accountValue";
+export type HlBoardQuery = { window?: HlBoardWindow; sort?: HlBoardSort; q?: string; claimedOnly?: boolean; limit?: number; viewerId?: string };
 
 const HL_BOARD_REFRESH_MS = Number(process.env.HL_LEADERBOARD_REFRESH_MS ?? 60 * 60_000);
-const HL_BOARD_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 10);
+const HL_BOARD_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 100);
 let hlBoardRefreshing: Promise<number> | null = null;
 /** one refresh at a time per process; the worker normally does this, the web process covers for it */
 function refreshHlBoardOnce(): Promise<number> {
@@ -314,30 +327,62 @@ function refreshHlBoardOnce(): Promise<number> {
   return hlBoardRefreshing;
 }
 
-export type HlBoard = { rows: HlBoardRow[]; updatedAt: string | null; source: "leaderboard" | "portfolio" | null; error: string | null };
+export type HlBoard = { rows: HlBoardRow[]; updatedAt: string | null; source: "leaderboard" | "portfolio" | null; error: string | null; window: HlBoardWindow; sort: HlBoardSort; total: number };
 
-export async function hlLeaderboard(): Promise<HlBoard> {
+export async function hlLeaderboard(opts: HlBoardQuery = {}): Promise<HlBoard> {
+  const window: HlBoardWindow = opts.window ?? "month";
+  const sort: HlBoardSort = opts.sort ?? "pnl";
+  const empty = (error: string | null): HlBoard => ({ rows: [], updatedAt: null, source: null, error, window, sort, total: 0 });
   let entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
   if (!entries.length) {
     // first visitor on a fresh database: fetch hyperliquid's board right now
     try {
       if (await refreshHlBoardOnce()) entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
     } catch (e) {
-      return { rows: [], updatedAt: null, source: null, error: (e as Error).message };
+      return empty((e as Error).message);
     }
-    if (!entries.length) return { rows: [], updatedAt: null, source: null, error: getHlBoardStatus().lastError ?? "no rows returned" };
+    if (!entries.length) return empty(getHlBoardStatus().lastError ?? "no rows returned");
   } else if (Date.now() - entries[0].updatedAt.getTime() > HL_BOARD_REFRESH_MS) {
     void refreshHlBoardOnce().catch(() => {});
   }
   const users = await usersByAddress(entries.map((e) => e.address));
-  const rows = entries.map((e) => ({
-    rank: e.rank,
-    user: users.get(e.address) ?? { id: "", address: e.address, handle: null, displayName: e.displayName, xHandle: null, avatarUrl: null, claimed: false },
-    accountValue: Number(e.accountValue),
-    pnl30d: Number(e.pnl30d),
-    roi30d: Number(e.roi30d),
-    vlm30d: Number(e.vlm30d),
-    pnl7d: Number(e.pnl7d),
-  }));
-  return { rows, updatedAt: entries[0].updatedAt.toISOString(), source: entries[0].source === "portfolio" ? "portfolio" : "leaderboard", error: null };
+  const userIds = [...users.values()].filter((u) => u.id).map((u) => u.id);
+  const [followerRows, myFollows] = await Promise.all([
+    userIds.length ? prisma.follow.groupBy({ by: ["followingId"], where: { followingId: { in: userIds } }, _count: { _all: true } }) : [],
+    opts.viewerId && userIds.length ? prisma.follow.findMany({ where: { followerId: opts.viewerId, followingId: { in: userIds } }, select: { followingId: true } }) : [],
+  ]);
+  const followers = new Map(followerRows.map((f) => [f.followingId, f._count._all]));
+  const following = new Set(myFollows.map((f) => f.followingId));
+  const pick = (e: (typeof entries)[number]) =>
+    window === "day" ? { pnl: e.pnl1d, roi: e.roi1d, vlm: e.vlm1d } : window === "week" ? { pnl: e.pnl7d, roi: e.roi7d, vlm: e.vlm7d } : window === "allTime" ? { pnl: e.pnlAll, roi: e.roiAll, vlm: e.vlmAll } : { pnl: e.pnl30d, roi: e.roi30d, vlm: e.vlm30d };
+  let rows: HlBoardRow[] = entries.map((e) => {
+    const user = users.get(e.address) ?? { id: "", address: e.address, handle: null, displayName: e.displayName, xHandle: null, avatarUrl: null, claimed: false };
+    const w = pick(e);
+    return {
+      rank: 0,
+      rank30d: e.rank,
+      user,
+      accountValue: Number(e.accountValue),
+      pnl: Number(w.pnl),
+      roi: Number(w.roi),
+      vlm: Number(w.vlm),
+      pnl30d: Number(e.pnl30d),
+      roi30d: Number(e.roi30d),
+      vlm30d: Number(e.vlm30d),
+      pnl7d: Number(e.pnl7d),
+      followers: user.id ? (followers.get(user.id) ?? 0) : 0,
+      isFollowing: !!user.id && following.has(user.id),
+    };
+  });
+  // hyperliquid ranks every window by pnl; roi/volume/account value sorts are ours, on the same pool
+  rows.sort((a, b) => (sort === "roi" ? b.roi - a.roi : sort === "vlm" ? b.vlm - a.vlm : sort === "accountValue" ? b.accountValue - a.accountValue : b.pnl - a.pnl));
+  rows = rows.map((r, i) => ({ ...r, rank: i + 1 }));
+  const total = rows.length;
+  if (opts.claimedOnly) rows = rows.filter((r) => r.user.claimed);
+  if (opts.q) {
+    const q = opts.q.trim().toLowerCase();
+    rows = rows.filter((r) => r.user.address.includes(q) || (r.user.handle ?? "").toLowerCase().includes(q) || (r.user.displayName ?? "").toLowerCase().includes(q));
+  }
+  if (opts.limit) rows = rows.slice(0, opts.limit);
+  return { rows, updatedAt: entries[0].updatedAt.toISOString(), source: entries[0].source === "portfolio" ? "portfolio" : "leaderboard", error: null, window, sort, total };
 }
