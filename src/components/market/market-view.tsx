@@ -79,9 +79,12 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
   // chart pins: everyone you follow who is in this market, plus the biggest books, capped so the chart stays readable
   const pins = useMemo<TraderPin[]>(() => {
     const all = q.data?.positions ?? [];
-    const followed = all.filter((p) => p.followed);
-    const rest = all.filter((p) => !p.followed).sort((a, b) => b.sizeUsd - a.sizeUsd).slice(0, 12);
-    return [...followed, ...rest].slice(0, 30).map((p) => ({ id: p.id, address: p.address, user: p.user, side: (p.side === "SHORT" ? "SHORT" : "LONG") as "LONG" | "SHORT", entryPx: p.entryPx, size: p.size, sizeUsd: p.sizeUsd, leverage: p.leverage, time: new Date(p.openedAt).getTime(), thesis: p.thesis?.text ?? null, followed: !!p.followed }));
+    const mine = all.filter((p) => p.mine);
+    const followed = all.filter((p) => p.followed && !p.mine);
+    const thesised = all.filter((p) => p.thesis && !p.followed && !p.mine).sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()).slice(0, 12);
+    const picked = new Set([...mine, ...followed, ...thesised].map((p) => p.id));
+    const big = all.filter((p) => !picked.has(p.id)).sort((a, b) => b.sizeUsd - a.sizeUsd).slice(0, 12);
+    return [...mine, ...followed, ...thesised, ...big].slice(0, 40).map((p) => ({ id: p.id, address: p.address, user: p.user, side: (p.side === "SHORT" ? "SHORT" : "LONG") as "LONG" | "SHORT", entryPx: p.entryPx, size: p.size, sizeUsd: p.sizeUsd, leverage: p.leverage, time: new Date(p.openedAt).getTime(), thesis: p.thesis?.text ?? null, followed: !!p.followed, mine: !!p.mine }));
   }, [q.data?.positions]);
   const myPos = myBal.data?.positions.find((p) => p.coin === coin && p.szi !== 0);
   const lines = useMemo<PriceLine[]>(() => {

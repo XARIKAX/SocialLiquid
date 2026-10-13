@@ -24,6 +24,8 @@ export type TraderPin = {
   time: number;
   thesis: string | null;
   followed: boolean;
+  /** the viewer's own position */
+  mine?: boolean;
 };
 
 export type Project = (timeMs: number, price: number) => { x: number; y: number; clampedLeft: boolean } | null;
@@ -64,7 +66,7 @@ export function TraderPins({ coin, pins, project, lastPx, width, height }: { coi
             key={p.id}
             type="button"
             className={`absolute pointer-events-auto rounded-full transition-transform ${isActive ? "scale-125 z-[8]" : "hover:scale-110"}`}
-            style={{ left: x - PIN / 2, top: y - PIN / 2, width: PIN, height: PIN, boxShadow: `0 0 0 2px ${col}, 0 0 0 3px rgb(0 0 0 / 0.5)${p.followed ? `, 0 0 10px ${col}` : ""}`, opacity: clamped ? 0.75 : 1 }}
+            style={{ left: x - PIN / 2, top: y - PIN / 2, width: PIN, height: PIN, boxShadow: p.mine ? `0 0 0 2px var(--color-brand), 0 0 0 3px rgb(0 0 0 / 0.5), 0 0 12px var(--color-brand)` : `0 0 0 2px ${col}, 0 0 0 3px rgb(0 0 0 / 0.5)${p.followed ? `, 0 0 10px ${col}` : ""}`, opacity: clamped ? 0.75 : 1 }}
             onMouseEnter={() => setHover(p.id)}
             onMouseLeave={() => setHover(null)}
             onClick={(e) => { e.stopPropagation(); setOpen((o) => (o === p.id ? null : p.id)); }}
@@ -91,7 +93,7 @@ export function TraderPins({ coin, pins, project, lastPx, width, height }: { coi
               </TraderLink>
               <div className="min-w-0 flex-1 leading-tight">
                 <TraderLink address={p.address} handle={p.user?.handle} displayName={p.user?.displayName} className="font-semibold text-[13px] truncate block" />
-                <span className="text-dim num">{timeAgo(new Date(p.time).toISOString())}{p.followed ? " · following" : ""}</span>
+                <span className="text-dim num">{timeAgo(new Date(p.time).toISOString())}{p.mine ? " · you" : p.followed ? " · following" : ""}</span>
               </div>
               <span className={`pill ${p.side === "LONG" ? "pill-up" : "pill-down"}`}>{p.side === "LONG" ? "Long" : "Short"} {p.leverage}x</span>
             </div>
@@ -102,7 +104,7 @@ export function TraderPins({ coin, pins, project, lastPx, width, height }: { coi
             </div>
             {p.thesis && <p className="mt-2 text-[12px] leading-snug text-fg-2 line-clamp-3"><span className="text-thesis font-medium">Thesis · </span>{p.thesis}</p>}
             <div className="flex items-center gap-2 mt-2.5">
-              <Link href={copyHrefFor(coin, p)} className="btn h-8 px-3 text-[12px] font-semibold border-brand/40 text-brand hover:bg-brand/10 flex-1 justify-center" data-testid="pin-copy"><Icon.copy /> Copy this trade</Link>
+              {!p.mine && <Link href={copyHrefFor(coin, p)} className="btn h-8 px-3 text-[12px] font-semibold border-brand/40 text-brand hover:bg-brand/10 flex-1 justify-center" data-testid="pin-copy"><Icon.copy /> Copy this trade</Link>}
               <TraderLink address={p.address} handle={p.user?.handle} displayName={p.user?.displayName} className="btn h-8 px-3 text-[12px]">Profile</TraderLink>
             </div>
           </div>
