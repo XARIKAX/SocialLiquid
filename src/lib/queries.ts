@@ -1,6 +1,7 @@
 /** db queries shared by route handlers and server components */
 import { Prisma, type FeedEventType } from "@prisma/client";
 import { prisma } from "./db";
+import { reactionCounts } from "./reactions";
 import { getHlBoardStatus, refreshHlLeaderboard } from "./indexer";
 import { plain } from "./api";
 
@@ -48,6 +49,10 @@ export type FeedItem = {
     copiers: number;
   } | null;
   thesis: { id: string; text: string; outcome: string; likes: number; likedByMe: boolean; replies: number; createdAt: string } | null;
+  /** fire / skull / eyes counts on this event and which ones the viewer pressed */
+  reactions: { fire: number; skull: number; eyes: number; mine: ("fire" | "skull" | "eyes")[] };
+  /** comments under a trade event (theses count their own replies) */
+  comments: number;
 };
 
 export type FeedFilters = {
@@ -86,6 +91,12 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
   const posIds = rows.map((r) => r.position?.id).filter((x): x is string => !!x);
   const copierRows = posIds.length ? await prisma.position.groupBy({ by: ["copiedFromPositionId"], where: { copiedFromPositionId: { in: posIds } }, _count: { _all: true } }) : [];
   const copiers = new Map(copierRows.map((c) => [c.copiedFromPositionId as string, c._count._all]));
+  const ids = rows.map((r) => r.id);
+  const [reactions, commentRows] = await Promise.all([
+    reactionCounts(ids, f.viewerId),
+    ids.length ? prisma.eventReply.groupBy({ by: ["eventId"], where: { eventId: { in: ids } }, _count: { _all: true } }) : [],
+  ]);
+  const comments = new Map(commentRows.map((c) => [c.eventId, c._count._all]));
   const items: FeedItem[] = rows.map((r) => ({
     id: r.id,
     type: r.type,
@@ -94,6 +105,8 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
     time: r.time.toISOString(),
     payload: (r.payload ?? {}) as Record<string, unknown>,
     user: users.get(r.address) ?? null,
+    reactions: reactions.get(r.id) ?? { fire: 0, skull: 0, eyes: 0, mine: [] },
+    comments: comments.get(r.id) ?? 0,
     position: r.position
       ? {
           id: r.position.id,

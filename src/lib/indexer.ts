@@ -127,6 +127,7 @@ export async function syncAddress(addressRaw: string, opts: { forceFills?: boole
         else if (closedAt.getTime() - t.createdAt.getTime() < DUMP_WINDOW_MS) outcome = "DUMPED";
         else outcome = realised >= 0 ? "PROFIT" : "LOSS";
         await tx.thesis.update({ where: { id: t.id }, data: { outcome } });
+        await tx.notification.create({ data: { userId: t.userId, type: "THESIS_SETTLED", coin: p.coin, thesisId: t.id, positionId: p.id, payload: { outcome, realisedPnl: realised, side: p.side, text: t.text.slice(0, 140) } } });
       }
     });
     closed++;

@@ -10,10 +10,13 @@ import { Avatar } from "../ui";
 
 export type Reply = { id: string; text: string; createdAt: string; user: { id: string; address: string; handle: string | null; displayName: string | null; avatarUrl: string | null } };
 
-export function ThesisThread({ thesisId, onCount, compact = false, autoFocus = false }: { thesisId: string; onCount?: (n: number) => void; compact?: boolean; autoFocus?: boolean }) {
+/** the same thread under a thesis (`thesisId`) or under a trade event (`eventId`) */
+export function ThesisThread({ thesisId, eventId, onCount, compact = false, autoFocus = false }: { thesisId?: string; eventId?: string; onCount?: (n: number) => void; compact?: boolean; autoFocus?: boolean }) {
+  const base = thesisId ? `/api/thesis/${thesisId}/replies` : `/api/feed/${eventId}/replies`;
+  const key = thesisId ? ["replies", thesisId] : ["event-replies", eventId];
   const { signedIn, me } = useAuth();
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["replies", thesisId], queryFn: () => api<{ replies: Reply[] }>(`/api/thesis/${thesisId}/replies`).then((r) => r.replies) });
+  const q = useQuery({ queryKey: key, queryFn: () => api<{ replies: Reply[] }>(base).then((r) => r.replies) });
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -24,8 +27,8 @@ export function ThesisThread({ thesisId, onCount, compact = false, autoFocus = f
     setBusy(true);
     setErr(null);
     try {
-      const r = await api<{ reply: Reply; count: number }>(`/api/thesis/${thesisId}/replies`, { method: "POST", json: { text: body } });
-      qc.setQueryData<Reply[]>(["replies", thesisId], (d) => [...(d ?? []), r.reply]);
+      const r = await api<{ reply: Reply; count: number }>(base, { method: "POST", json: { text: body } });
+      qc.setQueryData<Reply[]>(key, (d) => [...(d ?? []), r.reply]);
       onCount?.(r.count);
       setText("");
       qc.invalidateQueries({ queryKey: ["feed"] });
@@ -64,7 +67,7 @@ export function ThesisThread({ thesisId, onCount, compact = false, autoFocus = f
         >
           <textarea
             className="input flex-1 min-h-[38px] h-[38px] py-2 resize-none text-[13px]"
-            placeholder="Reply…"
+            placeholder={thesisId ? "Reply…" : "Comment…"}
             value={text}
             maxLength={280}
             autoFocus={autoFocus}

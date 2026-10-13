@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { syncAddress } from "@/lib/indexer";
 import { getSession, hasInvite } from "@/lib/session";
 import { createThesis } from "@/lib/thesis";
+import { notifyAddress } from "@/lib/notify";
 import { placeOrder } from "@/lib/trade";
 
 const Body = z
@@ -51,6 +52,7 @@ export const POST = handler(async (req: Request) => {
       const src = await prisma.position.findUnique({ where: { id: input.copyOf.positionId }, select: { id: true, address: true, coin: true } });
       if (src && src.address === input.copyOf.address.toLowerCase() && src.coin === input.coin) {
         pos = await prisma.position.update({ where: { id: pos.id }, data: { copiedFromAddress: src.address, copiedFromPositionId: src.id } });
+        await notifyAddress(src.address, { type: "COPIED", actorAddress: s.address, coin: input.coin, positionId: src.id, payload: { side: pos.side, sizeUsd: Number(pos.sizeUsd), leverage: pos.leverage } }).catch(() => null);
       }
     }
     if (input.thesis) thesis = await createThesis({ userId: s.userId, address: s.address, coin: input.coin, text: input.thesis, position: pos });
