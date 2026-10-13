@@ -18,6 +18,8 @@ export type MarketPosition = {
   entryPx: number;
   openedAt: string;
   unrealisedPnl: number;
+  /** the viewer follows this trader */
+  followed?: boolean;
   closedCount: number;
   avgHoldMs: number | null;
   thesis: { id: string; text: string; likes: number; outcome: string } | null;

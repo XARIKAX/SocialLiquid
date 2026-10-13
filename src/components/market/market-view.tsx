@@ -14,6 +14,8 @@ import type { MarketPosition, MarketTrade } from "./positions-table";
 import { AboutCard } from "./about-card";
 import { FlowCard, TradersToFollow } from "./side-cards";
 import { MarketHeader } from "./market-header";
+import { SocialStrip } from "./social-strip";
+import type { TraderPin } from "./trader-pins";
 import { OrderBook } from "./order-book";
 import { Ticket } from "../trade/ticket";
 import { BottomPanel } from "../trade/bottom-panel";
@@ -22,7 +24,7 @@ import { Deferred } from "@/hooks/use-in-view";
 
 const Chart = dynamic(() => import("./chart").then((m) => m.Chart), { ssr: false, loading: () => null });
 
-type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[]; flow24h?: { longUsd: number; shortUsd: number; count: number }; closes?: number[] };
+type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[]; flow24h?: { longUsd: number; shortUsd: number; count: number }; copies24h?: number; closes?: number[] };
 
 /** server-rendered price shape shown until the real chart paints; it is the page's largest element on phones */
 function ChartPlaceholder({ closes }: { closes?: number[] }) {
@@ -72,6 +74,13 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
     for (const e of thesisEvents.data ?? []) out.push({ time: new Date(e.time).getTime(), side: (e.payload.side as "LONG" | "SHORT") ?? "LONG", label: e.user?.handle ?? e.user?.displayName ?? e.address.slice(0, 6), kind: "thesis" });
     return out;
   }, [mine.data, thesisEvents.data]);
+  // chart pins: everyone you follow who is in this market, plus the biggest books, capped so the chart stays readable
+  const pins = useMemo<TraderPin[]>(() => {
+    const all = q.data?.positions ?? [];
+    const followed = all.filter((p) => p.followed);
+    const rest = all.filter((p) => !p.followed).sort((a, b) => b.sizeUsd - a.sizeUsd).slice(0, 12);
+    return [...followed, ...rest].slice(0, 30).map((p) => ({ id: p.id, address: p.address, user: p.user, side: (p.side === "SHORT" ? "SHORT" : "LONG") as "LONG" | "SHORT", entryPx: p.entryPx, size: p.size, sizeUsd: p.sizeUsd, leverage: p.leverage, time: new Date(p.openedAt).getTime(), thesis: p.thesis?.text ?? null, followed: !!p.followed }));
+  }, [q.data?.positions]);
   const myPos = myBal.data?.positions.find((p) => p.coin === coin && p.szi !== 0);
   const lines = useMemo<PriceLine[]>(() => {
     const out: PriceLine[] = [];
@@ -89,11 +98,12 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
       <section className="min-w-0 flex flex-col gap-3">
         <div className="card px-3 py-2">
           <MarketHeader coin={coin} market={m} mid={mid} longShort={q.data?.longShort} />
+          <SocialStrip coin={coin} label={m?.base} positions={q.data?.positions} copies24h={q.data?.copies24h} signedIn={!!signedIn} onShowFollowing={() => setFollowing(true)} />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-3">
           <div className="card overflow-hidden h-[420px] lg:h-[460px] xl:h-[52vh] lg:min-h-[400px] relative">
             <div className="absolute inset-0"><ChartPlaceholder closes={initial?.closes} /></div>
-            <div className="absolute inset-0"><Chart coin={coin} label={m ? (m.kind === "spot" ? m.name : `${m.name}-USD`) : undefined} markers={markers} lastPx={mid} lines={lines} /></div>
+            <div className="absolute inset-0"><Chart coin={coin} label={m ? (m.kind === "spot" ? m.name : `${m.name}-USD`) : undefined} markers={markers} lastPx={mid} lines={lines} pins={pins} /></div>
           </div>
           <Deferred minHeight={400} className="h-[400px] lg:h-[460px] xl:h-[52vh] lg:min-h-[400px]">
             <div className="card overflow-hidden h-full">

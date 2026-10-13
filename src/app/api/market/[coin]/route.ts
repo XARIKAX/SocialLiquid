@@ -41,6 +41,11 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
     { longUsd: 0, shortUsd: 0, count: 0 },
   );
   const users = await usersByAddress([...positions.map((p) => p.address), ...fills.map((f) => f.address)]);
+  // the viewer's follow graph on this market, and how often this market was copied today: the social strip and the chart pins
+  const followedSet = new Set<string>(
+    addresses ?? (s ? (await prisma.follow.findMany({ where: { followerId: s.userId }, select: { following: { select: { address: true } } } })).map((x) => x.following.address) : []),
+  );
+  const copies24h = await prisma.position.count({ where: { coin, copiedFromPositionId: { not: null }, openedAt: { gte: new Date(Date.now() - 86_400_000) } } });
   const longUsd = positions.filter((p) => p.side === "LONG").reduce((a, p) => a + Number(p.sizeUsd), 0);
   const shortUsd = positions.filter((p) => p.side === "SHORT").reduce((a, p) => a + Number(p.sizeUsd), 0);
 
@@ -62,6 +67,7 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
       market,
       longShort: { longUsd, shortUsd, ratio: longUsd + shortUsd > 0 ? longUsd / (longUsd + shortUsd) : 0.5 },
       flow24h: flow,
+      copies24h,
       trades: fills.map((f) => ({
         id: f.id,
         address: f.address,
@@ -86,6 +92,7 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
         entryPx: Number(p.entryPx),
         openedAt: p.openedAt.toISOString(),
         unrealisedPnl: Number(p.unrealisedPnl),
+        followed: followedSet.has(p.address),
         closedCount: holdAgg.get(p.address)?.n ?? 0,
         avgHoldMs: holdAgg.get(p.address) ? holdAgg.get(p.address)!.total / holdAgg.get(p.address)!.n : null,
         thesis: p.theses[0] ? { id: p.theses[0].id, text: p.theses[0].text, likes: p.theses[0]._count.likes, outcome: p.theses[0].outcome } : null,

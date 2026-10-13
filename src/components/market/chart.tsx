@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, createChart, createSeriesMarkers, type IChartApi, type IPriceLine, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp } from "lightweight-charts";
+import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, createChart, createSeriesMarkers, type IChartApi, type IPriceLine, type ISeriesApi, type Logical, type SeriesMarker, type Time, type UTCTimestamp } from "lightweight-charts";
+import { TraderPins, type Project, type TraderPin } from "./trader-pins";
 import { INDICATOR_DEFS, indicatorById } from "@/lib/indicators";
 import { api } from "@/lib/client";
 import { fmtPx } from "@/lib/format";
@@ -39,7 +40,9 @@ function useClock() {
   return s;
 }
 
-export function Chart({ coin, label, markers = [], lastPx, lines = [] }: { coin: string; label?: string; markers?: ChartMarker[]; lastPx?: number; lines?: PriceLine[] }) {
+const PEOPLE_STORE = "sl:chart:people";
+
+export function Chart({ coin, label, markers = [], lastPx, lines = [], pins = [] }: { coin: string; label?: string; markers?: ChartMarker[]; lastPx?: number; lines?: PriceLine[]; pins?: TraderPin[] }) {
   const name = label ?? coin;
   const [theme] = useTheme();
   const pal = chartPalette(theme);
@@ -48,6 +51,20 @@ export function Chart({ coin, label, markers = [], lastPx, lines = [] }: { coin:
   const [mode, setMode] = useState<"chart" | "funding">("chart");
   const [showMine, setShowMine] = useState(true);
   const [showThesis, setShowThesis] = useState(true);
+  // trader pins: avatars at other traders' entries. on by default, remembered per browser
+  const [showPeople, setShowPeopleState] = useState(() => {
+    try {
+      return localStorage.getItem(PEOPLE_STORE) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const setShowPeople = (v: boolean) => {
+    setShowPeopleState(v);
+    try {
+      localStorage.setItem(PEOPLE_STORE, v ? "1" : "0");
+    } catch {}
+  };
   const [scale, setScale] = useState<0 | 1 | 2>(0);
   const [inds, setInds] = useState<string[]>(() => {
     try {
@@ -323,6 +340,50 @@ export function Chart({ coin, label, markers = [], lastPx, lines = [] }: { coin:
     markersRef.current.setMarkers(list);
   }, [markers, showMine, showThesis, q.data, pal]);
 
+  /** (time, price) → pixels inside the chart pane, for the pin layer. times before the first candle clamp to the left edge. */
+  const project: Project = (timeMs, price) => {
+    const c = chartRef.current;
+    const s = seriesRef.current;
+    const el = ref.current;
+    const data = dataRef.current;
+    if (!c || !s || !el || !data.length) return null;
+    const y = s.priceToCoordinate(price);
+    if (y === null) return null;
+    const t = timeMs / 1000;
+    let clampedLeft = false;
+    let x: number | null;
+    if (t < data[0].time) {
+      clampedLeft = true;
+      x = c.timeScale().logicalToCoordinate(0 as Logical);
+      if (x === null) return null;
+    } else {
+      let lo = 0;
+      let hi = data.length - 1;
+      while (lo < hi) {
+        const m = (lo + hi + 1) >> 1;
+        if (data[m].time <= t) lo = m;
+        else hi = m - 1;
+      }
+      const bar = data.length > 1 ? data[1].time - data[0].time : 60;
+      const frac = Math.min(0.999, Math.max(0, (t - data[lo].time) / bar));
+      // logicalToCoordinate only answers whole bar indexes (fractions come back as 0): interpolate between two bars
+      const ts = c.timeScale();
+      const x0 = ts.logicalToCoordinate(lo as Logical);
+      const x1 = ts.logicalToCoordinate((lo + 1) as Logical);
+      const xm = ts.logicalToCoordinate((lo - 1) as Logical);
+      if (x0 === null) return null;
+      const step = x1 !== null ? x1 - x0 : xm !== null ? x0 - xm : 0;
+      x = x0 + frac * step;
+    }
+    const w = el.clientWidth;
+    if (x < 0) {
+      x = 0;
+      clampedLeft = true;
+    }
+    if (x > w) return null;
+    return { x: Math.max(12, x), y, clampedLeft };
+  };
+
   // fullscreen
   useEffect(() => {
     const h = () => setFull(!!document.fullscreenElement && document.fullscreenElement === wrapRef.current);
@@ -526,6 +587,7 @@ export function Chart({ coin, label, markers = [], lastPx, lines = [] }: { coin:
         <span className="ml-auto flex items-center gap-2 shrink-0 pl-2">
           <Toggle on={showMine} onChange={setShowMine} label="My trades" />
           <Toggle on={showThesis} onChange={setShowThesis} label="Thesis" />
+          <Toggle on={showPeople} onChange={setShowPeople} label={pins.length ? `People (${pins.length})` : "People"} />
           <span className="w-px h-4 bg-line-2" />
           <button className="rail-btn w-7 h-7" onClick={snapshot} title="Take a snapshot"><Icon.camera /></button>
           <button className="rail-btn w-7 h-7" onClick={toggleFull} title={full ? "Exit fullscreen" : "Fullscreen"}>{full ? <Icon.shrink /> : <Icon.expand />}</button>
@@ -557,6 +619,10 @@ export function Chart({ coin, label, markers = [], lastPx, lines = [] }: { coin:
           >
             {mode === "chart" && visible.map((d) => <DrawingShape key={d.id} d={d} xOf={xOf} yOf={yOf} selected={selected === d.id} onSelect={() => !locked && setSelected(d.id)} pal={pal} />)}
           </svg>
+          {/* trader pins: re-laid out on every tick (pan, zoom, resize) and on new candles */}
+          {mode === "chart" && showPeople && pins.length > 0 && !q.isLoading && (
+            <TraderPins coin={coin} pins={pins} project={project} lastPx={lastPx} width={ref.current?.clientWidth ?? 0} height={ref.current?.clientHeight ?? 0} />
+          )}
           {/* legend */}
           {mode === "chart" && cur && (
             <div className="absolute left-3 right-16 top-2 z-10 text-[11px] num flex items-center gap-2 pointer-events-none flex-wrap">
