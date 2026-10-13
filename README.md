@@ -100,6 +100,17 @@ the market picker (⌘K) mirrors hyperliquid's: tabs for All · Perps · Spot ·
 
 the chart's ƒx menu is a searchable catalogue (`src/lib/indicators.ts`): overlays (SMA 9/20/50/100/200, EMA 9/21/50/200, WMA, Bollinger, VWAP, SuperTrend, Parabolic SAR, Donchian, Ichimoku) draw on the price pane, oscillators (RSI, MACD, Stochastic, Stochastic RSI, ATR, OBV, CCI, Williams %R, MFI) each get their own pane under the price with reference levels. the choice persists in localStorage. under the ticket, the account summary mirrors hyperliquid's: portfolio value (perps + spot), unrealized pnl, perps maintenance margin, margin ratio and account leverage, from `clearinghouseState` (`crossMaintenanceMarginUsed`, `totalNtlPos`). on a builder-dex market with no margin there, the ticket offers hyperliquid's unified margin (`userDexAbstraction`, one main-wallet signature) so the main account USDC backs trades on every builder dex.
 
+## social layer
+
+the parts that make the terminal read as a social app, on top of the feed, theses, follows and copy:
+
+- **trader pins on the chart.** avatars at the entry price and time of every open position on this market by the traders you follow, plus the biggest books (`People` toggle, remembered). hover or tap opens a card with the trade, live pnl, the thesis and a Copy button that prefills the ticket. `src/components/market/trader-pins.tsx`; the chart hands it a `(time, price) → pixels` projector that interpolates between whole bars, because lightweight-charts answers fractional logical indexes with 0.
+- **social strip** under the market header: who you follow is in this market, long/short split and net, avatar stack, how often the market was copied today (`copies24h` from `/api/market/[coin]`, which also flags each position with `followed`).
+- **reactions and comments on every trade.** fire / skull / eyes on any feed card (`Reaction`, `POST /api/react`), comment threads under trade cards (`EventReply`, `/api/feed/[id]/replies`) reusing the thesis thread. feed items carry per-emoji counts, the viewer's own, and the comment count.
+- **social notifications** in the bell (`Notification`): someone copied your trade, commented or reacted on your trade or thesis, your thesis settled. never for yourself, never twice per actor and thing. `/api/alerts` returns them next to followed-trader events with one unread count; toasts cover both.
+- **copier stats**: `traderStats` counts distinct copiers, copied positions and what the copies made; the profile header shows "Copied by N traders · copiers +$X".
+- **watching count**: `/api/presence` heartbeats (in-memory, per web instance, 45 s TTL) feed a "Watching" stat in the market header.
+
 ## bottom panel
 
 the Positions tab has a Thesis column: a position opened without one (or one that deserves a second) gets a composer right there (`POST /api/thesis` binds it to the open position; `GET /api/thesis` lists your live ones), and it lands in the feed and the market's Thesis tab like one posted with the order.

@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { useMids } from "@/hooks/use-market";
 import { useOpenOrders } from "@/hooks/use-account";
+import { usePresence } from "@/hooks/use-presence";
 import type { ChartMarker, PriceLine } from "./chart";
 import type { MarketPosition, MarketTrade } from "./positions-table";
 import { AboutCard } from "./about-card";
@@ -65,6 +66,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
   const thesisEvents = useFeed({ coin, minUsd: 0, thesisOnly: true, following: false });
   const myBal = useBalance(signedIn ? address : null, m?.dex ?? "");
   const orders = useOpenOrders();
+  const watching = usePresence(coin);
   const markers = useMemo<ChartMarker[]>(() => {
     const out: ChartMarker[] = [];
     for (const e of mine.data ?? []) {
@@ -97,7 +99,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_332px] gap-3 pb-3">
       <section className="min-w-0 flex flex-col gap-3">
         <div className="card px-3 py-2">
-          <MarketHeader coin={coin} market={m} mid={mid} longShort={q.data?.longShort} />
+          <MarketHeader coin={coin} market={m} mid={mid} longShort={q.data?.longShort} watching={watching} />
           <SocialStrip coin={coin} label={m?.base} positions={q.data?.positions} copies24h={q.data?.copies24h} signedIn={!!signedIn} onShowFollowing={() => setFollowing(true)} />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-3">

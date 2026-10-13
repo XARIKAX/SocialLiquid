@@ -29,7 +29,7 @@ export function marketTitle(m?: MarketSummary, coin?: string) {
   return m.kind === "spot" ? m.name : `${m.name}-USD`;
 }
 
-export function MarketHeader({ coin, market, mid, longShort }: { coin: string; market?: MarketSummary; mid?: number; longShort?: { ratio: number } }) {
+export function MarketHeader({ coin, market, mid, longShort, watching }: { coin: string; market?: MarketSummary; mid?: number; longShort?: { ratio: number }; watching?: number | null }) {
   const up = (market?.change24h ?? 0) >= 0;
   const countdown = useCountdown();
   const abs = market ? market.markPx - market.prevDayPx : 0;
@@ -58,6 +58,11 @@ export function MarketHeader({ coin, market, mid, longShort }: { coin: string; m
           </H>
         )}
         {market?.kind === "hip3" && <H label="Deployed by">{market.dexName ?? market.dex}</H>}
+        {watching !== null && watching !== undefined && watching > 0 && (
+          <H label="Watching">
+            <span className="inline-flex items-center gap-1.5" data-testid="watching"><span className="w-1.5 h-1.5 rounded-full bg-up live-dot" />{watching} {watching === 1 ? "person" : "people"}</span>
+          </H>
+        )}
       </div>
     </div>
   );

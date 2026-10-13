@@ -154,6 +154,10 @@ export type TraderStats = {
   avgHoldMs: number | null;
   thesisCount: number;
   thesisAccuracy: number | null;
+  /** distinct traders who copied this one, how many positions that was, and what those copies made */
+  copiers: number;
+  copyTrades: number;
+  copiersPnl: number;
 };
 
 /** stats for many addresses in three queries instead of two per address */
@@ -162,20 +166,27 @@ export async function traderStatsBulk(addresses: string[]): Promise<Map<string, 
   const out = new Map<string, TraderStats>();
   if (!addrs.length) return out;
   const now = Date.now();
-  const [closed, theses] = await Promise.all([
+  const [closed, theses, copies] = await Promise.all([
     prisma.position.findMany({
       where: { address: { in: addrs }, closedAt: { not: null } },
       select: { address: true, realisedPnl: true, openedAt: true, closedAt: true },
     }),
     prisma.thesis.findMany({ where: { user: { address: { in: addrs } } }, select: { outcome: true, user: { select: { address: true } } } }),
+    prisma.position.findMany({ where: { copiedFromAddress: { in: addrs } }, select: { address: true, copiedFromAddress: true, realisedPnl: true, unrealisedPnl: true, closedAt: true } }),
   ]);
-  type Acc = { n: number; wins: number; pnl7: number; pnl30: number; pnlAll: number; hold: number; th: number; settled: number; profit: number };
+  type Acc = { n: number; wins: number; pnl7: number; pnl30: number; pnlAll: number; hold: number; th: number; settled: number; profit: number; copiers: Set<string>; copyTrades: number; copiersPnl: number };
   const acc = new Map<string, Acc>();
   const get = (a: string) => {
     let x = acc.get(a);
-    if (!x) acc.set(a, (x = { n: 0, wins: 0, pnl7: 0, pnl30: 0, pnlAll: 0, hold: 0, th: 0, settled: 0, profit: 0 }));
+    if (!x) acc.set(a, (x = { n: 0, wins: 0, pnl7: 0, pnl30: 0, pnlAll: 0, hold: 0, th: 0, settled: 0, profit: 0, copiers: new Set(), copyTrades: 0, copiersPnl: 0 }));
     return x;
   };
+  for (const c of copies) {
+    const x = get(c.copiedFromAddress!);
+    x.copiers.add(c.address);
+    x.copyTrades++;
+    x.copiersPnl += c.closedAt ? Number(c.realisedPnl ?? 0) : Number(c.unrealisedPnl);
+  }
   for (const p of closed) {
     const x = get(p.address);
     const pnl = Number(p.realisedPnl ?? 0);
@@ -204,6 +215,9 @@ export async function traderStatsBulk(addresses: string[]): Promise<Map<string, 
       avgHoldMs: x.n ? x.hold / x.n : null,
       thesisCount: x.th,
       thesisAccuracy: x.settled ? x.profit / x.settled : null,
+      copiers: x.copiers.size,
+      copyTrades: x.copyTrades,
+      copiersPnl: x.copiersPnl,
     });
   }
   return out;

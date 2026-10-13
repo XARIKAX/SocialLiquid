@@ -126,6 +126,11 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
               {p.stats.avgHoldMs ? <span className="inline-flex items-center gap-1"><Icon.clock /> {fmtDuration(p.stats.avgHoldMs)} avg. hold</span> : null}
               <span className="inline-flex items-center gap-1"><Icon.layers /> {tradeCount} trades{!p.stats.closedTrades && p.fillStats ? ` · last ${p.fillStats.fills} fills` : ""}</span>
               <span>{winRate === null || winRate === undefined ? "" : `${fmtPct(winRate, 0, false)} win rate`}</span>
+              {p.stats.copyTrades > 0 && (
+                <span className="inline-flex items-center gap-1.5" title={`${p.stats.copyTrades} positions were opened with Copy on this trader`} data-testid="copier-stats">
+                  <Icon.copy /> Copied by <b className="text-fg-2">{p.stats.copiers}</b> {p.stats.copiers === 1 ? "trader" : "traders"} · copiers <Pnl value={p.stats.copiersPnl} compact className="font-semibold" />
+                </span>
+              )}
               {p.user?.createdAt && <span>Joined {new Date(p.user.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>}
               {p.accountValue !== null && <span className="num">Account {fmtUsd(p.accountValue, { compact: true })}</span>}
             </div>
