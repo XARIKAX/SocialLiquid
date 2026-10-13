@@ -222,6 +222,11 @@
 .lp-hero-title > span:last-child { padding-bottom: 0.08em; }
 .lp-hero-copy .lp-lead { max-width: 600px; margin-top: clamp(16px, 1.6vw, 22px); }
 .lp-hero-ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: clamp(26px, 2.6vw, 36px); }
+/* contract address pill: copies on click */
+.lp-ca { gap: 8px; padding-inline: 16px 14px; font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; letter-spacing: 0.01em; cursor: pointer; }
+.lp-ca-label { font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--lp-teal); }
+.lp-ca-addr { color: var(--lp-text); }
+.lp-ca-copy { display: inline-flex; align-items: center; min-width: 13px; color: var(--lp-dim); font-family: inherit; font-size: 12px; }
 .lp-hero-trust {
   display: flex;
   flex-wrap: wrap;
@@ -416,6 +421,7 @@
 @media (max-width: 400px) {
   .lp-hero-ctas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 340px; }
   .lp-hero-ctas .lp-btn { padding-inline: 14px; }
+  .lp-hero-ctas .lp-ca { grid-column: 1 / -1; }
   .lp-card-center .lp-seg { display: none; }
   .lp-card-meta { gap: 4px 12px; }
   .lp-card-meta > span:last-child { display: none; }
