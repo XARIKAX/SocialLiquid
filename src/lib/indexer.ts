@@ -8,6 +8,7 @@ import { featuredAddresses } from "./featured";
 import { Prisma, type FeedEventType, type ThesisOutcome } from "@prisma/client";
 import { prisma } from "./db";
 import * as HL from "./hl";
+import { syncSpotHoldings } from "./spot-holdings";
 import type { HlFill, HlPosition } from "./hl-types";
 
 const DUMP_WINDOW_MS = 60 * 60 * 1000;
@@ -28,6 +29,8 @@ function isCloseFill(f: HlFill) {
   return /close|>|liquidat/i.test(f.dir);
 }
 
+const SPOT_SYNC_MS = 10 * 60_000;
+
 export async function syncAddress(addressRaw: string, opts: { forceFills?: boolean } = {}): Promise<SyncResult> {
   const address = addressRaw.toLowerCase();
   let weight = HL.WEIGHT.clearinghouseState;
@@ -38,6 +41,15 @@ export async function syncAddress(addressRaw: string, opts: { forceFills?: boole
   }
 
   const tracked = await prisma.trackedAddress.findUnique({ where: { address } });
+  // spot holdings for holder lists: one extra call every 10 minutes per address, never on every poll
+  if (tracked && (!tracked.spotSyncedAt || Date.now() - tracked.spotSyncedAt.getTime() > SPOT_SYNC_MS)) {
+    try {
+      await syncSpotHoldings(address);
+      weight += HL.WEIGHT.clearinghouseState;
+    } catch (e) {
+      console.warn("[indexer] spot holdings failed", address.slice(0, 10), (e as Error).message);
+    }
+  }
   const open = await prisma.position.findMany({ where: { address, closedAt: null } });
   const openByCoin = new Map(open.map((p) => [p.coin, p]));
 

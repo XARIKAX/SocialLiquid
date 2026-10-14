@@ -55,6 +55,10 @@ model User {
 
   /// when the alerts bell was last opened; events after this count as unread
   alertsSeenAt DateTime?
+  /// profile customisation: a trading-style tag, a pinned thesis and a pinned trade
+  style            String?
+  pinnedThesisId   String?
+  pinnedPositionId String?
 
   agentKey  AgentKey?
   theses    Thesis[]
@@ -221,9 +225,22 @@ model TrackedAddress {
   /// last fill time we have ingested, ms epoch, for incremental userFills
   lastFillTime BigInt        @default(0)
   lastPolledAt DateTime?
+  /// spot balances are mirrored every few minutes, not every poll
+  spotSyncedAt DateTime?
   createdAt    DateTime      @default(now())
 
   @@index([lastPolledAt])
+}
+
+/// a tracked address's spot balance in one token (USOL, UBTC, HYPE, PURR…), for holder lists on spot markets
+model SpotHolding {
+  address   String
+  coin      String
+  total     Decimal  @db.Decimal(30, 10)
+  updatedAt DateTime @default(now())
+
+  @@id([address, coin])
+  @@index([coin, total(sort: Desc)])
 }
 
 /// snapshot of hyperliquid's own leaderboard (stats-data endpoint), 30d window, top N.

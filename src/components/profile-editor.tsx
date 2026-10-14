@@ -1,10 +1,12 @@
 "use client";
+import { STYLES } from "@/lib/styles";
+import type { Profile } from "./trader/profile";
 /**
  * profile setup and editing. mandatory after the first sign-in (no handle yet), reopened later via openProfileEditor().
  * images are resized in the browser and stored as data urls, so no object storage is needed.
  */
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/client";
 import { Avatar, Icon } from "./ui";
@@ -62,6 +64,11 @@ function ProfileEditor({ mandatory, onClose }: { mandatory: boolean; onClose: ()
   const [handle, setHandle] = useState(u.handle ?? "");
   const [displayName, setDisplayName] = useState(u.displayName ?? "");
   const [bio, setBio] = useState(u.bio ?? "");
+  const [style, setStyle] = useState<string>(u.style ?? "");
+  const [pinnedThesisId, setPinnedThesisId] = useState<string>(u.pinnedThesisId ?? "");
+  const [pinnedPositionId, setPinnedPositionId] = useState<string>(u.pinnedPositionId ?? "");
+  // what can be pinned: this trader's theses and trades, from their own profile payload
+  const mine = useQuery({ queryKey: ["trader", u.address.toLowerCase()], queryFn: () => api<Profile>(`/api/trader/${u.address}`), staleTime: 30_000 });
   const [x, setX] = useState(u.xHandle ?? "");
   const [tg, setTg] = useState(u.tgHandle ?? "");
   const [avatar, setAvatar] = useState<string | null | undefined>(undefined);
@@ -114,7 +121,7 @@ function ProfileEditor({ mandatory, onClose }: { mandatory: boolean; onClose: ()
     setBusy(true);
     setErr(null);
     try {
-      await api("/api/me/profile", { method: "POST", json: { handle: handle.trim().toLowerCase(), displayName: displayName.trim(), bio: bio.trim() || null, xHandle: x.trim() || null, tgHandle: tg.trim() || null, avatar, banner } });
+      await api("/api/me/profile", { method: "POST", json: { handle: handle.trim().toLowerCase(), displayName: displayName.trim(), bio: bio.trim() || null, xHandle: x.trim() || null, tgHandle: tg.trim() || null, avatar, banner, style: style || null, pinnedThesisId: pinnedThesisId || null, pinnedPositionId: pinnedPositionId || null } });
       await qc.invalidateQueries({ queryKey: ["me"] });
       qc.invalidateQueries({ queryKey: ["trader"] });
       qc.invalidateQueries({ queryKey: ["feed"] });
@@ -185,6 +192,28 @@ function ProfileEditor({ mandatory, onClose }: { mandatory: boolean; onClose: ()
           <label className="block mt-3">
             <span className="text-[11px] text-muted">Bio <span className="text-dim">· optional</span></span>
             <textarea className="input mt-1 h-16 py-2 resize-none" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="What you trade, how you trade it." maxLength={160} />
+          </label>
+          <label className="block">
+            <span className="text-[11px] text-muted">Trading style <span className="text-dim">· shows next to your name</span></span>
+            <select className="input mt-1 h-10" value={style} onChange={(e) => setStyle(e.target.value)} aria-label="trading style">
+              <option value="">none</option>
+              {STYLES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[11px] text-muted">Pinned thesis <span className="text-dim">· top of your profile</span></span>
+            <select className="input mt-1 h-10" value={pinnedThesisId} onChange={(e) => setPinnedThesisId(e.target.value)} aria-label="pinned thesis">
+              <option value="">most liked (default)</option>
+              {(mine.data?.theses ?? []).map((t) => <option key={t.id} value={t.id}>{t.coin} · {t.text.slice(0, 60)}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[11px] text-muted">Pinned trade</span>
+            <select className="input mt-1 h-10" value={pinnedPositionId} onChange={(e) => setPinnedPositionId(e.target.value)} aria-label="pinned trade">
+              <option value="">none</option>
+              {(mine.data?.open ?? []).filter((o) => o.id).map((o) => <option key={o.id!} value={o.id!}>{o.coin} {o.side === "LONG" ? "long" : "short"} {o.leverage}x · open</option>)}
+              {(mine.data?.recentClosed ?? []).slice(0, 30).map((c) => <option key={c.id} value={c.id}>{c.coin} {c.side === "LONG" ? "long" : "short"} {c.leverage}x · {c.realisedPnl !== null ? (c.realisedPnl >= 0 ? "+" : "") + Math.round(c.realisedPnl) : "closed"}</option>)}
+            </select>
           </label>
 
           <div className="grid sm:grid-cols-2 gap-3 mt-3">

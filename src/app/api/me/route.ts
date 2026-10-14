@@ -18,6 +18,9 @@ export const GET = handler(async () => {
           bio: user.bio,
           avatarUrl: user.avatarUrl,
           bannerUrl: user.bannerUrl,
+          style: user.style,
+          pinnedThesisId: user.pinnedThesisId,
+          pinnedPositionId: user.pinnedPositionId,
           agent: user.agentKey
             ? { agentAddress: user.agentKey.agentAddress, approved: !!user.agentKey.approvedAt, builderApproved: !!user.agentKey.builderApprovedAt }
             : null,

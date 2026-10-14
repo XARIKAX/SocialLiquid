@@ -13,6 +13,7 @@ import { BUILDER_ADDRESS, BUILDER_ENABLED, BUILDER_FEE_CHARGED, BUILDER_FEE_TENT
 import * as HL from "./hl";
 import * as mock from "./hl-mock";
 import { HttpError } from "./api";
+import { refreshSpotHoldingsSoon } from "./spot-holdings";
 
 export const AGENT_NAME = "socialLiquid";
 /** hyperliquid base fees (tier 0): taker 0.045%, maker 0.015% */
@@ -182,6 +183,7 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
   if (HL_MOCK && isSpot) {
     if (input.type !== "market" && input.type !== "limit") throw new HttpError(400, "spot supports market and limit orders");
     const r = await mock.mockSpotTrade(address, token ?? base, base, isBuy, Number(szStr));
+    refreshSpotHoldingsSoon(address, 200);
     return { status: "filled", oid: Date.now() % 1_000_000, avgPx: r.avgPx, totalSz: r.totalSz, sz: szStr, px: fmt(refPx) };
   }
 
@@ -287,7 +289,10 @@ export async function placeOrder(userId: string, address: string, input: OrderIn
   const statuses = (res as unknown as { response: { data: { statuses: OrderStatus[] } } }).response.data.statuses;
   const first = statuses[0];
   if (typeof first === "object" && "error" in first) throw new HttpError(400, first.error);
-  if (typeof first === "object" && "filled" in first) return { status: "filled", oid: first.filled.oid, avgPx: Number(first.filled.avgPx), totalSz: Number(first.filled.totalSz), sz: szStr, px: fmt(refPx) };
+  if (typeof first === "object" && "filled" in first) {
+    if (isSpot) refreshSpotHoldingsSoon(address);
+    return { status: "filled", oid: first.filled.oid, avgPx: Number(first.filled.avgPx), totalSz: Number(first.filled.totalSz), sz: szStr, px: fmt(refPx) };
+  }
   if (typeof first === "object" && "resting" in first) return { status: "resting", oid: first.resting.oid, sz: szStr, px: fmt(input.limitPx ?? input.triggerPx ?? mid) };
   return { status: "resting", sz: szStr, px: fmt(input.triggerPx ?? mid) };
 }

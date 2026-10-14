@@ -11,7 +11,7 @@ import { useMids } from "@/hooks/use-market";
 import { useOpenOrders } from "@/hooks/use-account";
 import { usePresence } from "@/hooks/use-presence";
 import type { ChartMarker, PriceLine } from "./chart";
-import type { MarketPosition, MarketTrade } from "./positions-table";
+import type { MarketHolder, MarketPosition, MarketTrade } from "./positions-table";
 import { AboutCard } from "./about-card";
 import { FlowCard, TradersToFollow } from "./side-cards";
 import { MarketHeader } from "./market-header";
@@ -26,7 +26,7 @@ import { useMediaQuery } from "@/hooks/use-media";
 
 const Chart = dynamic(() => import("./chart").then((m) => m.Chart), { ssr: false, loading: () => null });
 
-type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[]; flow24h?: { longUsd: number; shortUsd: number; count: number }; copies24h?: number; closes?: number[] };
+type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[]; flow24h?: { longUsd: number; shortUsd: number; count: number }; copies24h?: number; holders?: MarketHolder[]; closes?: number[] };
 
 /** server-rendered price shape shown until the real chart paints; it is the page's largest element on phones */
 function ChartPlaceholder({ closes }: { closes?: number[] }) {
@@ -125,7 +125,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
           </Deferred>
         </div>
         <div className="card overflow-hidden">
-          <BottomPanel coin={coin} label={m?.base} positions={q.data?.positions} trades={q.data?.trades} theses={thesisEvents.data} mid={mid} loading={q.isLoading && !initial} thesisOnly={thesisOnly} following={following} setThesisOnly={setThesisOnly} setFollowing={setFollowing} />
+          <BottomPanel coin={coin} label={m?.base} positions={q.data?.positions} trades={q.data?.trades} theses={thesisEvents.data} holders={m?.kind === "spot" ? (q.data?.holders ?? []) : undefined} token={m?.token} mid={mid} loading={q.isLoading && !initial} thesisOnly={thesisOnly} following={following} setThesisOnly={setThesisOnly} setFollowing={setFollowing} />
         </div>
       </section>
 

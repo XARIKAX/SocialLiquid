@@ -74,6 +74,11 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
       };
     });
   const recentClosed = await prisma.position.findMany({ where: { address: t.address, closedAt: { not: null } }, orderBy: { closedAt: "desc" }, take: 50 });
+  // the trade this profile pinned (open or closed), with its thesis if it has one
+  const pinnedRow = t.user?.pinnedPositionId ? await prisma.position.findFirst({ where: { id: t.user.pinnedPositionId, address: t.address }, include: { theses: { take: 1, orderBy: { createdAt: "desc" } } } }) : null;
+  const pinnedPosition = pinnedRow
+    ? { id: pinnedRow.id, coin: pinnedRow.coin, side: pinnedRow.side, sizeUsd: Number(pinnedRow.sizeUsd), leverage: pinnedRow.leverage, entryPx: Number(pinnedRow.entryPx), closePx: pinnedRow.closePx === null ? null : Number(pinnedRow.closePx), realisedPnl: pinnedRow.realisedPnl === null ? null : Number(pinnedRow.realisedPnl), unrealisedPnl: Number(pinnedRow.unrealisedPnl), size: Number(pinnedRow.size), openedAt: pinnedRow.openedAt.toISOString(), closedAt: pinnedRow.closedAt?.toISOString() ?? null, liquidated: pinnedRow.liquidated, thesis: pinnedRow.theses[0] ? { id: pinnedRow.theses[0].id, text: pinnedRow.theses[0].text, outcome: pinnedRow.theses[0].outcome } : null }
+    : null;
   const series = await prisma.position.findMany({
     where: { address: t.address, closedAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
     orderBy: { closedAt: "asc" },
@@ -110,8 +115,9 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
     plain({
       address: t.address,
       user: t.user
-        ? { id: t.user.id, handle: t.user.handle, displayName: t.user.displayName, xHandle: t.user.xHandle, tgHandle: t.user.tgHandle, bio: t.user.bio, avatarUrl: t.user.avatarUrl, bannerUrl: t.user.bannerUrl, createdAt: t.user.createdAt }
+        ? { id: t.user.id, handle: t.user.handle, displayName: t.user.displayName, xHandle: t.user.xHandle, tgHandle: t.user.tgHandle, bio: t.user.bio, avatarUrl: t.user.avatarUrl, bannerUrl: t.user.bannerUrl, createdAt: t.user.createdAt, style: t.user.style, pinnedThesisId: t.user.pinnedThesisId, pinnedPositionId: t.user.pinnedPositionId }
         : null,
+      pinnedPosition,
       mutuals,
       displayName: tracked?.displayName ?? null,
       claimed: !!t.user?.claimedAt,

@@ -42,7 +42,8 @@ export type MarketTrade = {
 };
 
 type Sort = "pnl" | "size";
-type Tab = "positions" | "trades" | "thesis";
+type Tab = "positions" | "trades" | "thesis" | "holders";
+export type MarketHolder = { address: string; user: UserLite | null; total: number; followed: boolean; updatedAt: string };
 
 export function PositionsTable({
   label,
@@ -57,10 +58,15 @@ export function PositionsTable({
   setThesisOnly,
   setFollowing,
   initialTab = "positions",
+  holders,
+  token,
 }: {
   label?: string;
   coin: string;
   initialTab?: Tab;
+  /** spot markets: who holds the token */
+  holders?: MarketHolder[];
+  token?: string;
   positions: MarketPosition[] | undefined;
   trades: MarketTrade[] | undefined;
   theses: FeedItem[] | undefined;
@@ -87,6 +93,7 @@ export function PositionsTable({
             ["positions", `Positions (${positions?.length ?? 0})`],
             ["trades", "Trades"],
             ["thesis", `Thesis (${theses?.length ?? 0})`],
+            ...(holders ? [["holders", `Holders (${holders.length})`] as [Tab, string]] : []),
           ] as [Tab, string][]
         ).map(([t, label]) => (
           <button key={t} className={`tab h-8 px-3 ${tab === t ? "tab-active" : ""}`} onClick={() => setTab(t)}>
@@ -213,6 +220,27 @@ export function PositionsTable({
         </>
       )}
 
+      {tab === "holders" && holders && (
+        <div data-testid="holders">
+          {holders.length === 0 && <Empty title={`No tracked holders of ${label ?? token ?? coin} yet`} hint="Spot balances of tracked traders are mirrored every few minutes." />}
+          {holders.length > 0 && (
+            <table className="w-full text-[13px]">
+              <thead className="text-[11px] text-dim"><tr className="border-b border-line"><th className="text-left font-medium px-3 py-2 w-10">#</th><th className="text-left font-medium px-3 py-2">Holder</th><th className="text-right font-medium px-3 py-2">Amount</th><th className="text-right font-medium px-3 py-2">≈ USD</th><th className="text-right font-medium px-3 py-2 hidden sm:table-cell">Updated</th></tr></thead>
+              <tbody>
+                {holders.map((h, i) => (
+                  <tr key={h.address} className="border-b border-line/60 row-hover" data-testid={`holder-${h.address}`}>
+                    <td className={`num px-3 py-2 ${i < 3 ? "text-brand font-semibold" : "text-dim"}`}>{i + 1}</td>
+                    <td className="px-3 py-2"><TraderLink address={h.address} handle={h.user?.handle} displayName={h.user?.displayName} className="flex items-center gap-2 font-medium"><Avatar address={h.address} url={h.user?.avatarUrl} handle={h.user?.handle ?? h.user?.displayName} size={24} /><span>{h.user?.displayName ?? h.user?.handle ?? h.address.slice(0, 6) + "…" + h.address.slice(-4)}</span>{h.followed && <span className="pill pill-brand">following</span>}</TraderLink></td>
+                    <td className="num text-right px-3">{h.total.toLocaleString("en-US", { maximumFractionDigits: 4 })} {label ?? token}</td>
+                    <td className="num text-right px-3 text-muted">{mid ? fmtUsd(h.total * mid) : "–"}</td>
+                    <td className="num text-right px-3 text-dim hidden sm:table-cell">{timeAgo(h.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
       {tab === "thesis" && (
         <>
           {!theses?.length && <Empty title={`No ${label ?? coin} theses yet`} hint="A thesis is a trade with a reason attached. Post one from the trade panel and it shows up here with a live PnL badge." />}

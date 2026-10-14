@@ -1,4 +1,5 @@
 "use client";
+import { TrendingStrip } from "../market/trending";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -160,6 +161,7 @@ export function Tokens({ onNavigate, full }: { onNavigate?: () => void; full?: b
   if (markets.isLoading) return <Skeleton rows={10} h={44} />;
   return (
     <div>
+      {!full && <TrendingStrip onNavigate={onNavigate} />}
       <div className="p-3 sticky top-0 bg-panel border-b border-line z-10">
         <div className="flex items-center h-9 card-2 px-2.5 gap-2">
           <span className="text-dim"><Icon.search /></span>

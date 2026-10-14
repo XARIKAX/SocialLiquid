@@ -6,19 +6,19 @@ import { getHlBoardStatus, refreshHlLeaderboard } from "./indexer";
 import { plain } from "./api";
 
 /** handle is only set for claimed accounts and is what /t/[handle] resolves. displayName is the hyperliquid leaderboard name. */
-export type UserLite = { id: string; address: string; handle: string | null; displayName: string | null; xHandle: string | null; avatarUrl: string | null; claimed: boolean };
+export type UserLite = { id: string; address: string; handle: string | null; displayName: string | null; xHandle: string | null; avatarUrl: string | null; claimed: boolean; /** trading-style tag the trader picked */ style?: string | null };
 
 export async function usersByAddress(addresses: string[]): Promise<Map<string, UserLite>> {
   const uniq = [...new Set(addresses.map((a) => a.toLowerCase()))];
   if (!uniq.length) return new Map();
   const users = await prisma.user.findMany({
     where: { address: { in: uniq } },
-    select: { id: true, address: true, handle: true, displayName: true, xHandle: true, avatarUrl: true, claimedAt: true },
+    select: { id: true, address: true, handle: true, displayName: true, xHandle: true, avatarUrl: true, claimedAt: true, style: true },
   });
   const tracked = await prisma.trackedAddress.findMany({ where: { address: { in: uniq }, displayName: { not: null } }, select: { address: true, displayName: true } });
   const map = new Map<string, UserLite>();
   const names = new Map(tracked.map((t) => [t.address, t.displayName]));
-  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.claimedAt ? u.handle : null, displayName: (u.claimedAt ? u.displayName : null) ?? names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt });
+  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.claimedAt ? u.handle : null, displayName: (u.claimedAt ? u.displayName : null) ?? names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt, style: u.claimedAt ? u.style : null });
   for (const t of tracked) if (!map.has(t.address)) map.set(t.address, { id: "", address: t.address, handle: null, displayName: t.displayName, xHandle: null, avatarUrl: null, claimed: false });
   return map;
 }

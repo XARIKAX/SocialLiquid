@@ -48,6 +48,7 @@ export function FeedCard({ item, mid, onNavigate, signedIn }: { item: FeedItem; 
               <Icon.x />
             </a>
           )}
+          {item.user?.style && <span className="pill pill-neutral hidden sm:inline-flex">{item.user.style}</span>}
           <EventPill type={item.type} />
         </div>
         <span className="text-[11px] text-dim num shrink-0">{timeAgo(item.time)}</span>

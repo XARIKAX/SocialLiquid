@@ -3,6 +3,7 @@ import { handler, json, HttpError } from "@/lib/api";
 import { HL_MOCK } from "@/lib/env";
 import * as mock from "@/lib/hl-mock";
 import { getSession } from "@/lib/session";
+import { refreshSpotHoldingsSoon } from "@/lib/spot-holdings";
 
 export const dynamic = "force-dynamic";
 
@@ -16,5 +17,6 @@ export const POST = handler(async (req: Request) => {
   else if (body.kind === "class-transfer") await mock.mockClassTransfer(s.address, body.amount, body.toPerp ?? true);
   else if (body.kind === "spot-withdraw") await mock.mockSpotDeposit(s.address, body.coin ?? "USOL", -body.amount);
   else await mock.mockFunds(s.address, body.kind === "deposit" ? body.amount : -body.amount);
+  if (body.kind === "spot" || body.kind === "spot-withdraw") refreshSpotHoldingsSoon(s.address, 200);
   return json({ ok: true });
 });

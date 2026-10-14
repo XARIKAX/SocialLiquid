@@ -13,7 +13,7 @@ import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, timeAgo } from "@/lib/format";
 import type { FeedItem } from "@/lib/queries";
 import { CoinIcon, Empty, Icon, Toggle } from "../ui";
-import { PositionsTable, type MarketPosition, type MarketTrade } from "../market/positions-table";
+import { PositionsTable, type MarketHolder, type MarketPosition, type MarketTrade } from "../market/positions-table";
 import { useConnectModal } from "../connect-modal";
 
 type Tab = "traders" | "thesis" | "balances" | "positions" | "orders" | "twap" | "chase" | "trades" | "funding" | "history";
@@ -36,6 +36,8 @@ export function BottomPanel(props: {
   positions?: MarketPosition[];
   trades?: MarketTrade[];
   theses?: FeedItem[];
+  holders?: MarketHolder[];
+  token?: string;
   mid?: number;
   loading: boolean;
   thesisOnly: boolean;
@@ -103,7 +105,7 @@ export function BottomPanel(props: {
         )}
       </div>
       {tab === "traders" || tab === "thesis" ? (
-        <PositionsTable coin={props.coin} label={props.label} positions={props.positions} trades={props.trades} theses={props.theses} mid={props.mid} loading={props.loading} thesisOnly={props.thesisOnly} following={props.following} setThesisOnly={props.setThesisOnly} setFollowing={props.setFollowing} initialTab={tab === "thesis" ? "thesis" : "positions"} key={tab} />
+        <PositionsTable coin={props.coin} label={props.label} positions={props.positions} trades={props.trades} theses={props.theses} holders={props.holders} token={props.token} mid={props.mid} loading={props.loading} thesisOnly={props.thesisOnly} following={props.following} setThesisOnly={props.setThesisOnly} setFollowing={props.setFollowing} initialTab={tab === "thesis" ? "thesis" : "positions"} key={tab} />
       ) : !signedIn ? (
         <div className="py-10 text-center">
           <p className="text-muted text-sm">Connect a wallet to see your {TABS.find(([t]) => t === tab)?.[1].toLowerCase()}.</p>

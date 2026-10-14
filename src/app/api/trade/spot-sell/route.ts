@@ -3,6 +3,7 @@ import { body, handler, json, HttpError } from "@/lib/api";
 import { getSession, hasInvite } from "@/lib/session";
 import { sellSpotForUsdc } from "@/lib/trade";
 import * as HL from "@/lib/hl";
+import { refreshSpotHoldingsSoon } from "@/lib/spot-holdings";
 
 /** sell a spot coin for USDC on hyperliquid spot (agent-signed). `coin` is the spot coin (USOL); sz defaults to everything available */
 export const POST = handler(async (req: Request) => {
@@ -16,5 +17,6 @@ export const POST = handler(async (req: Request) => {
   if (!(available > 0)) throw new HttpError(400, `no ${input.coin} in your spot balance`);
   const size = Math.min(input.sz ?? available, available);
   const r = await sellSpotForUsdc(s.userId, s.address, input.coin, size);
+  refreshSpotHoldingsSoon(s.address);
   return json(r);
 });

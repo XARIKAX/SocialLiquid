@@ -50,6 +50,10 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
   const followedSet = new Set<string>(
     addresses ?? (s ? (await prisma.follow.findMany({ where: { followerId: s.userId }, select: { following: { select: { address: true } } } })).map((x) => x.following.address) : []),
   );
+  // spot markets: who holds the token, from the spot balances the indexer mirrors
+  const holderRows = market.kind === "spot" && market.token ? await prisma.spotHolding.findMany({ where: { coin: market.token, total: { gt: 0 } }, orderBy: { total: "desc" }, take: 100 }) : [];
+  const holderUsers = await usersByAddress(holderRows.map((h) => h.address));
+  const holders = holderRows.map((h) => ({ address: h.address, user: holderUsers.get(h.address) ?? null, total: Number(h.total), followed: followedSet.has(h.address), updatedAt: h.updatedAt.toISOString() }));
   const copies24h = await prisma.position.count({ where: { coin, copiedFromPositionId: { not: null }, openedAt: { gte: new Date(Date.now() - 86_400_000) } } });
   const longUsd = positions.filter((p) => p.side === "LONG").reduce((a, p) => a + Number(p.sizeUsd), 0);
   const shortUsd = positions.filter((p) => p.side === "SHORT").reduce((a, p) => a + Number(p.sizeUsd), 0);
@@ -73,6 +77,7 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
       longShort: { longUsd, shortUsd, ratio: longUsd + shortUsd > 0 ? longUsd / (longUsd + shortUsd) : 0.5 },
       flow24h: flow,
       copies24h,
+      holders: market.kind === "spot" ? holders : undefined,
       trades: fills.map((f) => ({
         id: f.id,
         address: f.address,
