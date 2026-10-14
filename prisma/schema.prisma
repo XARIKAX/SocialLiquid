@@ -81,6 +81,8 @@ model User {
   eventReplies  EventReply[]
   notifications Notification[]
   pointEvents   PointEvent[]
+  groupMemberships GroupMember[]
+  ownedGroups      Group[]      @relation("groupOwner")
 
   @@index([inviteCode])
 }
@@ -341,4 +343,36 @@ model PointEvent {
   @@unique([userId, kind, refId])
   @@index([userId, createdAt(sort: Desc)])
   @@index([createdAt])
+}
+
+/// a private (or public) circle of traders: a shared feed of its members' trades and a members-only leaderboard. no chat.
+model Group {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String   @db.VarChar(40)
+  description String?  @db.VarChar(200)
+  ownerId     String
+  owner       User     @relation("groupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  /// anyone with the code (or the link carrying it) can join; rotated by the owner
+  joinCode    String
+  /// public groups are listed on /groups and readable by anyone; private ones only by members
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  members GroupMember[]
+
+  @@index([isPublic, createdAt(sort: Desc)])
+}
+
+model GroupMember {
+  groupId  String
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// OWNER | MEMBER
+  role     String   @default("MEMBER")
+  joinedAt DateTime @default(now())
+
+  @@id([groupId, userId])
+  @@index([userId])
 }
