@@ -334,6 +334,13 @@ export async function userFills(address: string, since?: number): Promise<HlFill
   return (await info().userFills({ user: address as `0x${string}`, aggregateByTime: true })) as unknown as HlFill[];
 }
 
+/** fills in a time window, oldest first, at most 2000 per call; only the exchange's most recent 10000 fills are reachable */
+export async function userFillsRange(address: string, startTime: number, endTime?: number): Promise<HlFill[]> {
+  if (HL_MOCK) return mock.userFillsRange(address, startTime, endTime);
+  const out = (await info().userFillsByTime({ user: address as `0x${string}`, startTime, ...(endTime !== undefined ? { endTime } : {}), aggregateByTime: true })) as unknown as HlFill[];
+  return [...out].sort((a, b) => a.time - b.time);
+}
+
 export async function candleSnapshot(
   coin: string,
   interval: HlCandleInterval,

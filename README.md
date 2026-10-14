@@ -173,6 +173,8 @@ trader profiles read hyperliquid directly as well: the pnl card and the all-time
 
 positions and fills are mirrored from chain and never written by the client. `lib/indexer.ts` is shared by the worker and the trade route.
 
+**history on first sight.** the first time an address is synced, `src/lib/history.ts` pages the exchange's fill history (up to 2000 fills a call, the most recent 10000 at most), cuts it into positions by walking `startPosition` through opens, adds, trims, closes and flips, and inserts the ones closed before our own rows begin (`Position.reconstructed`), plus the fills. pnl per position is the sum of hyperliquid's own `closedPnl`, so it matches their numbers. an already-open position gets its real open time back. win rate, trade count and top trades therefore cover a trader's real history, not just the time we have watched them; `TrackedAddress.historySyncedAt` makes it run once.
+
 ## layout
 
 `/` and `/m/[coin]`: feed on the left (feed / alerts / tokens / leaderboard tabs, filters for thesis only, following only, min size, market), chart and positions table in the centre, trade panel on the right. `/t/[handle]` works for any hyperliquid address, claimed or not. `/t/[handle]/thesis/[id]` is the share page with an og image and an x share button. `/leaderboard` opens on hyperliquid's own 30d top 10, then ranks our indexed traders by 7d pnl, win rate, thesis accuracy, followers, minimum 5 closed trades.

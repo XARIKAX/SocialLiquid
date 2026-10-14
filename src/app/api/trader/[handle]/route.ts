@@ -122,7 +122,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
   const points = claimedUser ? { total: claimedUser.points, week, rank: above + 1 } : null;
   // keep the denormalised streak (used by feed cards) honest whenever a profile is viewed
   if (claimedUser && (claimedUser.winStreak !== streaks.current || claimedUser.bestStreak !== streaks.best)) await prisma.user.update({ where: { id: claimedUser.id }, data: { winStreak: streaks.current, bestStreak: streaks.best } }).catch(() => null);
-  const badges = badgesFor({ closedTrades: stats.closedTrades, winRate: stats.winRate, bestStreak: streaks.best, profitTheses, copiers: stats.copiers, followers, invites, avgHoldMs: stats.avgHoldMs, days: streaks.days });
+  const badges = !claimedUser ? [] : badgesFor({ closedTrades: stats.closedTrades, winRate: stats.winRate, bestStreak: streaks.best, profitTheses, copiers: stats.copiers, followers, invites, avgHoldMs: stats.avgHoldMs, days: streaks.days });
   // mutuals: accounts this profile follows that follow it back
   const mutuals = t.user ? await prisma.follow.count({ where: { followerId: t.user.id, following: { following: { some: { followingId: t.user.id } } } } }) : 0;
   return json(

@@ -133,6 +133,8 @@ model Position {
   /// set when the position was opened through "copy": the trader and position it mirrors
   copiedFromAddress    String?
   copiedFromPositionId String?
+  /// rebuilt from fill history rather than watched live; leverage is the account's setting at rebuild time, not the trade's
+  reconstructed Boolean @default(false)
 
   theses     Thesis[]
   feedEvents FeedEvent[]
@@ -243,6 +245,8 @@ model TrackedAddress {
   lastPolledAt DateTime?
   /// spot balances are mirrored every few minutes, not every poll
   spotSyncedAt DateTime?
+  /// when the position history was rebuilt from the exchange's fill records (once per address)
+  historySyncedAt DateTime?
   createdAt    DateTime      @default(now())
 
   @@index([lastPolledAt])

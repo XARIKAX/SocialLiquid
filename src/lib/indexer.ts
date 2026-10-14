@@ -10,6 +10,7 @@ import { prisma } from "./db";
 import * as HL from "./hl";
 import { syncSpotHoldings } from "./spot-holdings";
 import { award, awardAddress, refreshStreaks } from "./points";
+import { reconstructHistory } from "./history";
 import type { HlFill, HlPosition } from "./hl-types";
 
 const DUMP_WINDOW_MS = 60 * 60 * 1000;
@@ -103,7 +104,10 @@ export async function syncAddress(addressRaw: string, opts: { forceFills?: boole
 
   let closed = 0;
   for (const p of toClose) {
-    const closeFills = fillsAsc.filter((f) => f.coin === p.coin && f.time >= p.openedAt.getTime() - 5_000 && isCloseFill(f));
+    // close fills belong to this position only after the previous close of the same coin, so back-to-back round trips do not share a fill
+    const prev = await prisma.position.findFirst({ where: { address, coin: p.coin, closedAt: { not: null }, id: { not: p.id } }, orderBy: { closedAt: "desc" }, select: { closedAt: true } });
+    const floor = Math.max(p.openedAt.getTime() - 5_000, prev?.closedAt ? prev.closedAt.getTime() + 1 : 0);
+    const closeFills = fillsAsc.filter((f) => f.coin === p.coin && f.time >= floor && isCloseFill(f));
     const last = closeFills.at(-1);
     const realised = closeFills.reduce((acc, f) => acc + Number(f.closedPnl), 0);
     const liquidated = closeFills.some(isLiqFill);
@@ -210,6 +214,19 @@ export async function syncAddress(addressRaw: string, opts: { forceFills?: boole
     });
   }
 
+  // first sight: rebuild the history the exchange still has, after the live rows exist so nothing is recorded twice
+  if (tracked && !tracked.historySyncedAt) {
+    try {
+      const lev = new Map([...chain.values()].map((c) => [c.coin, c.leverage.value]));
+      const r = await reconstructHistory(address, lev);
+      weight += r.pages * HL.WEIGHT.userFills;
+      if (r.inserted || r.openFixed) console.log(`[indexer] history ${address.slice(0, 10)}: +${r.inserted} positions from ${r.fills} fills, ${r.openFixed} open row(s) backdated`);
+      await prisma.trackedAddress.update({ where: { address }, data: { historySyncedAt: new Date() } });
+      if (r.inserted) await refreshStreaks(address).catch(() => null);
+    } catch (e) {
+      console.warn("[indexer] history rebuild failed", address.slice(0, 10), (e as Error).message);
+    }
+  }
   const maxFillTime = fills.reduce((m, f) => Math.max(m, f.time), Number(tracked?.lastFillTime ?? 0));
   await prisma.trackedAddress.upsert({
     where: { address },
