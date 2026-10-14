@@ -116,7 +116,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
   const [week, profitTheses, invites, above] = await Promise.all([
     claimedUser ? pointsSince([claimedUser.id], new Date(Date.now() - 7 * 86_400_000)).then((m) => m.get(claimedUser.id) ?? 0) : 0,
     claimedUser ? prisma.thesis.count({ where: { userId: claimedUser.id, outcome: "PROFIT" } }) : 0,
-    claimedUser ? prisma.pointEvent.count({ where: { userId: claimedUser.id, kind: "INVITED" } }) : 0,
+    claimedUser ? prisma.user.count({ where: { invitedById: claimedUser.id } }) : 0,
     claimedUser ? prisma.user.count({ where: { claimedAt: { not: null }, points: { gt: claimedUser.points } } }) : 0,
   ]);
   const points = claimedUser ? { total: claimedUser.points, week, rank: above + 1 } : null;
@@ -135,6 +135,8 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
       points,
       streaks,
       badges,
+      invites: claimedUser ? { joined: invites } : null,
+      invitedBy: t.user?.invitedById ? await prisma.user.findUnique({ where: { id: t.user.invitedById }, select: { address: true, handle: true, displayName: true } }) : null,
       mutuals,
       displayName: tracked?.displayName ?? null,
       claimed: !!t.user?.claimedAt,

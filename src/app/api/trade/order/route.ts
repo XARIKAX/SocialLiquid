@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { award, awardAddress } from "@/lib/points";
+import { creditInviterOnTrade } from "@/lib/invites";
 import { body, handler, json, HttpError, plain } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { syncAddress } from "@/lib/indexer";
@@ -47,6 +48,7 @@ export const POST = handler(async (req: Request) => {
   let positionId: string | null = null;
   if (result.status === "filled") {
     await syncAddress(s.address, { forceFills: true }).catch((e) => console.warn("[trade] sync after fill:", e.message));
+    await creditInviterOnTrade(s.userId).catch(() => null);
     let pos = await prisma.position.findFirst({ where: { address: s.address, coin: input.coin, closedAt: null }, orderBy: { openedAt: "desc" } });
     positionId = pos?.id ?? null;
     if (pos && input.copyOf && !pos.copiedFromPositionId && input.copyOf.address.toLowerCase() !== s.address) {

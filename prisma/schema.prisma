@@ -63,6 +63,13 @@ model User {
   points     Int @default(0)
   winStreak  Int @default(0)
   bestStreak Int @default(0)
+  /// personal invite code (minted on first visit to /invite) and who brought this account in
+  /// uniqueness is enforced by the minting code rather than a constraint, so `prisma db push` on deploy never trips the data-loss guard
+  inviteCode  String?
+  invitedById String?
+  invitedAt   DateTime?
+  invitedBy   User?     @relation("invites", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitees    User[]    @relation("invites")
 
   agentKey  AgentKey?
   theses    Thesis[]
@@ -74,6 +81,8 @@ model User {
   eventReplies  EventReply[]
   notifications Notification[]
   pointEvents   PointEvent[]
+
+  @@index([inviteCode])
 }
 
 model AgentKey {

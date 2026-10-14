@@ -17,6 +17,8 @@ export type Profile = {
   points?: { total: number; week: number; rank: number } | null;
   streaks?: { current: number; best: number; days: number };
   badges?: { id: string; label: string; emoji: string; desc: string; earned: boolean }[];
+  invites?: { joined: number } | null;
+  invitedBy?: { address: string; handle: string | null; displayName: string | null } | null;
   mutuals: number;
   displayName: string | null;
   claimed: boolean;
@@ -108,6 +110,8 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                   {p.user?.xHandle && <a href={`https://x.com/${p.user.xHandle}`} target="_blank" rel="noreferrer" className="hover:text-fg inline-flex items-center gap-1"><Icon.x /> {p.user.xHandle}</a>}
                   {p.user?.tgHandle && <a href={`https://t.me/${p.user.tgHandle}`} target="_blank" rel="noreferrer" className="hover:text-fg inline-flex items-center gap-1"><Icon.send /> {p.user.tgHandle}</a>}
                   <span className="num" title={p.address}>{shortAddr(p.address)}</span>
+                  {p.invitedBy && <span data-testid="invited-by">invited by <Link href={`/t/${p.invitedBy.handle ?? p.invitedBy.address}`} className="text-fg-2 hover:underline">{p.invitedBy.displayName ?? (p.invitedBy.handle ? `@${p.invitedBy.handle}` : shortAddr(p.invitedBy.address))}</Link></span>}
+                  {p.invites && p.invites.joined > 0 && <span data-testid="invited-count">brought in <b className="text-fg-2 num">{p.invites.joined}</b></span>}
                 </div>
                 {p.user?.bio && <p className="text-[13px] text-fg-2 mt-1.5 max-w-[560px] leading-snug">{p.user.bio}</p>}
                 {(p.points || (p.streaks && (p.streaks.current >= 2 || p.streaks.days >= 2)) || p.badges?.some((b) => b.earned)) && (
@@ -132,6 +136,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
               </div>
               <div className="flex gap-2 pt-12">
                 <button className="btn h-9 w-9 px-0" title="share" onClick={() => navigator.share?.({ url: location.href, title: name }).catch(() => navigator.clipboard?.writeText(location.href))}><Icon.share /></button>
+                {p.isMe && <Link href="/invite" className="btn h-9 px-3 inline-flex items-center gap-1.5" data-testid="invite-btn"><Icon.users /> Invite</Link>}
                 {p.isMe && <button className="btn h-9 px-4" onClick={() => openProfileEditor()}>Edit profile</button>}
                 {!p.isMe && (
                   <button className={`btn h-9 px-4 ${p.isFollowing ? "" : "bg-thesis border-thesis text-white hover:brightness-110"}`} onClick={follow} disabled={busy || !signedIn} title={signedIn ? "" : "sign in to follow"}>

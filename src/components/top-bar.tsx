@@ -37,6 +37,7 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
         <NavTab href="/tokens" label="Tokens" match={["/tokens"]} />
         <NavTab href="/leaderboard" label="Leaderboard" match={["/leaderboard"]} />
         <NavTab href="/portfolio" label="Portfolio" match={["/portfolio"]} />
+        {signedIn && <NavTab href="/invite" label="Invite" match={["/invite"]} />}
       </nav>
       {me?.network === "mock" && <span className="pill pill-warn uppercase tracking-wide">mock</span>}
 
