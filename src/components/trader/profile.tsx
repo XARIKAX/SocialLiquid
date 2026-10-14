@@ -28,7 +28,7 @@ export type Profile = {
   fillStats: { fills: number; closes: number; wins: number } | null;
   /** hyperliquid's own portfolio windows: cumulative pnl curve, pnl, volume, account value at window start */
   hl: Record<"day" | "week" | "month" | "allTime", { pnl: number; vlm: number; startValue: number; curve: { t: number; v: number }[] } | null> | null;
-  open: { id: string | null; coin: string; side: string; size: number; sizeUsd: number; leverage: number; entryPx: number; unrealisedPnl: number; roe: number; liquidationPx: number | null; openedAt: string | null; thesis: { id: string; text: string } | null }[];
+  open: { id: string | null; coin: string; side: string; size: number; sizeUsd: number; leverage: number; entryPx: number; unrealisedPnl: number; roe: number; liquidationPx: number | null; openedAt: string | null; thesis: { id: string; text: string } | null; copiedFrom?: { address: string; handle: string | null; displayName: string | null } | null }[];
   recentClosed: { id: string; coin: string; side: string; sizeUsd: number; leverage: number; entryPx: number; closePx: number | null; realisedPnl: number | null; openedAt: string; closedAt: string; liquidated: boolean }[];
   theses: { id: string; coin: string; text: string; outcome: string; createdAt: string; likes: number; likedByMe: boolean; position: { id: string; side: string; sizeUsd: number; leverage: number; entryPx: number; size: number; closedAt: string | null; realisedPnl: number | null; unrealisedPnl: number; openedAt: string } | null }[];
 };
@@ -361,7 +361,7 @@ function StatBig({ label, value }: { label: string; value: number }) {
   );
 }
 
-function Sparkline({ points }: { points: { t: number; v: number }[] }) {
+export function Sparkline({ points }: { points: { t: number; v: number }[] }) {
   if (points.length < 2) {
     return <div className="h-full flex items-center justify-center text-xs text-dim border border-dashed border-line rounded-[10px]">Not enough closed trades in this window</div>;
   }

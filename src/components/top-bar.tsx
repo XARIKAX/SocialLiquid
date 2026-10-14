@@ -29,9 +29,6 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
   const spotUsdc = usdcSpotAvail(bal.data?.spot);
   return (
     <header className="h-14 flex items-center gap-3 px-3 md:px-4 sticky top-0 z-30 bg-bg/90 backdrop-blur">
-      <button className="md:hidden btn btn-ghost px-2 h-9" onClick={onToggleFeed} aria-label="toggle feed">
-        <Icon.menu />
-      </button>
       <Link href="/trade" className="shrink-0">
         <Logo />
       </Link>
@@ -39,6 +36,7 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
         <NavTab href="/trade" label="Trade" match={["/trade", "/m/"]} />
         <NavTab href="/tokens" label="Tokens" match={["/tokens"]} />
         <NavTab href="/leaderboard" label="Leaderboard" match={["/leaderboard"]} />
+        <NavTab href="/portfolio" label="Portfolio" match={["/portfolio"]} />
       </nav>
       {me?.network === "mock" && <span className="pill pill-warn uppercase tracking-wide">mock</span>}
 
@@ -73,8 +71,8 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
                 </button>
               )}
             </div>
-            <Link href={`/t/${me?.user?.handle ?? address}`} className="flex items-center gap-2.5 card pl-3 pr-1.5 h-10 rounded-[10px] hover:bg-panel-2 transition-colors">
-              <span className="flex flex-col justify-center leading-tight">
+            <Link href={`/t/${me?.user?.handle ?? address}`} className="flex items-center gap-2.5 card pl-1.5 sm:pl-3 pr-1.5 h-10 rounded-[10px] hover:bg-panel-2 transition-colors max-w-[180px]">
+              <span className="hidden sm:flex flex-col justify-center leading-tight">
                 <span className="num text-[13px]" data-testid="topbar-total" title={spotUsd + spotUsdc > 0 ? `perps ${fmtUsd(bal.data?.accountValue ?? 0)} + spot ${fmtUsd(spotUsd + spotUsdc)}` : undefined}>{bal.data ? fmtUsd(bal.data.accountValue + spotUsd + spotUsdc) : "…"}</span>
                 <span className={`num text-[11px] ${upnl >= 0 ? "text-up" : "text-down"}`}>
                   {fmtUsd(upnl, { sign: true })} <span className="text-dim">open</span>
@@ -82,7 +80,7 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
               </span>
               <Avatar address={address} handle={me?.user?.handle} size={30} />
             </Link>
-            <button className="btn btn-ghost h-9 px-2 text-xs" onClick={signOut} title="sign out">
+            <button className="hidden sm:inline-flex btn btn-ghost h-9 px-2 text-xs" onClick={signOut} title="sign out">
               ⎋
             </button>
           </>

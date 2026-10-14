@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/client";
@@ -22,6 +22,7 @@ import { Ticket } from "../trade/ticket";
 import { BottomPanel } from "../trade/bottom-panel";
 import { useFeed } from "../feed/feed-column";
 import { Deferred } from "@/hooks/use-in-view";
+import { useMediaQuery } from "@/hooks/use-media";
 
 const Chart = dynamic(() => import("./chart").then((m) => m.Chart), { ssr: false, loading: () => null });
 
@@ -67,6 +68,13 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
   const myBal = useBalance(signedIn ? address : null, m?.dex ?? "");
   const orders = useOpenOrders();
   const watching = usePresence(coin);
+  // phones and tablets: the ticket lives in a bottom sheet opened from a Long / Short bar
+  const isXl = useMediaQuery("(min-width: 1280px)");
+  const [sheet, setSheet] = useState<"LONG" | "SHORT" | null>(null);
+  useEffect(() => {
+    if (isXl === false && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("copy")) setSheet((new URLSearchParams(window.location.search).get("side") as "LONG" | "SHORT") ?? "LONG");
+  }, [isXl, coin]);
+  useEffect(() => setSheet(null), [coin]);
   const markers = useMemo<ChartMarker[]>(() => {
     const out: ChartMarker[] = [];
     for (const e of mine.data ?? []) {
@@ -122,7 +130,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
       </section>
 
       <aside className="flex flex-col gap-3">
-        <Ticket coin={coin} market={m} mid={mid} />
+        <div className="hidden md:block"><Ticket coin={coin} market={m} mid={mid} /></div>
         <Deferred minHeight={140}>
           <FlowCard coin={coin} label={m?.base} flow={q.data?.flow24h} />
         </Deferred>
@@ -133,6 +141,27 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
           <AboutCard coin={coin} market={m} mid={mid} longShort={q.data?.longShort} counts={counts} />
         </Deferred>
       </aside>
+
+      {isXl === false && !sheet && (
+        <div className="fixed inset-x-0 bottom-14 md:bottom-8 z-40 px-3 pb-2 md:px-4 pointer-events-none" data-testid="trade-bar">
+          <div className="card shadow-2xl p-2 grid grid-cols-[88px_1fr_1fr] gap-2 items-center pointer-events-auto max-w-xl mx-auto">
+            <span className="px-2 leading-tight overflow-hidden"><span className="block text-[10px] text-muted truncate">{m?.base ?? coin}</span><span className="num text-[12px] font-semibold block truncate">{fmtUsd(mid ?? m?.markPx ?? 0)}</span></span>
+            <button className="btn btn-up h-10 font-semibold" onClick={() => setSheet("LONG")}>{m?.kind === "spot" ? "Buy" : "Buy / Long"}</button>
+            <button className="btn btn-down h-10 font-semibold" onClick={() => setSheet("SHORT")}>{m?.kind === "spot" ? "Sell" : "Sell / Short"}</button>
+          </div>
+        </div>
+      )}
+      {isXl === false && sheet && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70" onClick={() => setSheet(null)} role="dialog" aria-modal="true" aria-label="trade">
+          <div className="w-full max-w-xl max-h-[88dvh] overflow-y-auto rounded-t-2xl bg-bg border-t border-line pb-[env(safe-area-inset-bottom)]" onClick={(e) => e.stopPropagation()} data-testid="ticket-sheet">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-4 h-11 bg-bg/95 backdrop-blur border-b border-line">
+              <span className="text-[13px] font-semibold">{m?.name ?? coin}</span>
+              <button className="btn btn-ghost h-8 w-8 px-0" onClick={() => setSheet(null)} aria-label="close">✕</button>
+            </div>
+            <Ticket key={sheet} coin={coin} market={m} mid={mid} defaultSide={sheet} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

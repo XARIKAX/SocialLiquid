@@ -15,15 +15,16 @@ const TABS: Tab[] = ["tokens", "feed", "leaderboard", "alerts"];
 const TAB_KEY = "sl:rail-tab";
 const MIN_SIZES = [0, 1000, 10_000, 100_000];
 
-export function FeedColumn({ onNavigate, onCollapse }: { onNavigate?: () => void; onCollapse?: () => void }) {
+export function FeedColumn({ onNavigate, onCollapse, initialTab }: { onNavigate?: () => void; onCollapse?: () => void; /** phones open the column on this tab (the bottom bar's Feed button) instead of the remembered one */ initialTab?: Tab }) {
   // markets first: a new visitor has no alerts and nobody followed yet
-  const [tab, setTab_] = useState<Tab>("tokens");
+  const [tab, setTab_] = useState<Tab>(initialTab ?? "tokens");
   useEffect(() => {
+    if (initialTab) return;
     try {
       const t = localStorage.getItem(TAB_KEY) as Tab | null;
       if (t && TABS.includes(t)) setTab_(t);
     } catch {}
-  }, []);
+  }, [initialTab]);
   const setTab = (t: Tab) => {
     setTab_(t);
     try {

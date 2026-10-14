@@ -1,7 +1,7 @@
 import { handler, json, plain, HttpError } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import * as HL from "@/lib/hl";
-import { resolveTrader, traderStats } from "@/lib/queries";
+import { resolveTrader, traderStats, usersByAddress } from "@/lib/queries";
 import { getSession } from "@/lib/session";
 import { syncAddress } from "@/lib/indexer";
 import { featuredAddresses } from "@/lib/featured";
@@ -52,6 +52,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
   ]);
   // open positions live from chain, joined to our mirrored rows for ids / theses
   const openRows = await prisma.position.findMany({ where: { address: t.address, closedAt: null }, include: { theses: { take: 1, orderBy: { createdAt: "desc" } } } });
+  const copiedUsers = await usersByAddress(openRows.map((r) => r.copiedFromAddress).filter((a): a is string => !!a));
   const open = (state?.assetPositions ?? [])
     .filter((p) => Number(p.position.szi) !== 0)
     .map((p) => {
@@ -69,6 +70,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
         liquidationPx: p.position.liquidationPx ? Number(p.position.liquidationPx) : null,
         openedAt: row?.openedAt.toISOString() ?? null,
         thesis: row?.theses[0] ? { id: row.theses[0].id, text: row.theses[0].text } : null,
+        copiedFrom: row?.copiedFromAddress ? { address: row.copiedFromAddress, handle: copiedUsers.get(row.copiedFromAddress)?.handle ?? null, displayName: copiedUsers.get(row.copiedFromAddress)?.displayName ?? null } : null,
       };
     });
   const recentClosed = await prisma.position.findMany({ where: { address: t.address, closedAt: { not: null } }, orderBy: { closedAt: "desc" }, take: 50 });

@@ -40,7 +40,7 @@ const MAX_SLIP = 0.03;
 type Book = { bids: { px: number; sz: number }[]; asks: { px: number; sz: number }[] };
 type OrderResponse = { order: { status: "filled" | "resting" | "twap"; avgPx?: number; totalSz?: number; oid?: number; count?: number; twapId?: number }; thesis: { id: string } | null; copied?: boolean };
 
-export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
+export function Ticket({ coin, market, mid, defaultSide }: { coin: string; market?: MarketSummary; mid?: number; defaultSide?: "LONG" | "SHORT" }) {
   const { address, signedIn } = useAuth();
   const ob = useOnboarding();
   const ready = ob.stage === "ready";
@@ -60,7 +60,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
   const spotTok = market?.token ? bal.data?.spot?.find((b) => b.coin === market.token) : undefined;
   const szDec = market?.szDecimals ?? 4;
 
-  const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
+  const [side, setSide] = useState<"LONG" | "SHORT">(defaultSide ?? "LONG");
   const [type, setType] = useState<OrderType>("market");
   const [proOpen, setProOpen] = useState(false);
   const [isCross, setIsCross] = useState(true);
