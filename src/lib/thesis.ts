@@ -1,4 +1,5 @@
 import type { Position } from "@prisma/client";
+import { award } from "./points";
 import { prisma } from "./db";
 
 /** a thesis is bound to a position id at post time. the worker settles its outcome when that position closes. */
@@ -6,6 +7,7 @@ export async function createThesis(args: { userId: string; address: string; coin
   const { userId, address, coin, text, position } = args;
   return prisma.$transaction(async (tx) => {
     const thesis = await tx.thesis.create({ data: { userId, coin, text, positionId: position?.id ?? null } });
+    await award(userId, "THESIS_POSTED", thesis.id, tx);
     await tx.feedEvent.create({
       data: {
         type: "THESIS",

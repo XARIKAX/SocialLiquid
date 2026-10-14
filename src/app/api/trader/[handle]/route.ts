@@ -6,6 +6,7 @@ import { getSession } from "@/lib/session";
 import { syncAddress } from "@/lib/indexer";
 import { featuredAddresses } from "@/lib/featured";
 import type { HlFill } from "@/lib/hl-types";
+import { badgesFor, pointsSince, streaksBulk } from "@/lib/points";
 
 /** fills straight from the exchange for addresses the indexer has not reached yet; one upstream call per address per minute */
 const liveFillsCache = new Map<string, { at: number; fills: HlFill[] }>();
@@ -109,6 +110,19 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
   };
   const hl = pf ? { day: win("day"), week: win("week"), month: win("month"), allTime: win("allTime") } : null;
   const following = t.user ? await prisma.follow.count({ where: { followerId: t.user.id } }) : 0;
+  // points, streaks, badges
+  const streaks = (await streaksBulk([t.address])).get(t.address)!;
+  const claimedUser = t.user?.claimedAt ? t.user : null;
+  const [week, profitTheses, invites, above] = await Promise.all([
+    claimedUser ? pointsSince([claimedUser.id], new Date(Date.now() - 7 * 86_400_000)).then((m) => m.get(claimedUser.id) ?? 0) : 0,
+    claimedUser ? prisma.thesis.count({ where: { userId: claimedUser.id, outcome: "PROFIT" } }) : 0,
+    claimedUser ? prisma.pointEvent.count({ where: { userId: claimedUser.id, kind: "INVITED" } }) : 0,
+    claimedUser ? prisma.user.count({ where: { claimedAt: { not: null }, points: { gt: claimedUser.points } } }) : 0,
+  ]);
+  const points = claimedUser ? { total: claimedUser.points, week, rank: above + 1 } : null;
+  // keep the denormalised streak (used by feed cards) honest whenever a profile is viewed
+  if (claimedUser && (claimedUser.winStreak !== streaks.current || claimedUser.bestStreak !== streaks.best)) await prisma.user.update({ where: { id: claimedUser.id }, data: { winStreak: streaks.current, bestStreak: streaks.best } }).catch(() => null);
+  const badges = badgesFor({ closedTrades: stats.closedTrades, winRate: stats.winRate, bestStreak: streaks.best, profitTheses, copiers: stats.copiers, followers, invites, avgHoldMs: stats.avgHoldMs, days: streaks.days });
   // mutuals: accounts this profile follows that follow it back
   const mutuals = t.user ? await prisma.follow.count({ where: { followerId: t.user.id, following: { following: { some: { followingId: t.user.id } } } } }) : 0;
   return json(
@@ -118,6 +132,9 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
         ? { id: t.user.id, handle: t.user.handle, displayName: t.user.displayName, xHandle: t.user.xHandle, tgHandle: t.user.tgHandle, bio: t.user.bio, avatarUrl: t.user.avatarUrl, bannerUrl: t.user.bannerUrl, createdAt: t.user.createdAt, style: t.user.style, pinnedThesisId: t.user.pinnedThesisId, pinnedPositionId: t.user.pinnedPositionId }
         : null,
       pinnedPosition,
+      points,
+      streaks,
+      badges,
       mutuals,
       displayName: tracked?.displayName ?? null,
       claimed: !!t.user?.claimedAt,

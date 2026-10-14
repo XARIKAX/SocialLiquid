@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { award, awardAddress } from "@/lib/points";
 import { body, handler, json, HttpError, plain } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { syncAddress } from "@/lib/indexer";
@@ -52,6 +53,8 @@ export const POST = handler(async (req: Request) => {
       const src = await prisma.position.findUnique({ where: { id: input.copyOf.positionId }, select: { id: true, address: true, coin: true } });
       if (src && src.address === input.copyOf.address.toLowerCase() && src.coin === input.coin) {
         pos = await prisma.position.update({ where: { id: pos.id }, data: { copiedFromAddress: src.address, copiedFromPositionId: src.id } });
+        await awardAddress(src.address, "COPIED", pos.id).catch(() => null);
+        await award(s.userId, "COPY_MADE", pos.id).catch(() => null);
         await notifyAddress(src.address, { type: "COPIED", actorAddress: s.address, coin: input.coin, positionId: src.id, payload: { side: pos.side, sizeUsd: Number(pos.sizeUsd), leverage: pos.leverage } }).catch(() => null);
       }
     }

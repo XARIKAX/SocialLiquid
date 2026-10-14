@@ -49,6 +49,7 @@ export function FeedCard({ item, mid, onNavigate, signedIn }: { item: FeedItem; 
             </a>
           )}
           {item.user?.style && <span className="pill pill-neutral hidden sm:inline-flex">{item.user.style}</span>}
+          {(item.user?.winStreak ?? 0) >= 3 && <span className="pill pill-warn num" title={`${item.user!.winStreak} winning trades in a row`} data-testid="feed-streak">🔥 {item.user!.winStreak}</span>}
           <EventPill type={item.type} />
         </div>
         <span className="text-[11px] text-dim num shrink-0">{timeAgo(item.time)}</span>

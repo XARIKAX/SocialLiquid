@@ -14,6 +14,9 @@ export type Profile = {
   address: string;
   user: { id: string; handle: string | null; displayName: string | null; xHandle: string | null; tgHandle: string | null; bio: string | null; avatarUrl: string | null; bannerUrl: string | null; createdAt: string; style?: string | null; pinnedThesisId?: string | null; pinnedPositionId?: string | null } | null;
   pinnedPosition?: { id: string; coin: string; side: string; sizeUsd: number; leverage: number; entryPx: number; closePx: number | null; realisedPnl: number | null; unrealisedPnl: number; size: number; openedAt: string; closedAt: string | null; liquidated: boolean; thesis: { id: string; text: string; outcome: string } | null } | null;
+  points?: { total: number; week: number; rank: number } | null;
+  streaks?: { current: number; best: number; days: number };
+  badges?: { id: string; label: string; emoji: string; desc: string; earned: boolean }[];
   mutuals: number;
   displayName: string | null;
   claimed: boolean;
@@ -107,8 +110,22 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                   <span className="num" title={p.address}>{shortAddr(p.address)}</span>
                 </div>
                 {p.user?.bio && <p className="text-[13px] text-fg-2 mt-1.5 max-w-[560px] leading-snug">{p.user.bio}</p>}
+                {(p.points || (p.streaks && (p.streaks.current >= 2 || p.streaks.days >= 2)) || p.badges?.some((b) => b.earned)) && (
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap" data-testid="badges">
+                    {p.points && <span className="pill pill-brand num" title={`#${p.points.rank} on the points board · ${p.points.week} this week`} data-testid="points-pill">{p.points.total} pts · #{p.points.rank}</span>}
+                    {p.streaks && p.streaks.current >= 2 && <span className="pill pill-warn num" title={`${p.streaks.current} winning trades in a row · best ${p.streaks.best}`} data-testid="streak-pill">🔥 {p.streaks.current} win streak</span>}
+                    {p.streaks && p.streaks.days >= 2 && <span className="pill pill-neutral num" title="consecutive days with a trade">📆 {p.streaks.days}d</span>}
+                    {p.badges?.filter((b) => b.earned).map((b) => (
+                      <span key={b.id} className="pill pill-neutral" title={b.desc} data-testid={`badge-${b.id}`}>{b.emoji} {b.label}</span>
+                    ))}
+                    {p.badges && p.badges.some((b) => !b.earned) && (
+                      <span className="text-[11px] text-dim" title={p.badges.filter((b) => !b.earned).map((b) => `${b.emoji} ${b.label}: ${b.desc}`).join("\n")}>{p.badges.filter((b) => b.earned).length}/{p.badges.length} badges</span>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="hidden sm:flex items-center gap-6 pt-12 text-center">
+                {p.points && <StatBig label="Points" value={p.points.total} />}
                 <StatBig label="Mutuals" value={p.mutuals} />
                 <StatBig label="Following" value={p.following} />
                 <StatBig label="Followers" value={p.followers} />

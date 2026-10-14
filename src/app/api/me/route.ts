@@ -18,6 +18,8 @@ export const GET = handler(async () => {
           bio: user.bio,
           avatarUrl: user.avatarUrl,
           bannerUrl: user.bannerUrl,
+          points: user.points,
+          winStreak: user.winStreak,
           style: user.style,
           pinnedThesisId: user.pinnedThesisId,
           pinnedPositionId: user.pinnedPositionId,

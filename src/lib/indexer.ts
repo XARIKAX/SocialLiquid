@@ -9,6 +9,7 @@ import { Prisma, type FeedEventType, type ThesisOutcome } from "@prisma/client";
 import { prisma } from "./db";
 import * as HL from "./hl";
 import { syncSpotHoldings } from "./spot-holdings";
+import { award, awardAddress, refreshStreaks } from "./points";
 import type { HlFill, HlPosition } from "./hl-types";
 
 const DUMP_WINDOW_MS = 60 * 60 * 1000;
@@ -131,6 +132,9 @@ export async function syncAddress(addressRaw: string, opts: { forceFills?: boole
           },
         },
       });
+      // points: every close scores, a profitable one scores more
+      await awardAddress(address, "TRADE_CLOSED", p.id, tx);
+      if (realised > 0) await awardAddress(address, "TRADE_WIN", p.id, tx);
       // receipts: a thesis bound to this position gets its outcome now
       const theses = await tx.thesis.findMany({ where: { positionId: p.id, outcome: "OPEN" } });
       for (const t of theses) {
@@ -139,11 +143,13 @@ export async function syncAddress(addressRaw: string, opts: { forceFills?: boole
         else if (closedAt.getTime() - t.createdAt.getTime() < DUMP_WINDOW_MS) outcome = "DUMPED";
         else outcome = realised >= 0 ? "PROFIT" : "LOSS";
         await tx.thesis.update({ where: { id: t.id }, data: { outcome } });
+        if (outcome === "PROFIT") await award(t.userId, "THESIS_PROFIT", t.id, tx);
         await tx.notification.create({ data: { userId: t.userId, type: "THESIS_SETTLED", coin: p.coin, thesisId: t.id, positionId: p.id, payload: { outcome, realisedPnl: realised, side: p.side, text: t.text.slice(0, 140) } } });
       }
     });
     closed++;
   }
+  if (closed) await refreshStreaks(address).catch((e) => console.warn("[indexer] streaks failed", address.slice(0, 10), (e as Error).message));
 
   let opened = 0;
   for (const c of toOpen) {

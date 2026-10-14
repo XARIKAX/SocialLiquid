@@ -13,7 +13,7 @@ export type Me = {
     bio: string | null;
     avatarUrl: string | null;
     bannerUrl: string | null;
-    style: string | null;
+    points?: number; winStreak?: number; style: string | null;
     pinnedThesisId: string | null;
     pinnedPositionId: string | null;
     agent: { agentAddress: string; approved: boolean; builderApproved: boolean } | null;

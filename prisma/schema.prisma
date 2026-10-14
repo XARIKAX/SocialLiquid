@@ -59,6 +59,10 @@ model User {
   style            String?
   pinnedThesisId   String?
   pinnedPositionId String?
+  /// points and streaks (denormalised from PointEvent / closed positions, refreshed by the indexer)
+  points     Int @default(0)
+  winStreak  Int @default(0)
+  bestStreak Int @default(0)
 
   agentKey  AgentKey?
   theses    Thesis[]
@@ -69,6 +73,7 @@ model User {
   reactions     Reaction[]
   eventReplies  EventReply[]
   notifications Notification[]
+  pointEvents   PointEvent[]
 }
 
 model AgentKey {
@@ -311,4 +316,20 @@ model Notification {
   createdAt    DateTime         @default(now())
 
   @@index([userId, createdAt(sort: Desc)])
+}
+
+/// points ledger. one row per (user, kind, thing) so awards are idempotent however often the indexer re-sees an event.
+model PointEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// TRADE_CLOSED | TRADE_WIN | THESIS_POSTED | THESIS_PROFIT | COPIED | COPY_MADE | INVITED | INVITE_JOINED
+  kind      String
+  refId     String
+  points    Int
+  createdAt DateTime @default(now())
+
+  @@unique([userId, kind, refId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt])
 }

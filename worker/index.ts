@@ -9,6 +9,7 @@ import * as hl from "@nktkas/hyperliquid";
 import { prisma } from "../src/lib/db";
 import { HL_MOCK, IS_TESTNET } from "../src/lib/env";
 import { refreshHlLeaderboard, seedTrackedAddresses, syncAddress, trackFeatured, trackUsers } from "../src/lib/indexer";
+import { backfillPoints } from "../src/lib/points";
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 5000);
 const WEIGHT_BUDGET_PER_MIN = Number(process.env.HL_WEIGHT_BUDGET_PER_MIN ?? 1000);
@@ -146,6 +147,7 @@ async function main() {
   const featured = await trackFeatured();
   log(`featured traders tracked (+${featured} new)`);
   await refreshHlBoard("startup");
+  void backfillPoints().then((r) => log(`points backfill: +${r.awarded} award(s)`)).catch((e) => log(`points backfill failed: ${(e as Error).message}`));
   const tracked = await prisma.trackedAddress.count();
   if (tracked < SEED_COUNT) {
     const n = await seedTrackedAddresses(SEED_COUNT);
