@@ -50,7 +50,7 @@ export function KeysHoldings() {
         </div>
         <div className="flex flex-col gap-2.5 min-w-[240px]">
           <button type="button" className="btn btn-primary btn-glow h-[58px] px-10 rounded-[18px] text-[16px]" onClick={() => runClaim(actions.claim)} disabled={demo.claimable <= 0 || claiming} data-testid="holdings-claim">{claiming ? "Claiming…" : "Claim USDC"}</button>
-          <span className="text-[13px] text-muted text-center">Paid to your wallet on HyperEVM</span>
+          <span className="text-[13px] text-muted text-center">Paid in USDC to your Solana wallet</span>
         </div>
       </section>
 

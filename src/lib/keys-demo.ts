@@ -24,7 +24,7 @@ function walk(a: number, b: number, n: number, seed: number, vol = 0.035): numbe
 }
 
 
-/** a sample key on the real curve: the price is what the contract would charge at that supply */
+/** a sample key on the real curve: the price is what the keys program would charge at that supply */
 function key(minted: number, start: number, change24h: number, holders: number, yieldPct: number, seed: number, vol?: number) {
   const price = keyPrice(minted);
   return { listed: true, price, change24h, holders: Math.min(holders, minted), minted, yieldPct, history: walk(start, price, 30, seed, vol) };

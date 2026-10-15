@@ -34,7 +34,7 @@ export const POST = handler(async (req: Request) => {
   const wasFree = user.creator ? Number(user.creator.priceUsd) === 0 : false;
   const creator = user.creator
     ? await prisma.creator.update({ where: { id: user.creator.id }, data })
-    : await prisma.creator.create({ data: { ...data, userId: user.id, keysListed: !!(await readTrader(user.address))?.listed } });
+    : await prisma.creator.create({ data: { ...data, userId: user.id, keysListed: !!(await readTrader(user.solanaAddress))?.listed } });
   if (wasFree && input.price > 0) {
     // free followers carry a far-off paid-until; bring it in to a week so the paywall applies after a grace period
     const now = Date.now();

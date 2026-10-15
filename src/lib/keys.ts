@@ -5,20 +5,29 @@
  * pays with Hyperliquid transfers straight to the trader (CREATOR_SHARE) and the platform (the rest); the server
  * checks both on Hyperliquid before granting a month. nothing is custodied and nothing auto-debits.
  *
- * keys: a share in a trader, on the SocialLiquidKeys contract on HyperEVM. the key curve below mirrors it exactly.
- * on each buy KEY_TRADER_CUT of the curve price goes to the trader and the rest stays in reserve, so any holder can
- * always sell back; buys and sells pay KEY_PROTOCOL_FEE. holders also earn HOLDER_SHARE of the builder fees their
- * trader's copiers generate, deposited into the contract and claimable there. a key buys no access.
+ * keys: a share in a trader, on the socialLiquid keys program on Solana (programs/keys), priced in USDC and payable
+ * in USDC or SOL (swapped to USDC in the same transaction). the key curve below mirrors the program exactly. on each
+ * buy KEY_TRADER_CUT of the curve price goes to the trader and the rest stays in reserve, so any holder can always
+ * sell back; buys and sells pay KEY_PROTOCOL_FEE. holders also earn HOLDER_SHARE of the builder fees their trader's
+ * copiers generate, deposited into the program and claimable there. a key buys no access.
  */
 
 // ---------------------------------------------------------------- switches
 
 /** live mode: real creators, payments and keys. off, the section is the preview on sample data */
 export const KEYS_LIVE = process.env.NEXT_PUBLIC_KEYS_LIVE === "true";
-/** SocialLiquidKeys on HyperEVM; without it subscriptions still work and keys show as not launched */
-export const KEYS_CONTRACT = (process.env.NEXT_PUBLIC_KEYS_CONTRACT || null) as `0x${string}` | null;
-/** USDC on HyperEVM, the token the contract trades in */
-export const KEYS_USDC = (process.env.NEXT_PUBLIC_KEYS_USDC || null) as `0x${string}` | null;
+/** the keys program on Solana; without it subscriptions still work and keys show as opening soon */
+export const KEYS_PROGRAM = process.env.NEXT_PUBLIC_KEYS_PROGRAM_ID || null;
+/** the USDC mint the program trades in (mainnet USDC unless set, e.g. for devnet) */
+export const KEYS_USDC_MINT = process.env.NEXT_PUBLIC_KEYS_USDC_MINT || "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+/** the browser's Solana node. the public one rate-limits hard: use a dedicated rpc in production */
+export const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC || "https://api.mainnet-beta.solana.com";
+/** which cluster wallets sign for: mainnet, devnet or localnet */
+export const SOLANA_CLUSTER = (process.env.NEXT_PUBLIC_SOLANA_CLUSTER || "mainnet") as "mainnet" | "devnet" | "localnet";
+/** an address lookup table holding the program's fixed accounts, so a SOL swap and a buy fit in one transaction */
+export const KEYS_LOOKUP_TABLE = process.env.NEXT_PUBLIC_KEYS_LOOKUP_TABLE || null;
+/** Jupiter's swap api, for paying with SOL */
+export const JUPITER_API = process.env.NEXT_PUBLIC_JUPITER_API || "https://lite-api.jup.ag/swap/v1";
 /** where the platform's share of subscriptions goes on Hyperliquid. unset: creators keep the whole price */
 export const SUBS_TREASURY = (process.env.NEXT_PUBLIC_SUBS_TREASURY || null)?.toLowerCase() ?? null;
 
@@ -81,16 +90,16 @@ export function projectSubscribers(price: number, followers: number, offerCount:
 
 export const subMonthly = (price: number, subscribers: number) => (price * subscribers * CREATOR_KEEP_PCT) / 100;
 
-// ---------------------------------------------------------------- keys (mirrors contracts/src/SocialLiquidKeys.sol)
+// ---------------------------------------------------------------- keys (mirrors programs/keys/src/lib.rs)
 
 export const KEY_SUPPLY_CAP = 2000;
 /** first key, USDC */
 export const KEY_BASE_PRICE = 5;
 /** added per key already in supply, USDC */
 export const KEY_SLOPE = 0.25;
-/** share of the curve price paid to the trader on every buy; fixed in the contract forever */
+/** share of the curve price paid to the trader on every buy; fixed in the program forever */
 export const KEY_TRADER_CUT = 0.1;
-/** on buys and sells; the contract owner can move it, up to 5% */
+/** on buys and sells; the program admin can move it, up to 5% */
 export const KEY_PROTOCOL_FEE = 0.02;
 
 /** price of the next key at a given supply */
@@ -117,7 +126,7 @@ export const keyYearly = (price: number, qty: number, yieldPct: number) => (pric
 
 // ---------------------------------------------------------------- fee share (builder fees from a trader's copiers)
 
-/** to that trader's key holders, deposited into the contract */
+/** to that trader's key holders, deposited into the program */
 export const HOLDER_SHARE = 0.4;
 /** to the trader */
 export const CREATOR_FEE_SHARE = 0.3;

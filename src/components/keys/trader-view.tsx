@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { useBusy, useKeys, useKeysActions, useKeysTrader } from "@/hooks/use-keys";
+import { useBusy, useKeys, useKeysActions, useKeysTrader, type PayWith } from "@/hooks/use-keys";
+import { useSolanaWallet } from "@/lib/solana-wallet";
 import { keysToast } from "@/hooks/use-keys-toast";
 import { api } from "@/lib/client";
-import { CREATOR_KEEP_PCT, HOLDER_SHARE, KEY_PROTOCOL_FEE, KEY_SUPPLY_CAP, KEY_TRADER_CUT, KEYS_CONTRACT, cadenceLabel, keyBuy, keySell, keyYearly, offerTitle, OFFERS } from "@/lib/keys";
+import { CREATOR_KEEP_PCT, HOLDER_SHARE, KEY_PROTOCOL_FEE, KEY_SUPPLY_CAP, KEY_TRADER_CUT, KEYS_PROGRAM, cadenceLabel, keyBuy, keySell, keyYearly, offerTitle, OFFERS } from "@/lib/keys";
 import type { KeysCall, KeysSub, KeysTrader as Trader } from "@/lib/keys-model";
 import { fmtNum, fmtPx, fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
@@ -245,11 +246,13 @@ function KeyPanel({ t, held, own }: { t: Trader; held: number; own: boolean }) {
   const room = KEY_SUPPLY_CAP - t.key.minted;
   const [qty, setQty] = useState(Math.min(3, Math.max(1, room)));
   const [sellQty, setSellQty] = useState(1);
+  const [payWith, setPayWith] = useState<PayWith>("USDC");
+  const solana = useSolanaWallet();
   const [busy, run] = useBusy();
   const cost = keyBuy(t.key.minted, qty);
   const back = keySell(t.key.minted, Math.min(sellQty, held));
   const yearly = keyYearly(t.key.price, qty, t.key.yieldPct);
-  const launched = !live || !!KEYS_CONTRACT;
+  const launched = !live || !!KEYS_PROGRAM;
   return (
     <section id="key" className="card !rounded-[28px] p-7 scroll-mt-20" data-testid="trader-key">
       <KeyCard t={t} size="md" serial={t.key.listed ? `#${fmtNum(t.key.minted + 1)}` : undefined} />
@@ -272,10 +275,22 @@ function KeyPanel({ t, held, own }: { t: Trader; held: number; own: boolean }) {
               <div className="text-[12px] text-muted">of {fmtNum(KEY_SUPPLY_CAP)} minted</div>
             </div>
           </div>
+          {live && room > 0 && (
+            <div className="flex items-center justify-between gap-3 mt-6">
+              <div className="seg" role="radiogroup" aria-label="Pay with">
+                {(["USDC", "SOL"] as const).map((p) => (
+                  <button key={p} type="button" role="radio" aria-checked={payWith === p} onClick={() => setPayWith(p)} className={`seg-item inline-flex items-center h-8 px-3.5 text-[13px] ${payWith === p ? "seg-active" : ""}`} data-testid={`pay-${p}`}>
+                    Pay with {p}
+                  </button>
+                ))}
+              </div>
+              {solana.address && <span className="num text-[12px] text-muted truncate" title={`${solana.name ?? "Solana wallet"} ${solana.address}`}>{solana.address.slice(0, 4)}…{solana.address.slice(-4)}</span>}
+            </div>
+          )}
           {room > 0 ? (
-            <div className="flex items-center gap-3 mt-6">
+            <div className={`flex items-center gap-3 ${live ? "mt-3" : "mt-6"}`}>
               <Stepper value={qty} onChange={setQty} max={Math.min(50, room)} label="Keys to buy" />
-              <button type="button" className="btn flex-1 h-[52px] rounded-[14px] text-[14.5px] !bg-fg !text-bg !border-transparent hover:opacity-90" onClick={() => run(() => actions.buy(t, qty))} disabled={busy} data-testid="trader-buy-key">
+              <button type="button" className="btn flex-1 h-[52px] rounded-[14px] text-[14.5px] !bg-fg !text-bg !border-transparent hover:opacity-90" onClick={() => run(() => actions.buy(t, qty, payWith))} disabled={busy} data-testid="trader-buy-key">
                 {busy ? "Working…" : `Buy ${qty} · ${fmtUsd(cost.total)}`}
               </button>
             </div>
@@ -284,7 +299,7 @@ function KeyPanel({ t, held, own }: { t: Trader; held: number; own: boolean }) {
           )}
           <p className="text-[12.5px] text-muted mt-4 leading-relaxed">
             Holders split {Math.round(HOLDER_SHARE * 100)}% of the trading fees {t.handle}&apos;s followers generate — about <b className="num text-fg-2">{fmtUsd(yearly)}</b> a year for {qty} {qty === 1 ? "key" : "keys"} at today&apos;s flow. Of the price, {Math.round(KEY_TRADER_CUT * 100)}% goes to {t.handle} and the rest backs your keys, so you can always sell them back; a {Math.round(KEY_PROTOCOL_FEE * 100)}% fee applies each way. A key does not include the private feed.
-            {live && " Keys trade in USDC on HyperEVM."}
+            {live && (payWith === "SOL" ? " Keys trade in USDC on Solana: your SOL is swapped to USDC through Jupiter in the same transaction." : " Keys trade in USDC on Solana.")}
           </p>
           {held > 0 && (
             <div className="card-2 !rounded-[14px] mt-4 px-4 py-3">

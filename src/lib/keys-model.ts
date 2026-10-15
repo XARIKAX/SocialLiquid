@@ -36,6 +36,8 @@ export type KeysTrader = {
   handle: string;
   /** lowercase hyperliquid address; the sample traders have none */
   address?: string;
+  /** the Solana wallet their key lives under, once they linked one */
+  solana?: string | null;
   initials: string;
   /** avatar gradient, also the base of the banner */
   colors: [string, string];
@@ -51,7 +53,7 @@ export type KeysTrader = {
   maxDrawdown: number | null;
   live: KeysPosition | null;
   key: {
-    /** the trader called list() on the keys contract, so their key can be bought */
+    /** the trader listed their key on the keys program, so it can be bought */
     listed: boolean;
     price: number;
     change24h: number;
@@ -72,7 +74,7 @@ export type KeysHolding = { qty: number; avgCost: number; earned: number };
 export type KeysSub = { since: string; renews: string; unread: number; cancelled?: boolean; paidUntil?: string };
 export type KeysPayout = { from: string; when: string; amount: number };
 
-export type KeysViewer = { handle: string; initials: string; colors: [string, string]; avatarUrl?: string | null; address?: string; followers: number; pnl30dPct: number | null; pnl30d?: number };
+export type KeysViewer = { handle: string; initials: string; colors: [string, string]; avatarUrl?: string | null; address?: string; /** the linked Solana wallet */ solana?: string | null; followers: number; pnl30dPct: number | null; pnl30d?: number };
 
 export type KeysStudioSettings = { price: number; offers: OfferKey[]; cadence: Cadence; pinned?: string; saved: boolean };
 export type KeysStudio = {

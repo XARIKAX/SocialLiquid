@@ -53,6 +53,8 @@ model User {
   /// data urls after client-side resize (avatar ≤ ~120kb, banner ≤ ~500kb)
   avatarUrl String?
   bannerUrl String?
+  /// the Solana wallet this account signed to link, for keys (which live on Solana). base58, case-sensitive
+  solanaAddress String? @unique
   /// set when the wallet signed in. a row without it is a shadow user (someone followed the address).
   claimedAt DateTime?
   createdAt DateTime @default(now())
@@ -405,7 +407,7 @@ model Creator {
   pinned        String?  @db.VarChar(500)
   /// the Hyperliquid address subscription payments go to; the trader's own unless they change it
   payoutAddress String
-  /// the trader called list() on the keys contract from their address (checked onchain before it is set)
+  /// the trader listed their key on the keys program from their linked Solana wallet (checked onchain before it is set)
   keysListed    Boolean  @default(false)
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
@@ -518,13 +520,16 @@ model KeyFeeAccrual {
   @@index([creatorStatus])
 }
 
-/// Trade events from the SocialLiquidKeys contract on HyperEVM, indexed by the worker
+/// Trade events from the keys program on Solana, indexed by the worker
 model KeyTrade {
   id           String   @id @default(cuid())
-  txHash       String
-  logIndex     Int
-  blockNumber  BigInt
-  /// lowercase trader address (the key) and the account that bought or sold
+  /// insertion order, which is chain order: the worker indexes oldest first
+  seq          Int      @default(autoincrement())
+  signature    String
+  /// position of the event within its transaction
+  eventIndex   Int
+  slot         BigInt
+  /// the trader's Solana wallet (base58: the key) and the wallet that bought or sold
   trader       String
   account      String
   isBuy        Boolean
@@ -537,23 +542,24 @@ model KeyTrade {
   supply       Int
   time         DateTime
 
-  @@unique([txHash, logIndex])
+  @@unique([signature, eventIndex])
+  @@index([trader, seq])
   @@index([trader, time])
   @@index([account, trader])
 }
 
-/// Claimed events from the keys contract: fee share paid out to a holder
+/// Claimed events from the keys program: fee share paid out to a holder
 model KeyClaim {
-  id          String   @id @default(cuid())
-  txHash      String
-  logIndex    Int
-  blockNumber BigInt
-  trader      String
-  holder      String
-  amountUsd   Decimal  @db.Decimal(18, 6)
-  time        DateTime
+  id         String   @id @default(cuid())
+  signature  String
+  eventIndex Int
+  slot       BigInt
+  trader     String
+  holder     String
+  amountUsd  Decimal  @db.Decimal(18, 6)
+  time       DateTime
 
-  @@unique([txHash, logIndex])
+  @@unique([signature, eventIndex])
   @@index([holder, time(sort: Desc)])
 }
 

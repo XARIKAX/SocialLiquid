@@ -39,7 +39,7 @@ export function KeysFrame({ children }: { children: ReactNode }) {
           {data.mode === "preview" ? (
             <span className="pill pill-warn ml-auto" title="Sample traders and numbers. Nothing in the preview is bought or charged.">Preview · sample data</span>
           ) : (
-            <span className="pill pill-brand ml-auto" title="Payments in USDC on Hyperliquid, keys on HyperEVM">Live · USDC</span>
+            <span className="pill pill-brand ml-auto" title="Subscriptions in USDC on Hyperliquid, keys on Solana">Live · USDC</span>
           )}
         </div>
       </div>

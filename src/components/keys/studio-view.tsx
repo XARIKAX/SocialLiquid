@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useConnectModal } from "@/components/connect-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { useBusy, useKeys, useKeysActions } from "@/hooks/use-keys";
-import { CADENCES, CREATOR_KEEP_PCT, KEYS_CONTRACT, OFFERS, POST_KINDS, SUB_PRICE_MAX, cadenceLabel, projectSubscribers, subMonthly, type Cadence, type OfferKey, type PostKind } from "@/lib/keys";
+import { CADENCES, CREATOR_KEEP_PCT, KEYS_PROGRAM, OFFERS, POST_KINDS, SUB_PRICE_MAX, cadenceLabel, projectSubscribers, subMonthly, type Cadence, type OfferKey, type PostKind } from "@/lib/keys";
 import type { KeysStudio as StudioData } from "@/lib/keys-model";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
@@ -268,13 +268,13 @@ function KeyCardPanel({ studio }: { studio: StudioData }) {
           <div><div className="num text-[19px] font-semibold">{studio.key.holders}</div><div className="text-[12px] text-muted">holders</div></div>
           <div><div className="num text-[19px] font-semibold text-brand">{fmtUsd(studio.key.raised, { compact: true })}</div><div className="text-[12px] text-muted">raised</div></div>
         </div>
-      ) : !KEYS_CONTRACT ? (
+      ) : !KEYS_PROGRAM ? (
         <p className="text-[13.5px] text-muted mt-2 leading-relaxed">Keys open soon. You will be able to list yours here.</p>
       ) : !studio.isCreator ? (
         <p className="text-[13.5px] text-muted mt-2 leading-relaxed">Publish your page first, then list your key.</p>
       ) : (
         <>
-          <p className="text-[13.5px] text-muted mt-2 leading-relaxed">One signature on HyperEVM. You get 10% of every key sold, and your holders share in the fees your copiers pay.</p>
+          <p className="text-[13.5px] text-muted mt-2 leading-relaxed">One signature from your Solana wallet. You get 10% of every key sold, paid in USDC as it sells, and your holders share in the fees your copiers pay.</p>
           <button type="button" className="btn btn-primary w-full h-12 mt-4 rounded-[14px]" onClick={() => run(actions.listKey)} disabled={busy} data-testid="studio-list-key">{busy ? "Working…" : "List my key"}</button>
         </>
       )}

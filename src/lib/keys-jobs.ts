@@ -1,7 +1,7 @@
 /**
  * background work for keys, run by the worker:
  *  - accrue: each closed UTC day, the builder fees paid on copies of a trader's positions are split into the
- *    holder share (deposited into the keys contract for that trader's holders) and the trader's own share.
+ *    holder share (deposited into the keys program for that trader's holders) and the trader's own share.
  *    scripts/keys-distribute.ts pays both out; this only records what is owed.
  *  - remind: a subscriber whose paid month ends within three days gets one alert to renew.
  */

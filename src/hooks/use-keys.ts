@@ -2,21 +2,19 @@
 /**
  * the keys section's data and actions. with NEXT_PUBLIC_KEYS_LIVE off the screens run on the sample traders and a
  * browser-only store; on, they read /api/keys and the actions move real money: subscriptions are USDC transfers
- * on Hyperliquid signed by the viewer's wallet, keys are trades on the SocialLiquidKeys contract on HyperEVM.
+ * on Hyperliquid signed by the viewer's wallet, keys are trades on the keys program on Solana, signed by a Solana
+ * wallet the viewer links to their account once.
  * the screens call the same hooks either way.
  */
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useChainId } from "wagmi";
-import { erc20Abi, formatUnits, type Address } from "viem";
-import { hyperEvm } from "wagmi/chains";
 import { useConnectModal } from "@/components/connect-modal";
 import { api } from "@/lib/client";
-import { KEYS_CONTRACT, KEYS_LIVE, KEYS_USDC, type PostKind } from "@/lib/keys";
-import { KEYS_ABI } from "@/lib/keys-abi";
+import { KEYS_LIVE, type PostKind } from "@/lib/keys";
 import { DEMO_FEED, DEMO_PAYOUTS, DEMO_PLATFORM, DEMO_STUDIO, DEMO_TRADERS, DEMO_VIEWER } from "@/lib/keys-demo";
 import type { KeysIndex, KeysMe, KeysStudioSettings, KeysTrader } from "@/lib/keys-model";
-import { wagmiConfig } from "@/lib/wagmi";
+import { connectSolana, signSolanaMessage } from "@/lib/solana-wallet";
 import { useAuth } from "./use-auth";
 import { keysDemo, useKeysDemo } from "./use-keys-demo";
 import { keysToast } from "./use-keys-toast";
@@ -112,15 +110,14 @@ export function useKeysTrader(handle: string): { t: KeysTrader | undefined; load
 /* ---------- actions ---------- */
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-// the signing code (hyperliquid sdk, wagmi actions) loads on the first payment or trade, not with the page
-const chainActions = () => import("wagmi/actions");
+// the signing code (hyperliquid sdk, @solana/web3.js) loads on the first payment or trade, not with the page
 const hlSigning = () => import("@/lib/hl-client");
+const solanaTrades = () => import("@/lib/keys-solana-client");
 
 /** a wallet or api error, in one line a person can act on */
 export function why(e: unknown): string {
   const m = (e as { shortMessage?: string }).shortMessage ?? (e as Error)?.message ?? String(e);
-  if (/user rejected|user denied|rejected the request|request rejected/i.test(m)) return "Cancelled in your wallet.";
-  if (/does not support|unrecognized chain|chain.*not.*(added|supported)|switch.*chain/i.test(m)) return "Your wallet could not switch to HyperEVM. Keys trade there: use MetaMask or Rabby, or add HyperEVM (chain 999) to your wallet.";
+  if (/user rejected|user denied|rejected the request|request rejected|user declined/i.test(m)) return "Cancelled in your wallet.";
   return m.split("\n")[0].slice(0, 220);
 }
 
@@ -153,11 +150,12 @@ const pendingIntent = {
 type Quote = { subscribed: true; paidUntil: string } | { subscribed: false; intentId: string; method: "usdSend" | "spotSend"; token: string | null; transfers: { to: string; amount: string; label: "creator" | "platform" }[]; total: number; expiresAt: string };
 const until = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
+export type PayWith = "USDC" | "SOL";
 export type KeysActions = {
   subscribe: (t: KeysTrader) => Promise<void>;
   unsubscribe: (t: KeysTrader) => Promise<void>;
   markRead: (handle: string) => void;
-  buy: (t: KeysTrader, qty: number) => Promise<void>;
+  buy: (t: KeysTrader, qty: number, payWith?: PayWith) => Promise<void>;
   sell: (t: KeysTrader, qty: number) => Promise<void>;
   claim: () => Promise<void>;
   saveStudio: (s: Omit<KeysStudioSettings, "saved">) => Promise<void>;
@@ -174,7 +172,7 @@ const previewActions: KeysActions = {
   sell: async (t, qty) => keysDemo.sell(t.handle, qty),
   claim: async () => keysDemo.claim(),
   saveStudio: async (s) => keysDemo.saveStudio(s),
-  listKey: async () => keysDemo.notify("In the live version this lists your key on HyperEVM."),
+  listKey: async () => keysDemo.notify("In the live version this lists your key on Solana."),
   post: async () => (keysDemo.notify("In the live version this posts to your subscribers."), true),
   reset: () => keysDemo.reset(),
 };
@@ -191,8 +189,8 @@ function useLiveActions(): KeysActions {
     (later = false) => {
       qc.invalidateQueries({ queryKey: ["keys"] });
       qc.invalidateQueries({ queryKey: ["alerts"] });
-      // the worker indexes contract events every 15s: look again once it has
-      if (later) for (const ms of [6_000, 18_000]) setTimeout(() => qc.invalidateQueries({ queryKey: ["keys"] }), ms);
+      // the worker indexes the program's finalized transactions every 15s: look again once it has
+      if (later) for (const ms of [8_000, 20_000, 35_000]) setTimeout(() => qc.invalidateQueries({ queryKey: ["keys"] }), ms);
     },
     [qc],
   );
@@ -212,22 +210,22 @@ function useLiveActions(): KeysActions {
     return true;
   }, [auth, connect]);
 
-  /** HyperEVM, with the wallet switched to it */
-  const onHyperEvm = useCallback(async () => {
-    if (!KEYS_CONTRACT || !KEYS_USDC) throw new Error("Keys are not launched on this deployment yet.");
-    if (chainId !== hyperEvm.id) {
-      keysToast("Switch your wallet to HyperEVM.", "busy");
-      await (await chainActions()).switchChain(wagmiConfig, { chainId: hyperEvm.id });
-    }
-    return { contract: KEYS_CONTRACT, usdc: KEYS_USDC };
-  }, [chainId]);
-
-  const tx = useCallback(async (hash: `0x${string}`, what: string) => {
-    keysToast(`${what}: waiting for HyperEVM…`, "busy");
-    const r = await (await chainActions()).waitForTransactionReceipt(wagmiConfig, { hash, chainId: hyperEvm.id });
-    if (r.status !== "success") throw new Error(`${what} failed onchain (${hash.slice(0, 10)}…)`);
-    return r;
-  }, []);
+  /**
+   * the connected Solana wallet, linked to this account: keys and their fee share are tracked by the wallet that
+   * holds them, so the first trade asks for one signature proving the wallet is yours
+   */
+  const linkedSolana = useCallback(async () => {
+    keysToast("Connecting your Solana wallet…", "busy");
+    const { account } = await connectSolana();
+    const me = qc.getQueryData<KeysMe | null>(["keys", "me"]);
+    if (me?.viewer?.solana === account.address) return account.address;
+    const { message } = await api<{ message: string }>(`/api/keys/wallet?address=${encodeURIComponent(account.address)}`);
+    keysToast("Sign the message in your Solana wallet to link it to your account. It costs nothing.", "busy");
+    const signature = await signSolanaMessage(message);
+    await api("/api/keys/wallet", { method: "POST", json: { address: account.address, signature } });
+    await qc.invalidateQueries({ queryKey: ["keys", "me"] });
+    return account.address;
+  }, [qc]);
 
   const confirmPay = useCallback(
     async (t: KeysTrader, intentId: string) => {
@@ -253,11 +251,17 @@ function useLiveActions(): KeysActions {
         try {
           await fn(...a);
         } catch (e) {
-          keysToast(why(e), "error");
+          const { friendly } = await solanaTrades().catch(() => ({ friendly: why }));
+          keysToast(friendly(e), "error");
         }
       },
     [],
   );
+  const step = (s: string) => keysToast(s, "busy");
+  const keyOf = (t: KeysTrader) => {
+    if (!t.solana || !t.key.listed) throw new Error(`${t.handle} has not listed a key.`);
+    return t.solana;
+  };
 
   return useMemo<KeysActions>(
     () => ({
@@ -297,53 +301,34 @@ function useLiveActions(): KeysActions {
           .catch(() => {});
       },
 
-      buy: run(async (t: KeysTrader, qty: number) => {
+      buy: run(async (t: KeysTrader, qty: number, payWith: PayWith = "USDC") => {
         if (!(await ready())) return;
-        if (!t.address) throw new Error("This trader has no key.");
-        const { contract, usdc } = await onHyperEvm();
-        const { readContract, writeContract } = await chainActions();
-        const trader = t.address as Address;
-        const [total] = await readContract(wagmiConfig, { address: contract, abi: KEYS_ABI, functionName: "buyQuote", args: [trader, BigInt(qty)], chainId: hyperEvm.id });
-        // someone else buying first moves the price: allow 3% before the contract refuses
-        const maxTotal = (total * 103n) / 100n;
-        const me = auth.address as Address;
-        const bal = await readContract(wagmiConfig, { address: usdc, abi: erc20Abi, functionName: "balanceOf", args: [me], chainId: hyperEvm.id });
-        if (bal < total) throw new Error(`You need $${Number(formatUnits(total, 6)).toFixed(2)} USDC on HyperEVM and have $${Number(formatUnits(bal, 6)).toFixed(2)}. Move USDC from Hyperliquid to HyperEVM first.`);
-        const allowance = await readContract(wagmiConfig, { address: usdc, abi: erc20Abi, functionName: "allowance", args: [me, contract], chainId: hyperEvm.id });
-        const spend = maxTotal > bal ? bal : maxTotal;
-        if (allowance < spend) {
-          keysToast(`Approve $${Number(formatUnits(spend, 6)).toFixed(2)} USDC in your wallet.`, "busy");
-          await tx(await writeContract(wagmiConfig, { address: usdc, abi: erc20Abi, functionName: "approve", args: [contract, spend], chainId: hyperEvm.id }), "Approval");
-        }
-        keysToast(`Confirm buying ${qty} ${t.handle} ${qty === 1 ? "key" : "keys"} in your wallet.`, "busy");
-        await tx(await writeContract(wagmiConfig, { address: contract, abi: KEYS_ABI, functionName: "buy", args: [trader, BigInt(qty), spend], chainId: hyperEvm.id }), "Buying");
+        const trader = keyOf(t);
+        await linkedSolana();
+        const { buyKeys } = await solanaTrades();
+        await buyKeys(trader, qty, payWith, step);
         keysToast(`Bought ${qty} ${t.handle} ${qty === 1 ? "key" : "keys"}.`);
         refresh(true);
       }),
 
       sell: run(async (t: KeysTrader, qty: number) => {
         if (!(await ready())) return;
-        if (!t.address) throw new Error("This trader has no key.");
-        const { contract } = await onHyperEvm();
-        const { readContract, writeContract } = await chainActions();
-        const [net] = await readContract(wagmiConfig, { address: contract, abi: KEYS_ABI, functionName: "sellQuote", args: [t.address as Address, BigInt(qty)], chainId: hyperEvm.id });
-        const minNet = (net * 97n) / 100n;
-        keysToast(`Confirm selling ${qty} ${t.handle} ${qty === 1 ? "key" : "keys"} for about $${Number(formatUnits(net, 6)).toFixed(2)}.`, "busy");
-        await tx(await writeContract(wagmiConfig, { address: contract, abi: KEYS_ABI, functionName: "sell", args: [t.address as Address, BigInt(qty), minNet], chainId: hyperEvm.id }), "Selling");
-        keysToast(`Sold ${qty} ${t.handle} ${qty === 1 ? "key" : "keys"}. The USDC is in your wallet on HyperEVM.`);
+        const trader = keyOf(t);
+        await linkedSolana();
+        const { sellKeys } = await solanaTrades();
+        const net = await sellKeys(trader, qty, step);
+        keysToast(`Sold ${qty} ${t.handle} ${qty === 1 ? "key" : "keys"} for about $${(Number(net) / 1e6).toFixed(2)} USDC, in your Solana wallet.`);
         refresh(true);
       }),
 
       claim: run(async () => {
         if (!(await ready())) return;
         const me = qc.getQueryData<KeysMe | null>(["keys", "me"]);
-        const from = (me?.claimFrom ?? []) as Address[];
-        if (!from.length) throw new Error("Nothing to claim yet.");
-        const { contract } = await onHyperEvm();
-        const { writeContract } = await chainActions();
-        keysToast("Confirm the claim in your wallet.", "busy");
-        await tx(await writeContract(wagmiConfig, { address: contract, abi: KEYS_ABI, functionName: "claimMany", args: [from], chainId: hyperEvm.id }), "Claiming");
-        keysToast(`Claimed $${(me?.claimable ?? 0).toFixed(2)}. It is in your wallet on HyperEVM.`);
+        if (!me?.claimFrom.length) throw new Error("Nothing to claim yet.");
+        await linkedSolana();
+        const { claimAll } = await solanaTrades();
+        await claimAll(me.claimFrom, step);
+        keysToast(`Claimed $${me.claimable.toFixed(2)} USDC to your Solana wallet.`);
         refresh(true);
       }),
 
@@ -356,10 +341,9 @@ function useLiveActions(): KeysActions {
 
       listKey: run(async () => {
         if (!(await ready())) return;
-        const { contract } = await onHyperEvm();
-        const { writeContract } = await chainActions();
-        keysToast("Confirm listing your key in your wallet.", "busy");
-        await tx(await writeContract(wagmiConfig, { address: contract, abi: KEYS_ABI, functionName: "list", chainId: hyperEvm.id }), "Listing");
+        await linkedSolana();
+        const { listKey } = await solanaTrades();
+        await listKey(step);
         const r = await api<{ listed: boolean }>("/api/keys/studio/listed", { method: "POST" });
         keysToast(r.listed ? "Your key is live. Anyone can buy it from your page." : "Listed onchain. It will show on your page in a moment.");
         refresh(true);
@@ -379,11 +363,12 @@ function useLiveActions(): KeysActions {
 
       reset: () => {},
     }),
-    [run, ready, confirmPay, refresh, mock, wallet, chainId, qc, onHyperEvm, tx, auth.address],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [run, ready, linkedSolana, confirmPay, refresh, mock, wallet, chainId, qc],
   );
 }
 
-/** what the buttons do: the preview's local store, or wallets and contracts in live mode */
+/** what the buttons do: the preview's local store, or wallets and the Solana program in live mode */
 export const useKeysActions: () => KeysActions = KEYS_LIVE ? useLiveActions : () => previewActions;
 
 /** run an action with a busy flag for its button */

@@ -10,7 +10,7 @@ import { prisma } from "../src/lib/db";
 import { HL_MOCK, IS_TESTNET } from "../src/lib/env";
 import { refreshHlLeaderboard, seedTrackedAddresses, syncAddress, trackFeatured, trackUsers } from "../src/lib/indexer";
 import { backfillPoints } from "../src/lib/points";
-import { KEYS_CONTRACT, KEYS_LIVE } from "../src/lib/keys";
+import { KEYS_LIVE, KEYS_PROGRAM } from "../src/lib/keys";
 import { syncKeyEvents } from "../src/lib/keys-chain";
 import { accrueKeyFees, remindRenewals } from "../src/lib/keys-jobs";
 
@@ -144,16 +144,16 @@ async function housekeeping() {
   }
 }
 
-/** keys: index the contract's events every 15s; accrue copier fees and send renewal alerts hourly */
+/** keys: index the Solana program's events every 15s; accrue copier fees and send renewal alerts hourly */
 let lastKeysHourly = 0;
 async function keysLoop() {
-  if (!KEYS_LIVE && !KEYS_CONTRACT) return;
-  log(`keys: ${KEYS_LIVE ? "live" : "preview"}${KEYS_CONTRACT ? `, indexing ${KEYS_CONTRACT}` : ", no contract set"}`);
+  if (!KEYS_LIVE && !KEYS_PROGRAM) return;
+  log(`keys: ${KEYS_LIVE ? "live" : "preview"}${KEYS_PROGRAM ? `, indexing program ${KEYS_PROGRAM}` : ", no program set"}`);
   for (;;) {
     try {
-      if (KEYS_CONTRACT) {
+      if (KEYS_PROGRAM) {
         const r = await syncKeyEvents();
-        if (r && (r.trades || r.claims || r.listed)) log(`keys: +${r.trades} trade(s) +${r.claims} claim(s) +${r.listed} listed, at block ${r.to}`);
+        if (r && (r.trades || r.claims || r.listed)) log(`keys: +${r.trades} trade(s) +${r.claims} claim(s) +${r.listed} listed from ${r.txs} transaction(s)`);
       }
       if (KEYS_LIVE && Date.now() - lastKeysHourly >= 60 * 60_000) {
         lastKeysHourly = Date.now();
