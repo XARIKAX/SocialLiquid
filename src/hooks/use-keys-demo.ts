@@ -6,6 +6,7 @@
  */
 import { useSyncExternalStore } from "react";
 import { DEMO_START } from "@/lib/keys-demo";
+import { keysToast } from "./use-keys-toast";
 import type { Cadence, OfferKey } from "@/lib/keys";
 
 export type Holding = { qty: number; avgCost: number; earned: number };
@@ -16,7 +17,6 @@ export type KeysDemoState = {
   subs: Record<string, Subscription>;
   claimable: number;
   studio: StudioSettings;
-  toast: { id: number; text: string } | null;
 };
 
 const STORE = "sl:keys-preview";
@@ -25,13 +25,11 @@ const INITIAL: KeysDemoState = {
   subs: DEMO_START.subs,
   claimable: DEMO_START.claimable,
   studio: { price: 29, offers: ["calls", "alerts"], cadence: "regular", saved: false },
-  toast: null,
 };
 
 let state = INITIAL;
 let loaded = false;
 const listeners = new Set<() => void>();
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
@@ -47,7 +45,6 @@ function load() {
       subs: isObj(s.subs) ? (s.subs as KeysDemoState["subs"]) : INITIAL.subs,
       claimable: typeof s.claimable === "number" ? s.claimable : INITIAL.claimable,
       studio: isObj(s.studio) ? { ...INITIAL.studio, ...(s.studio as StudioSettings) } : INITIAL.studio,
-      toast: null,
     };
   } catch {
     /* unreadable or blocked storage: start fresh */
@@ -57,8 +54,7 @@ function load() {
 function set(patch: Partial<KeysDemoState>) {
   state = { ...state, ...patch };
   try {
-    const { toast: _toast, ...persist } = state;
-    localStorage.setItem(STORE, JSON.stringify(persist));
+    localStorage.setItem(STORE, JSON.stringify(state));
   } catch {
     /* private window: the preview still works, it just forgets on reload */
   }
@@ -73,9 +69,7 @@ function nextMonth(): string {
 
 export const keysDemo = {
   notify(text: string) {
-    if (toastTimer) clearTimeout(toastTimer);
-    set({ toast: { id: Date.now(), text } });
-    toastTimer = setTimeout(() => set({ toast: null }), 3600);
+    keysToast(text);
   },
   subscribe(handle: string, price: number) {
     const month = new Date().toLocaleDateString("en-GB", { month: "short" });

@@ -1,17 +1,24 @@
 "use client";
 /** /keys/holdings: what you can claim, the keys you hold, the traders you subscribe to and what they paid you */
 import Link from "next/link";
-import { keysDemo, useKeysDemo } from "@/hooks/use-keys-demo";
+import { useConnectModal } from "@/components/connect-modal";
+import { useAuth } from "@/hooks/use-auth";
+import { useBusy, useKeys, useKeysActions } from "@/hooks/use-keys";
 import { keyYearly } from "@/lib/keys";
-import { DEMO_PAYOUTS, traderByHandle } from "@/lib/keys-demo";
 import { fmtUsd } from "@/lib/format";
 import { Empty, Icon } from "../ui";
-import { Face, ResetPreview, priceLabel } from "./parts";
+import { Face, KeysState, ResetPreview, priceLabel } from "./parts";
 
 export function KeysHoldings() {
-  const demo = useKeysDemo();
+  const data = useKeys();
+  const actions = useKeysActions();
+  const auth = useAuth();
+  const connect = useConnectModal();
+  const [claiming, runClaim] = useBusy();
+  const demo = data.me;
+  const live = data.mode === "live";
   const rows = Object.entries(demo.keys)
-    .map(([handle, h]) => ({ t: traderByHandle(handle)!, h }))
+    .map(([handle, h]) => ({ t: data.byHandle(handle)!, h }))
     .filter((r) => r.t && r.h.qty > 0)
     .sort((a, b) => b.h.qty * b.t.key.price - a.h.qty * a.t.key.price);
   const value = rows.reduce((a, r) => a + r.h.qty * r.t.key.price, 0);
@@ -19,8 +26,18 @@ export function KeysHoldings() {
   const earned = rows.reduce((a, r) => a + r.h.earned, 0);
   const yearly = rows.reduce((a, r) => a + keyYearly(r.t.key.price, r.h.qty, r.t.key.yieldPct), 0);
   const blended = value > 0 ? (yearly / value) * 100 : 0;
-  const subs = Object.entries(demo.subs).map(([handle, s]) => ({ t: traderByHandle(handle)!, s })).filter((r) => r.t);
-  const monthly = subs.reduce((a, r) => a + r.t.sub.price, 0);
+  const subs = Object.entries(demo.subs).map(([handle, s]) => ({ t: data.byHandle(handle)!, s })).filter((r) => r.t);
+  const monthly = subs.filter((r) => !r.s.cancelled).reduce((a, r) => a + r.t.sub.price, 0);
+
+  if (live && !data.signedIn) {
+    return (
+      <KeysState
+        title="Your keys and subscriptions"
+        body="Sign in with your wallet to see the keys you hold, the fee share waiting for you and the traders you subscribe to."
+        action={<button type="button" className="btn btn-primary btn-glow h-12 px-6 rounded-[14px]" onClick={() => (auth.isConnected ? auth.signIn() : connect.open())} disabled={auth.busy}>{auth.isConnected ? "Sign in" : "Connect wallet"}</button>}
+      />
+    );
+  }
 
   return (
     <div className="space-y-16" data-testid="keys-holdings">
@@ -29,11 +46,11 @@ export function KeysHoldings() {
         <div className="flex-1 min-w-[280px]">
           <div className="text-[15px] text-fg-2">Ready to claim</div>
           <div className={`num k-display text-[64px] @3xl:text-[88px] font-semibold mt-3 ${demo.claimable > 0 ? "k-brand-glow" : "text-muted"}`} data-testid="holdings-claimable">{fmtUsd(demo.claimable)}</div>
-          <div className="text-[15px] text-fg-2 mt-4">{demo.claimable > 0 ? `From the trading fees of ${rows.length} traders' followers this week` : "All claimed. Fee flow keeps accruing as followers trade."}</div>
+          <div className="text-[15px] text-fg-2 mt-4">{demo.claimable > 0 ? `From the trading fees of ${rows.length === 1 ? "one trader's" : `${rows.length} traders'`} followers` : rows.length ? "All claimed. Fee flow keeps accruing as followers trade." : "Hold a trader's key to earn from their followers' trading."}</div>
         </div>
         <div className="flex flex-col gap-2.5 min-w-[240px]">
-          <button type="button" className="btn btn-primary btn-glow h-[58px] px-10 rounded-[18px] text-[16px]" onClick={() => keysDemo.claim()} disabled={demo.claimable <= 0} data-testid="holdings-claim">Claim USDC</button>
-          <span className="text-[13px] text-muted text-center">Lands in your Hyperliquid balance</span>
+          <button type="button" className="btn btn-primary btn-glow h-[58px] px-10 rounded-[18px] text-[16px]" onClick={() => runClaim(actions.claim)} disabled={demo.claimable <= 0 || claiming} data-testid="holdings-claim">{claiming ? "Claiming…" : "Claim USDC"}</button>
+          <span className="text-[13px] text-muted text-center">Paid to your wallet on HyperEVM</span>
         </div>
       </section>
 
@@ -103,13 +120,20 @@ export function KeysHoldings() {
             {subs.length === 0 && <Empty title="No subscriptions" hint="Subscribe to a trader to get their calls before the entry." />}
             {subs.map(({ t, s }) => (
               <div key={t.handle} className="card !rounded-[22px] px-5 py-4 flex items-center gap-4">
-                <Link href={`/keys/${t.handle}`} onClick={() => keysDemo.markRead(t.handle)}><Face who={t} size={50} ring={t.live ? "live" : "off"} /></Link>
+                <Link href={`/keys/${t.handle}`} onClick={() => actions.markRead(t.handle)}><Face who={t} size={50} ring={t.live ? "live" : "off"} /></Link>
                 <div className="min-w-0 flex-1">
-                  <Link href={`/keys/${t.handle}`} onClick={() => keysDemo.markRead(t.handle)} className="text-[16px] font-bold hover:underline">{t.handle}</Link>
-                  <div className="num text-[13px] text-muted mt-0.5">{priceLabel(t.sub.price)}{t.sub.price > 0 ? " a month" : ""} · renews {s.renews}</div>
+                  <Link href={`/keys/${t.handle}`} onClick={() => actions.markRead(t.handle)} className="text-[16px] font-bold hover:underline">{t.handle}</Link>
+                  <div className="num text-[13px] text-muted mt-0.5">
+                    {priceLabel(t.sub.price)}{t.sub.price > 0 ? " a month" : ""}
+                    {t.sub.price > 0 && (live ? ` · ${s.cancelled ? "ends" : "paid to"} ${s.renews}` : ` · renews ${s.renews}`)}
+                  </div>
                 </div>
                 {s.unread > 0 && <span className="pill pill-brand num">{s.unread} new</span>}
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => keysDemo.unsubscribe(t.handle)}>Cancel</button>
+                {live && s.cancelled ? (
+                  <button type="button" className="btn btn-sm" onClick={() => actions.subscribe(t)}>Renew</button>
+                ) : (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => actions.unsubscribe(t)}>{t.sub.price > 0 ? "Cancel" : "Unfollow"}</button>
+                )}
               </div>
             ))}
           </div>
@@ -118,8 +142,9 @@ export function KeysHoldings() {
         {/* payouts */}
         <section>
           <h2 className="text-[32px] font-bold tracking-[-0.035em]">Payouts</h2>
-          <div className="card !rounded-[22px] px-6 py-2 mt-6">
-            {DEMO_PAYOUTS.map((p, i) => (
+          {demo.payouts.length === 0 && <div className="mt-6"><Empty title="No payouts yet" hint="Fee share you claim from your keys shows up here." /></div>}
+          {demo.payouts.length > 0 && <div className="card !rounded-[22px] px-6 py-2 mt-6">
+            {demo.payouts.map((p, i) => (
               <div key={i} className={`flex items-center gap-3.5 py-4 ${i ? "border-t border-[var(--row)]" : ""}`}>
                 <span className="w-9 h-9 rounded-full bg-brand/12 text-brand inline-flex items-center justify-center shrink-0"><Icon.wallet /></span>
                 <div className="flex-1 min-w-0">
@@ -129,7 +154,7 @@ export function KeysHoldings() {
                 <span className="num text-[15.5px] font-semibold text-brand">+{fmtUsd(p.amount)}</span>
               </div>
             ))}
-          </div>
+          </div>}
         </section>
       </div>
 

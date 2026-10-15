@@ -12,15 +12,20 @@ import type { FeedItem } from "@/lib/queries";
 import { fmtUsd, timeAgo, userLabel, userPath } from "@/lib/format";
 import { Avatar, CoinIcon, Icon } from "./ui";
 
-type Note = { id: string; type: "COPIED" | "REPLY" | "REACTION" | "THESIS_SETTLED"; actorAddress: string | null; actor: { address: string; handle: string | null; displayName: string | null; avatarUrl: string | null } | null; coin: string | null; eventId: string | null; thesisId: string | null; positionId: string | null; payload: Record<string, unknown>; createdAt: string };
+type Note = { id: string; type: "COPIED" | "REPLY" | "REACTION" | "THESIS_SETTLED" | "CREATOR_POST" | "SUB_ENDING"; actorAddress: string | null; actor: { address: string; handle: string | null; displayName: string | null; avatarUrl: string | null } | null; coin: string | null; eventId: string | null; thesisId: string | null; positionId: string | null; payload: Record<string, unknown>; createdAt: string };
 type Alerts = { items: FeedItem[]; notes?: Note[]; seenAt: string | null; unread: number };
 type Row = { key: string; time: string; node: React.ReactNode };
 const EMOJI: Record<string, string> = { fire: "🔥", skull: "💀", eyes: "👀" };
+const POST_WORD: Record<string, string> = { call: "a call", exit: "an exit", lesson: "a lesson", loss: "a loss breakdown", note: "a note" };
+const timeAhead = (iso: string) => {
+  const d = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  return d <= 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} days`;
+};
 
 /** a social notification: who did what to which of your trades or theses */
 function NoteRow({ n, me, onClick }: { n: Note; me?: string | null; onClick?: () => void }) {
   const who = n.actor ? userLabel(n.actor) : n.actorAddress ? n.actorAddress.slice(0, 6) + "…" + n.actorAddress.slice(-4) : "";
-  const p = n.payload as { side?: string; sizeUsd?: number; leverage?: number; text?: string; emoji?: string; outcome?: string; realisedPnl?: number; eventType?: string };
+  const p = n.payload as { side?: string; sizeUsd?: number; leverage?: number; text?: string; emoji?: string; outcome?: string; realisedPnl?: number; eventType?: string; kind?: string; handle?: string; paidUntil?: string };
   const thing = p.eventType === "THESIS" ? "thesis" : "trade";
   let text: React.ReactNode;
   let sub: React.ReactNode = null;
@@ -36,11 +41,19 @@ function NoteRow({ n, me, onClick }: { n: Note; me?: string | null; onClick?: ()
     case "REACTION":
       text = <><b>{who}</b> reacted {EMOJI[p.emoji ?? ""] ?? ""} to your <b>{n.coin}</b> {thing}</>;
       break;
+    case "CREATOR_POST":
+      text = <><b>{who}</b> posted {POST_WORD[p.kind ?? ""] ?? "an update"}{n.coin ? <> on <b>{n.coin}</b></> : null}</>;
+      sub = p.text ? <span>{p.text}</span> : null;
+      break;
+    case "SUB_ENDING":
+      text = <>Your subscription to <b>{who}</b> ends {p.paidUntil ? timeAhead(p.paidUntil) : "soon"}</>;
+      sub = <>Renew from their page to keep the feed</>;
+      break;
     default:
       text = <>Your <b>{n.coin}</b> thesis settled: <b className={p.outcome === "PROFIT" ? "text-up" : p.outcome === "OPEN" ? "" : "text-down"}>{(p.outcome ?? "").toLowerCase()}</b></>;
       sub = p.realisedPnl !== undefined ? <span className={(p.realisedPnl ?? 0) >= 0 ? "text-up" : "text-down"}>{fmtUsd(p.realisedPnl ?? 0, { sign: true })}</span> : null;
   }
-  const href = n.thesisId && me ? `/t/${me}/thesis/${n.thesisId}` : `/m/${n.coin ?? ""}`;
+  const href = n.type === "CREATOR_POST" || n.type === "SUB_ENDING" ? `/keys/${encodeURIComponent(p.handle ?? n.actorAddress ?? "")}` : n.thesisId && me ? `/t/${me}/thesis/${n.thesisId}` : `/m/${n.coin ?? ""}`;
   return (
     <Link href={href} onClick={onClick} className="flex items-center gap-2.5 px-3 py-2.5 row-hover border-b border-line/60 last:border-0" data-testid={`note-${n.type}`}>
       {n.actorAddress ? <Avatar address={n.actorAddress} url={n.actor?.avatarUrl} handle={n.actor?.handle ?? n.actor?.displayName} size={30} /> : <span className="w-[30px] h-[30px] rounded-full bg-thesis/15 text-thesis inline-flex items-center justify-center shrink-0"><Icon.check /></span>}
@@ -145,7 +158,7 @@ export function AlertsBell() {
         <div className="absolute right-0 top-11 w-[360px] max-w-[calc(100vw-24px)] card shadow-2xl overflow-hidden z-50">
           <div className="flex items-center justify-between px-3 h-10 border-b border-line">
             <span className="text-[13px] font-semibold">Alerts</span>
-            <span className="text-[11px] text-dim">traders you follow · copies, comments, reactions on yours</span>
+            <span className="text-[11px] text-dim">traders you follow · subscriptions · activity on yours</span>
           </div>
           <div className="max-h-[70vh] overflow-y-auto">
             {q.isLoading && <div className="p-4 text-xs text-dim">Loading…</div>}

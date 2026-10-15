@@ -52,6 +52,20 @@ railway, three services from this repo: **web** (uses `railway.json`: `pnpm star
 | `PINNED_ADDRESSES` | extra always-tracked traders, on top of the hand-verified list in `src/lib/featured.ts` |
 | `HL_LEADERBOARD_TOP_N` / `HL_LEADERBOARD_REFRESH_MS` | how many hyperliquid leaderboard rows to mirror (10) and how often (1h) |
 | `HL_MOCK` | offline synthetic exchange |
+| `NEXT_PUBLIC_KEYS_LIVE` | `true` turns /keys from the sample-data preview into the real thing: creators, paid subscriptions, keys |
+| `NEXT_PUBLIC_SUBS_TREASURY` | hyperliquid address for the platform's 10% of subscriptions. empty = creators keep 100% |
+| `NEXT_PUBLIC_KEYS_CONTRACT` / `NEXT_PUBLIC_KEYS_USDC` | the keys contract and USDC on HyperEVM. empty = keys show as opening soon |
+| `HYPEREVM_RPC` / `KEYS_START_BLOCK` | where the worker reads the keys contract, and from which block |
+| `KEYS_DISTRIBUTOR_KEY` / `BUILDER_PRIVATE_KEY` | payout script only: the HyperEVM wallet that deposits holder fees, and the builder wallet that pays traders |
+
+## keys
+
+`/keys` is where traders get paid. everything about the money lives in `src/lib/keys.ts`.
+
+- **subscriptions.** each trader sets one monthly price, free to $500, in the studio. subscribing sends USDC on hyperliquid straight to the trader (and 10% to `NEXT_PUBLIC_SUBS_TREASURY` when set): `usdSend` from perps, or `spotSend` for unified accounts. the server quotes the transfers (`POST /api/keys/subscribe`), then finds them in the subscriber's ledger (`userNonFundingLedgerUpdates`) inside the quote's 20 minute window and grants 30 days (`/subscribe/confirm`). a transfer hash pays for one month, once. nothing is custodied and nothing auto-debits: the worker sends a renewal alert three days before a month runs out. subscriber posts are gated on the server; a locked post leaves without its text.
+- **keys.** `contracts/src/SocialLiquidKeys.sol` on HyperEVM. a linear curve per trader ($5 + $0.25 per key in supply, 2000 cap). on every buy 10% of the curve price goes to the trader and 90% stays in that trader's reserve, so every key can always be sold back for what it put in; 2% protocol fee each way. the worker indexes `Trade`, `Claimed` and `Listed` events into `KeyTrade` / `KeyClaim`, which is where prices, holders and cost basis come from.
+- **fee share.** builder fees on positions opened with "Take this trade" (`?copy=`) are credited to the copied trader by day (`KeyFeeAccrual`): 40% to their key holders, 30% to the trader, 30% kept. `pnpm keys:distribute` (dry run by default, `--execute` to send) deposits the holder share into the contract, where holders claim it pro rata, and pays traders with `usdSend`.
+- **contract.** `cd contracts && npm install && npm test` compiles with solc 0.8.30 and runs the suite in an in-process EVM, including a randomised model check of reserves and payouts. `npm run deploy` with `KEYS_DEPLOYER_KEY`, `KEYS_USDC_ADDRESS` and `KEYS_TREASURY` deploys it. it is unaudited.
 
 ## how trading works
 

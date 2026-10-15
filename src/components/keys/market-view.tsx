@@ -2,14 +2,15 @@
 /** /keys/market: every trader's key, ranked. the top three on a podium, the rest in a sortable list */
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useKeys } from "@/hooks/use-keys";
 import { HOLDER_SHARE } from "@/lib/keys";
-import { DEMO_PLATFORM, DEMO_TRADERS, type DemoTrader } from "@/lib/keys-demo";
+import type { KeysTrader } from "@/lib/keys-model";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
-import { Face, ResetPreview, Sparkline, priceLabel, usdBig } from "./parts";
+import { Face, KeysState, ResetPreview, Sparkline, priceLabel, usdBig } from "./parts";
 
 type Sort = "top" | "rising" | "yield" | "cheap";
-const SORTS: { key: Sort; label: string; by: (a: DemoTrader, b: DemoTrader) => number }[] = [
+const SORTS: { key: Sort; label: string; by: (a: KeysTrader, b: KeysTrader) => number }[] = [
   { key: "top", label: "Top", by: (a, b) => b.key.price * b.key.minted - a.key.price * a.key.minted },
   { key: "rising", label: "Rising", by: (a, b) => b.key.change24h - a.key.change24h },
   { key: "yield", label: "Highest yield", by: (a, b) => b.key.yieldPct - a.key.yieldPct },
@@ -18,24 +19,28 @@ const SORTS: { key: Sort; label: string; by: (a: DemoTrader, b: DemoTrader) => n
 
 export function KeysMarket() {
   const [sort, setSort] = useState<Sort>("top");
-  const ranked = useMemo(() => [...DEMO_TRADERS].sort(SORTS[0].by), []);
+  const data = useKeys();
+  const { platform } = data;
+  // the market is for keys: live, only traders who listed theirs onchain
+  const keyed = useMemo(() => data.traders.filter((t) => t.key.listed), [data.traders]);
+  const ranked = useMemo(() => [...keyed].sort(SORTS[0].by), [keyed]);
   const podium = ranked.slice(0, 3);
-  const rest = useMemo(() => [...DEMO_TRADERS].sort(SORTS.find((s) => s.key === sort)!.by), [sort]);
-  const tape = [...DEMO_TRADERS, ...DEMO_TRADERS];
+  const rest = useMemo(() => [...keyed].sort(SORTS.find((s) => s.key === sort)!.by), [keyed, sort]);
+  const tape = keyed.length >= 4 ? [...keyed, ...keyed] : [];
   return (
     <div data-testid="keys-market">
       {/* tape */}
-      <div className="card overflow-hidden !rounded-[16px]" aria-label="Key prices">
+      {tape.length > 0 && <div className="card overflow-hidden !rounded-[16px]" aria-label="Key prices">
         <div className="k-tape">
           {tape.map((t, i) => (
-            <Link key={i} href={`/keys/${t.handle}`} className="inline-flex items-center gap-2.5 px-6 h-11 text-[13.5px] whitespace-nowrap border-r border-[var(--hair)] hover:bg-[var(--row-hover)]" tabIndex={i < DEMO_TRADERS.length ? 0 : -1}>
+            <Link key={i} href={`/keys/${t.handle}`} className="inline-flex items-center gap-2.5 px-6 h-11 text-[13.5px] whitespace-nowrap border-r border-[var(--hair)] hover:bg-[var(--row-hover)]" tabIndex={i < keyed.length ? 0 : -1}>
               <b>{t.handle}</b>
               <span className="num text-fg-2">{fmtUsd(t.key.price)}</span>
               <span className={`num font-semibold ${t.key.change24h >= 0 ? "text-up" : "text-down"}`}>{t.key.change24h >= 0 ? "+" : ""}{t.key.change24h}%</span>
             </Link>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* header */}
       <section className="text-center pt-14 @3xl:pt-16">
@@ -45,13 +50,13 @@ export function KeysMarket() {
           the <span className="k-brand-glow">best traders.</span>
         </h1>
         <p className="mt-6 mx-auto max-w-[600px] text-[17px] leading-relaxed text-fg-2">
-          A key is a share of a trader. Holders split {Math.round(HOLDER_SHARE * 100)}% of the trading fees that trader&apos;s followers generate, paid in USDC. Prices move with demand and with the verified record.
+          A key is a share of a trader. Holders split {Math.round(HOLDER_SHARE * 100)}% of the trading fees that trader&apos;s followers generate, paid in USDC. Each key costs a little more than the one before it, and every key can always be sold back.
         </p>
         <div className="card inline-grid grid-cols-3 mt-9 !rounded-[22px] overflow-hidden text-left">
           {[
-            { v: fmtUsd(DEMO_PLATFORM.paidToHolders30d, { compact: true }), l: "paid to holders this month", brand: true },
-            { v: usdBig(DEMO_PLATFORM.heldInKeys), l: "held in keys" },
-            { v: `${DEMO_PLATFORM.avgYield}%`, l: "average holder yield" },
+            { v: fmtUsd(platform.paidToHolders30d, { compact: true }), l: "paid to holders this month", brand: true },
+            { v: usdBig(platform.heldInKeys), l: "held in keys" },
+            { v: `${platform.avgYield}%`, l: "average holder yield" },
           ].map((s, i) => (
             <div key={s.l} className={`px-5 @3xl:px-8 py-5 ${i ? "border-l border-[var(--hair)]" : ""}`}>
               <div className={`num text-[22px] @3xl:text-[26px] font-semibold tracking-[-0.03em] ${s.brand ? "text-brand" : ""}`}>{s.v}</div>
@@ -61,15 +66,21 @@ export function KeysMarket() {
         </div>
       </section>
 
+      {data.mode === "live" && data.ready && keyed.length === 0 && (
+        <div className="mt-16">
+          <KeysState title="No keys listed yet" body="Traders list their key from the creator studio. The first ones will show up here the moment they do." action={<Link href="/keys/studio" className="btn btn-primary h-12 px-6 rounded-[14px]">List yours</Link>} />
+        </div>
+      )}
+
       {/* podium */}
-      <section className="grid @3xl:grid-cols-3 gap-5 items-end mt-16" data-testid="keys-podium">
-        {[podium[1], podium[0], podium[2]].map((t) => (
+      {podium.length > 0 && <section className={`grid gap-5 items-end mt-16 ${podium.length === 3 ? "@3xl:grid-cols-3" : podium.length === 2 ? "@3xl:grid-cols-2 max-w-[760px] mx-auto" : "max-w-[400px] mx-auto"}`} data-testid="keys-podium">
+        {(podium.length === 3 ? [podium[1], podium[0], podium[2]] : podium).map((t) => (
           <PodiumCard key={t.handle} t={t} rank={ranked.indexOf(t) + 1} />
         ))}
-      </section>
+      </section>}
 
       {/* list */}
-      <section className="mt-16">
+      {rest.length > 0 && <section className="mt-16">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h2 className="text-[30px] font-bold tracking-[-0.035em]">All keys</h2>
           <div className="seg" role="tablist" aria-label="Sort keys">
@@ -123,7 +134,7 @@ export function KeysMarket() {
             </tbody>
           </table>
         </div>
-      </section>
+      </section>}
 
       <ResetPreview />
     </div>
@@ -132,7 +143,7 @@ export function KeysMarket() {
 
 const MEDAL: Record<number, string> = { 1: "#f5b236", 2: "#c3ccd3", 3: "#c08322" };
 
-function PodiumCard({ t, rank }: { t: DemoTrader; rank: number }) {
+function PodiumCard({ t, rank }: { t: KeysTrader; rank: number }) {
   const first = rank === 1;
   return (
     <article className={`${first ? "k-holo order-first @3xl:order-none" : "card !rounded-[30px]"} ${first ? "" : "p-0"}`} data-testid={`podium-${rank}`}>

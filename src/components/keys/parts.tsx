@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type CSSProperties, type ReactNode } from "react";
-import { keysDemo, useKeysDemo } from "@/hooks/use-keys-demo";
-import type { DemoTrader } from "@/lib/keys-demo";
+import { useKeys, useKeysActions } from "@/hooks/use-keys";
+import { useKeysToast } from "@/hooks/use-keys-toast";
+import type { KeysTrader } from "@/lib/keys-model";
 import { fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
 
@@ -20,8 +21,9 @@ const TABS = [
 /** every keys page: the sub-nav, the preview notice and a container the layouts size themselves against */
 export function KeysFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const demo = useKeysDemo();
-  const unread = Object.values(demo.subs).reduce((a, s) => a + s.unread, 0);
+  const data = useKeys();
+  const toast = useKeysToast();
+  const unread = Object.values(data.me.subs).reduce((a, s) => a + s.unread, 0);
   return (
     <div className="@container pb-10 overflow-x-clip" data-testid="keys-section">
       <div className="sticky top-0 z-20 -mx-px px-px pt-px pb-3 bg-bg/85 backdrop-blur">
@@ -34,14 +36,22 @@ export function KeysFrame({ children }: { children: ReactNode }) {
               </Link>
             ))}
           </nav>
-          <span className="pill pill-warn ml-auto" title="Sample traders and numbers. Nothing in the preview is bought or charged.">Preview · sample data</span>
+          {data.mode === "preview" ? (
+            <span className="pill pill-warn ml-auto" title="Sample traders and numbers. Nothing in the preview is bought or charged.">Preview · sample data</span>
+          ) : (
+            <span className="pill pill-brand ml-auto" title="Payments in USDC on Hyperliquid, keys on HyperEVM">Live · USDC</span>
+          )}
         </div>
       </div>
       {children}
-      {demo.toast && (
-        <div key={demo.toast.id} role="status" className="toast-in fixed bottom-20 md:bottom-16 left-1/2 -translate-x-1/2 z-50 pop px-4 py-3 flex items-center gap-3 max-w-[92vw]" data-testid="keys-toast">
-          <span className="w-7 h-7 rounded-full bg-brand/15 text-brand inline-flex items-center justify-center shrink-0"><Icon.check /></span>
-          <span className="text-[13.5px] text-fg-2">{demo.toast.text}</span>
+      {toast && (
+        <div key={toast.id} role={toast.tone === "error" ? "alert" : "status"} className="toast-in fixed bottom-20 md:bottom-16 left-1/2 -translate-x-1/2 z-50 pop px-4 py-3 flex items-center gap-3 max-w-[92vw]" data-testid="keys-toast">
+          {toast.tone === "busy" ? (
+            <span className="w-7 h-7 rounded-full border-2 border-brand/25 border-t-brand animate-spin shrink-0" aria-hidden="true" />
+          ) : (
+            <span className={`w-7 h-7 rounded-full inline-flex items-center justify-center shrink-0 ${toast.tone === "error" ? "bg-down/15 text-down" : "bg-brand/15 text-brand"}`}>{toast.tone === "error" ? "!" : <Icon.check />}</span>
+          )}
+          <span className="text-[13.5px] text-fg-2">{toast.text}</span>
         </div>
       )}
     </div>
@@ -50,7 +60,7 @@ export function KeysFrame({ children }: { children: ReactNode }) {
 
 /* ---------- people ---------- */
 
-type Who = Pick<DemoTrader, "initials" | "colors">;
+type Who = Pick<KeysTrader, "initials" | "colors"> & { avatarUrl?: string | null };
 
 /** a trader's face: gradient initials, optionally inside the story ring that says they are live */
 export function Face({ who, size, ring, live, square, className = "" }: { who: Who; size: number; ring?: "live" | "off"; live?: boolean; square?: boolean; className?: string }) {
@@ -58,7 +68,7 @@ export function Face({ who, size, ring, live, square, className = "" }: { who: W
   const font = Math.round(size * 0.3);
   const face = (
     <span className={`k-face ${square ? "k-square" : ""} ${ring ? "" : className}`} style={{ ...vars, ...(ring ? {} : { width: size, height: size }), fontSize: font }} aria-hidden="true">
-      {who.initials}
+      {who.avatarUrl ? <img src={who.avatarUrl} alt="" className="w-full h-full object-cover" style={{ borderRadius: "inherit" }} /> : who.initials}
     </span>
   );
   if (!ring) return face;
@@ -81,7 +91,7 @@ export function Verified({ size = 18 }: { size?: number }) {
 
 /* ---------- the key card ---------- */
 
-export function KeyCard({ t, size = "md", serial, className = "" }: { t: DemoTrader; size?: "sm" | "md" | "lg"; serial?: string; className?: string }) {
+export function KeyCard({ t, size = "md", serial, className = "" }: { t: KeysTrader; size?: "sm" | "md" | "lg"; serial?: string; className?: string }) {
   const dims = { sm: "h-[168px] p-[18px]", md: "h-[200px] p-[22px]", lg: "h-[236px] p-[26px]" }[size];
   const up = t.key.change24h >= 0;
   return (
@@ -103,7 +113,9 @@ export function KeyCard({ t, size = "md", serial, className = "" }: { t: DemoTra
             {size === "lg" && <div className="text-[12px] text-muted">Key price</div>}
             <div className={`num font-semibold tracking-tight ${size === "lg" ? "text-[30px]" : "text-[26px]"}`}>{fmtUsd(t.key.price)}</div>
           </div>
-          {size === "sm" ? (
+          {!t.key.listed ? (
+            <span className="text-[12px] font-semibold text-muted">Not listed yet</span>
+          ) : size === "sm" ? (
             <span className={`num text-[13px] font-semibold ${up ? "text-up" : "text-down"}`}>{up ? "+" : ""}{t.key.change24h}%</span>
           ) : (
             <span className="num text-[12.5px] font-bold text-[#04120e] bg-brand px-2.5 py-1 rounded-full">{t.key.yieldPct}% yield</span>
@@ -200,12 +212,15 @@ export function Stepper({ value, onChange, min = 1, max = 50, label }: { value: 
   );
 }
 
-/** the reset link that sits at the bottom of the preview pages */
+/** the reset link that sits at the bottom of the preview pages; nothing in live mode */
 export function ResetPreview() {
+  const { mode } = useKeys();
+  const actions = useKeysActions();
+  if (mode === "live") return null;
   return (
     <p className="text-[12px] text-dim mt-10 text-center">
       Sample traders and numbers. Nothing in the preview is bought or charged.{" "}
-      <button type="button" className="underline hover:text-fg" onClick={() => keysDemo.reset()}>Reset the preview</button>
+      <button type="button" className="underline hover:text-fg" onClick={() => actions.reset()}>Reset the preview</button>
     </p>
   );
 }
@@ -215,4 +230,18 @@ export const priceLabel = (p: number) => (p > 0 ? `$${p}` : "Free");
 /** fmtUsd compact, plus billions */
 /** whole dollars for projections and totals where cents are noise */
 export const usdWhole = (n: number) => `${n < 0 ? "-" : ""}$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
+/** a percentage that may not exist yet (no closed trades, no history) */
+export const pctOrDash = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${n}%`);
+
+/** live-mode states: loading, an error, or a section with nothing in it yet */
+export function KeysState({ title, body, action }: { title: string; body?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="card !rounded-[26px] px-8 py-14 text-center" data-testid="keys-state">
+      <div className="text-[20px] font-bold tracking-tight">{title}</div>
+      {body && <div className="text-[15px] text-muted mt-2 max-w-[460px] mx-auto leading-relaxed">{body}</div>}
+      {action && <div className="mt-6 flex justify-center">{action}</div>}
+    </div>
+  );
+}
+
 export const usdBig = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(1).replace(/\.0$/, "")}B` : fmtUsd(n, { compact: true }));
