@@ -528,6 +528,27 @@ export async function isVault(address: string): Promise<boolean> {
   return v;
 }
 
+/** a USDC transfer between two hyperliquid accounts, as it appears in the sender's ledger */
+export type HlTransfer = { hash: string; time: number; from: string; to: string; usd: number; kind: "usdSend" | "spotSend" | "sendAsset" };
+
+/**
+ * USDC transfers out of `address` in a time window: usdSend (perps balance), spotSend of USDC and sendAsset of
+ * USDC between balances. read from the non-funding ledger, which hyperliquid writes as soon as a transfer settles.
+ */
+export async function usdcTransfersFrom(address: string, startTime: number, endTime?: number): Promise<HlTransfer[]> {
+  if (HL_MOCK) return [];
+  const rows = await info().userNonFundingLedgerUpdates({ user: address as `0x${string}`, startTime, ...(endTime !== undefined ? { endTime } : {}) });
+  const me = address.toLowerCase();
+  const out: HlTransfer[] = [];
+  for (const r of rows) {
+    const d = r.delta;
+    if (d.type === "internalTransfer" && d.user.toLowerCase() === me) out.push({ hash: r.hash, time: r.time, from: me, to: d.destination.toLowerCase(), usd: Number(d.usdc), kind: "usdSend" });
+    else if (d.type === "spotTransfer" && d.token === "USDC" && d.user.toLowerCase() === me) out.push({ hash: r.hash, time: r.time, from: me, to: d.destination.toLowerCase(), usd: Number(d.amount), kind: "spotSend" });
+    else if (d.type === "send" && d.token === "USDC" && d.user.toLowerCase() === me) out.push({ hash: r.hash, time: r.time, from: me, to: d.destination.toLowerCase(), usd: Number(d.amount), kind: "sendAsset" });
+  }
+  return out;
+}
+
 export type HlPortfolioWindow = { accountValueHistory: [number, string][]; pnlHistory: [number, string][]; vlm: string };
 /** per-user pnl / account value / volume by window. this is the data hyperliquid's own leaderboard is built from. weight 2. */
 export async function portfolio(address: string): Promise<Record<string, HlPortfolioWindow>> {

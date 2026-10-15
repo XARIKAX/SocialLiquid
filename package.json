@@ -14,7 +14,8 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
-    "hl:top": "tsx scripts/hl-top.ts"
+    "hl:top": "tsx scripts/hl-top.ts",
+    "keys:distribute": "tsx scripts/keys-distribute.ts"
   },
   "dependencies": {
     "@nktkas/hyperliquid": "0.33.3",

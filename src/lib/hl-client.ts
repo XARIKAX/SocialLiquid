@@ -62,6 +62,12 @@ export async function usdClassTransferWithWallet(wallet: WalletClient, chainId: 
   return (await exchange(wallet, chainId)).usdClassTransfer({ amount, toPerp });
 }
 
+/** send USDC from the perps balance to another hyperliquid address (free, instant). the keys section pays subscriptions this way */
+export async function usdSendWithWallet(wallet: WalletClient, chainId: number, destination: string, amount: string) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(destination)) throw new Error("bad destination address");
+  return (await exchange(wallet, chainId)).usdSend({ destination: destination as `0x${string}`, amount });
+}
+
 /** send a spot token to a hyperliquid address. `token` is "NAME:tokenId" as spotMeta lists it */
 export async function spotSendWithWallet(wallet: WalletClient, chainId: number, destination: string, token: string, amount: string) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(destination)) throw new Error("bad destination address");
