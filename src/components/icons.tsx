@@ -38,6 +38,7 @@ export const Icon = {
   trend: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="M5 19 19 5" /><circle cx="5" cy="19" r="1.6" /><circle cx="19" cy="5" r="1.6" /></svg>,
   hline: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="M3 12h18" /><circle cx="12" cy="12" r="1.6" /></svg>,
   ruler: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="m3 17 14-14 4 4L7 21z" /><path d="m8 8 2 2M11 5l2 2M14 11l2 2M5 14l2 2" /></svg>,
+  key: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 9.2-9.2M17 6l3 3M14 9l2 2" /></svg>,
   lock: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>,
   eye: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>,
   eyeOff: (p: { className?: string }) => <svg width="15" height="15" viewBox="0 0 24 24" {...P} className={p.className}><path d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M9.9 5.2A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.8 8.6 2 12 2 12s3.5 7 10 7c1.6 0 3-.3 4.3-.9" /></svg>,

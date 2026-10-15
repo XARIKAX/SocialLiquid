@@ -73,7 +73,7 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-/** phone bottom bar: Feed · Markets · Trade · Portfolio · Me */
+/** phone bottom bar: Feed · Markets · Trade · Keys · Portfolio · Me */
 function MobileNav({ tab, onFeed, onPage }: { tab: "feed" | "page"; onFeed: () => void; onPage: () => void }) {
   const pathname = usePathname();
   const { signedIn, isConnected, me, signIn } = useAuth();
@@ -100,7 +100,7 @@ function MobileNav({ tab, onFeed, onPage }: { tab: "feed" | "page"; onFeed: () =
   const handle = me?.user?.handle;
   const meHref = handle ? `/t/${handle}` : null;
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 h-14 border-t border-line bg-panel/95 backdrop-blur grid grid-cols-5 z-30 pb-[env(safe-area-inset-bottom)]" aria-label="mobile" data-testid="mobile-nav">
+    <nav className="md:hidden fixed bottom-0 inset-x-0 h-14 border-t border-line bg-panel/95 backdrop-blur grid grid-cols-6 z-30 pb-[env(safe-area-inset-bottom)]" aria-label="mobile" data-testid="mobile-nav">
       <button className={`${item} ${tab === "feed" ? on : off}`} onClick={onFeed} aria-current={tab === "feed" ? "page" : undefined}>
         <Icon.users /> Feed
       </button>
@@ -109,6 +109,9 @@ function MobileNav({ tab, onFeed, onPage }: { tab: "feed" | "page"; onFeed: () =
       </Link>
       <Link href={`/m/${encodeURIComponent(lastCoin)}`} className={`${item} ${is(/^\/(m\/|trade)/) ? on : off}`} onClick={onPage}>
         <Icon.spark /> Trade
+      </Link>
+      <Link href="/keys" className={`${item} ${is(/^\/keys/) ? on : off}`} onClick={onPage}>
+        <Icon.key /> Keys
       </Link>
       <Link href="/portfolio" className={`${item} ${is(/^\/portfolio/) ? on : off}`} onClick={onPage}>
         <Icon.wallet /> Portfolio
