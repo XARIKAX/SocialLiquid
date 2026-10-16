@@ -11,7 +11,7 @@ import { Buffer } from "buffer";
 import bs58 from "bs58";
 import * as web3 from "@solana/web3.js";
 import { JUPITER_API, KEYS_LOOKUP_TABLE, KEYS_PROGRAM, KEYS_USDC_MINT, SOLANA_RPC } from "./keys";
-import { buyQuote, failedWith, keysErrorName, keysProgram, sellQuote, TOKEN_PROGRAM, WSOL_MINT } from "./keys-sol";
+import { buyQuote, curveOf, failedWith, keysErrorName, keysProgram, sellQuote, TOKEN_PROGRAM, WSOL_MINT } from "./keys-sol";
 import { connectSolana, walletSend } from "./solana-wallet";
 
 const { ComputeBudgetProgram, Connection, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction } = web3;
@@ -37,6 +37,7 @@ const FRIENDLY: Record<string, string> = {
   Insufficient: "You don't hold that many keys.",
   AlreadyListed: "Your key is already listed.",
   NoHolders: "Nobody holds this key yet.",
+  BadPrice: "Pick a starting price between $1 and $1,000, in whole cents.",
 };
 export function friendly(e: unknown): string {
   const m = (e as { message?: string })?.message ?? String(e);
@@ -136,7 +137,7 @@ export async function buyKeys(trader: string, qty: number, payWith: PayWith, onS
   const buyer = new PublicKey(account.address);
   const [c, t, bal, own] = await Promise.all([readConfig(), readKey(trader), usdcOf(buyer), ownTables()]);
   if (c.buysPaused) throw new Error(FRIENDLY.Paused);
-  const q = buyQuote(c, t.supply, BigInt(qty));
+  const q = buyQuote(curveOf(c, t), t.supply, BigInt(qty));
   // another buyer landing first raises the price: allow 3% before the program refuses
   const maxTotal = (q.total * 103n) / 100n;
   const buyIx = (max: bigint) => kp.buy({ buyer, trader, treasuryUsdc: c.treasuryUsdc, amount: BigInt(qty), maxTotal: max });
@@ -171,7 +172,7 @@ export async function sellKeys(trader: string, qty: number, onStep: (s: string) 
   const { account } = await connectSolana();
   const seller = new PublicKey(account.address);
   const [c, t] = await Promise.all([readConfig(), readKey(trader)]);
-  const q = sellQuote(c, t.supply, BigInt(qty));
+  const q = sellQuote(curveOf(c, t), t.supply, BigInt(qty));
   onStep(`Confirm selling ${qty} ${qty === 1 ? "key" : "keys"} for about ${dollars(q.net)} in your wallet.`);
   await mustSend(seller, [units(120_000), kp.createAtaIdempotent(seller, seller), kp.sell({ seller, trader, treasuryUsdc: c.treasuryUsdc, amount: BigInt(qty), minNet: (q.net * 97n) / 100n })], await ownTables());
   return q.net;
@@ -190,11 +191,14 @@ export async function claimAll(traders: string[], onStep: (s: string) => void) {
   }
 }
 
-/** list the connected wallet's key, opening its USDC account first so buyers never pay for it */
-export async function listKey(onStep: (s: string) => void) {
+/**
+ * list the connected wallet's key at a starting price (USDC), opening its USDC account first so buyers never pay
+ * for it. the price is fixed from then on
+ */
+export async function listKey(startPrice: number, onStep: (s: string) => void) {
   const kp = program();
   const { account } = await connectSolana();
   const me = new PublicKey(account.address);
-  onStep("Confirm listing your key in your Solana wallet.");
-  await mustSend(me, [units(80_000), kp.createAtaIdempotent(me, me), kp.list(me)]);
+  onStep(`Confirm listing your key at $${startPrice.toFixed(2)} in your Solana wallet.`);
+  await mustSend(me, [units(80_000), kp.createAtaIdempotent(me, me), kp.list(me, BigInt(Math.round(startPrice * 100)) * 10_000n)]);
 }

@@ -16,7 +16,7 @@ export const TOKEN = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 
 export type Result = { ok: true; events: KeysEvent[]; cu: bigint; logs: string[] } | { ok: false; reason: string; logs: string[] };
 
-export function world(opts: { so?: string; base?: number; slope?: number; cutBps?: number; feeBps?: number; init?: boolean } = {}) {
+export function world(opts: { so?: string; base?: number; minBase?: number; slope?: number; cutBps?: number; feeBps?: number; init?: boolean } = {}) {
   const svm = new LiteSVM();
   const programId = Keypair.generate().publicKey;
   svm.addProgram(programId, readFileSync(opts.so ?? process.env.KEYS_SO ?? SO));
@@ -98,15 +98,17 @@ export function world(opts: { so?: string; base?: number; slope?: number; cutBps
   const treasury = user();
   openUsdc(treasury);
   const treasuryUsdc = ata(treasury.publicKey);
+  // the curve of a trader who lists at the default starting price (opts.base, $5)
   const curve = { basePrice: usd(opts.base ?? 5), slope: usd(opts.slope ?? 0.25), traderCutBps: BigInt(opts.cutBps ?? 1000), protocolFeeBps: BigInt(opts.feeBps ?? 200) };
-  if (opts.init !== false) must([k.initialize({ admin: admin.publicKey, treasuryUsdc, ...curve })], [admin]);
+  const init = { admin: admin.publicKey, treasuryUsdc, minBasePrice: usd(opts.minBase ?? 1), slope: curve.slope, traderCutBps: curve.traderCutBps, protocolFeeBps: curve.protocolFeeBps };
+  if (opts.init !== false) must([k.initialize(init)], [admin]);
 
   const read = {
     config: () => k.decodeConfig(svm.getAccount(k.config)?.data),
     trader: (t: web3.PublicKey) => k.decodeTrader(svm.getAccount(k.traderPda(t))?.data),
     holder: (t: web3.PublicKey, h: web3.PublicKey) => k.decodeHolder(svm.getAccount(k.holderPda(t, h))?.data),
   };
-  return { svm, k, programId, admin, treasury, treasuryUsdc, mint: mint.publicKey, curve, send, must, user, fund, openUsdc, usdc, balance, read, ata };
+  return { svm, k, programId, admin, treasury, treasuryUsdc, mint: mint.publicKey, curve, init, send, must, user, fund, openUsdc, usdc, balance, read, ata };
 }
 
 function u64(v: bigint) {

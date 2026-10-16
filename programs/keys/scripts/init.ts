@@ -7,7 +7,8 @@
  *   KEYS_ADMIN_KEY=~/.config/solana/id.json   keypair file or base58 secret: pays, and becomes the program admin
  *   KEYS_TREASURY=…                       wallet that receives protocol fees (its USDC account is created here)
  *   KEYS_USDC_MINT=EPjF…                  default: mainnet USDC
- *   KEYS_BASE_PRICE_USDC=5  KEYS_SLOPE_USDC=0.25  KEYS_TRADER_CUT_BPS=1000  KEYS_PROTOCOL_FEE_BPS=200
+ *   KEYS_MIN_BASE_PRICE_USDC=1   the lowest starting price a trader may pick for their key (they choose when listing)
+ *   KEYS_SLOPE_USDC=0.25  KEYS_TRADER_CUT_BPS=1000  KEYS_PROTOCOL_FEE_BPS=200
  *
  * run: npm run init (from programs/keys). prints the NEXT_PUBLIC_* values for the app.
  */
@@ -38,12 +39,12 @@ const mint = process.env.KEYS_USDC_MINT ?? USDC_MAINNET;
 const treasury = new PublicKey(need("KEYS_TREASURY"));
 const k = keysProgram(web3, programId, mint);
 const curve = {
-  basePrice: usd("KEYS_BASE_PRICE_USDC", "5"),
+  minBasePrice: usd("KEYS_MIN_BASE_PRICE_USDC", "1"),
   slope: usd("KEYS_SLOPE_USDC", "0.25"),
   traderCutBps: BigInt(process.env.KEYS_TRADER_CUT_BPS ?? "1000"),
   protocolFeeBps: BigInt(process.env.KEYS_PROTOCOL_FEE_BPS ?? "200"),
 };
-if ((curve.basePrice * curve.traderCutBps) % 10000n || (curve.slope * curve.traderCutBps) % 10000n) throw new Error("base price and slope must make the trader cut exact (the program refuses otherwise)");
+if ((curve.slope * curve.traderCutBps) % 10000n) throw new Error("the slope must make the trader cut exact (the program refuses otherwise)");
 
 const send = (ixs: web3.TransactionInstruction[]) => sendAndConfirmTransaction(conn, new Transaction().add(...ixs), [admin], { commitment: "confirmed" });
 
@@ -53,7 +54,7 @@ if (k.decodeConfig((await conn.getAccountInfo(k.config))?.data)) {
   console.log("already initialised");
 } else {
   const sig = await send([k.createAtaIdempotent(admin.publicKey, treasury), k.initialize({ admin: admin.publicKey, treasuryUsdc, ...curve })]);
-  console.log(`initialised: base ${curve.basePrice}, slope ${curve.slope}, trader cut ${curve.traderCutBps} bps, fee ${curve.protocolFeeBps} bps (${sig})`);
+  console.log(`initialised: starting prices from $${Number(curve.minBasePrice) / 1e6}, slope $${Number(curve.slope) / 1e6}, trader cut ${curve.traderCutBps} bps, fee ${curve.protocolFeeBps} bps (${sig})`);
 }
 
 const slot = await conn.getSlot("finalized");

@@ -25,7 +25,7 @@ export type KeysCall = {
   id?: string;
   kind: PostKind;
   when: string;
-  /** empty when locked: the server never sends a subscriber post to someone who has not paid */
+  /** empty when locked: the server never sends a holders-only post to someone without a key */
   text: string;
   locked?: boolean;
   coin?: string | null;
@@ -55,6 +55,9 @@ export type KeysTrader = {
   key: {
     /** the trader listed their key on the keys program, so it can be bought */
     listed: boolean;
+    /** the price the first key sold at, chosen by the trader */
+    start: number;
+    /** the next key's price */
     price: number;
     change24h: number;
     holders: number;
@@ -62,7 +65,8 @@ export type KeysTrader = {
     yieldPct: number;
     history: number[];
   };
-  sub: { price: number; subscribers: number; renewRate: number | null; cadence: Cadence; leadTime: string | null; offers: OfferKey[]; pinned: string };
+  /** what holding the key unlocks */
+  feed: { cadence: Cadence; leadTime: string | null; offers: OfferKey[]; pinned: string };
   calls: KeysCall[];
 };
 
@@ -70,21 +74,21 @@ export type KeysFeedPost = { id?: string; handle: string; when: string; text: st
 
 export type KeysPlatform = { live: number; traders: number; paidToCreators: number; routed: number; paidToHolders30d: number; heldInKeys: number; avgYield: number };
 
-export type KeysHolding = { qty: number; avgCost: number; earned: number };
-export type KeysSub = { since: string; renews: string; unread: number; cancelled?: boolean; paidUntil?: string };
+/** keys held in one trader, and what is new in their feed since the holder last looked */
+export type KeysHolding = { qty: number; avgCost: number; earned: number; unread: number };
 export type KeysPayout = { from: string; when: string; amount: number };
 
 export type KeysViewer = { handle: string; initials: string; colors: [string, string]; avatarUrl?: string | null; address?: string; /** the linked Solana wallet */ solana?: string | null; followers: number; pnl30dPct: number | null; pnl30d?: number };
 
-export type KeysStudioSettings = { price: number; offers: OfferKey[]; cadence: Cadence; pinned?: string; saved: boolean };
+/** a trader's page: the starting price of their key and what holding it unlocks */
+export type KeysStudioSettings = { startPrice: number; offers: OfferKey[]; cadence: Cadence; pinned?: string; saved: boolean };
 export type KeysStudio = {
-  key: { price: number; holders: number; raised: number };
+  key: { price: number; holders: number; raised: number; minted: number };
   earnedThisMonth: number;
-  months: { month: string; sub: number; key: number; fee: number }[];
+  months: { month: string; key: number; fee: number }[];
   /** live mode: the viewer has a creator profile, and has listed their key onchain */
   isCreator?: boolean;
   listed?: boolean;
-  subscribers?: number;
   /** the creator's open and recent positions, to attach to a post */
   positions?: { id: string; label: string; open: boolean }[];
 };
@@ -93,14 +97,13 @@ export type KeysStudio = {
 export type KeysMe = {
   viewer: KeysViewer | null;
   keys: Record<string, KeysHolding>;
-  subs: Record<string, KeysSub>;
   claimable: number;
   /** trader addresses with something to claim, for claimMany */
   claimFrom: string[];
   payouts: KeysPayout[];
   studio: KeysStudio;
   settings: KeysStudioSettings;
-  /** traders the viewer holds or subscribes to that are not in the public list */
+  /** traders the viewer holds keys in, which may not be in the public list */
   traders: KeysTrader[];
 };
 

@@ -133,7 +133,7 @@
 .k-tape:hover { animation-play-state: paused; }
 @keyframes k-tape { to { transform: translateX(-50%); } }
 
-/* ---------- locked subscriber content ---------- */
+/* ---------- locked holder content ---------- */
 .k-locked { filter: blur(8px); user-select: none; pointer-events: none; }
 .k-veil { background: linear-gradient(180deg, color-mix(in srgb, var(--color-bg) 10%, transparent), color-mix(in srgb, var(--color-bg) 88%, transparent) 28%, color-mix(in srgb, var(--color-bg) 94%, transparent)); }
 

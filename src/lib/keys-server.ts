@@ -1,16 +1,16 @@
 /**
  * live data for the keys section, in the shapes of keys-model.ts. traders come from the indexer (positions,
- * fills, follows), subscriptions and posts from their tables, and keys from the KeyTrade / KeyClaim rows the
- * worker indexes off the Solana program. subscriber posts are gated here, on the server: a locked post leaves without
- * its text.
+ * fills, follows), posts from their table, and keys from the KeyTrade / KeyClaim rows the worker indexes off the
+ * Solana program. a key is the pass to a trader's feed: holders-only posts are gated here, on the server, and a
+ * locked post leaves without its text.
  */
 import type { CreatorPost } from "@prisma/client";
 import { prisma } from "./db";
 import { shortAddr, timeAgo } from "./format";
 import { portfolio } from "./hl";
-import { keyPrice, type Cadence, type OfferKey, type PostKind } from "./keys";
-import { readPending } from "./keys-chain";
-import type { KeysCall, KeysFeedPost, KeysHolding, KeysIndex, KeysMe, KeysPlatform, KeysStudio, KeysSub, KeysTrader } from "./keys-model";
+import { KEY_START_DEFAULT, keyPrice, type Cadence, type OfferKey, type PostKind } from "./keys";
+import { readHolding, readPending } from "./keys-chain";
+import type { KeysCall, KeysFeedPost, KeysHolding, KeysIndex, KeysMe, KeysPlatform, KeysStudio, KeysTrader } from "./keys-model";
 import { traderStatsBulk } from "./queries";
 
 const DAY = 86_400_000;
@@ -40,8 +40,11 @@ export const initialsOf = (handle: string) => (handle.replace(/^0x/, "").replace
 /* ---------- keys ---------- */
 
 type KeyStat = { minted: number; holders: number; price: number; change24h: number; history: number[]; raised: number; yieldPct: number };
-/** a trader by their hyperliquid address (fee accruals) and the Solana wallet their key lives under (trades) */
-type KeyRef = { hl: string; sol: string | null };
+/**
+ * a trader by their hyperliquid address (fee accruals), the Solana wallet their key lives under (trades) and the
+ * price their key started at
+ */
+type KeyRef = { hl: string; sol: string | null; start: number };
 
 /** supply, holders, a 30-day price line and the fee yield of each trader's key, from the indexed trades. keyed by hl */
 async function keyStats(refs: KeyRef[]): Promise<Map<string, KeyStat>> {
@@ -66,7 +69,7 @@ async function keyStats(refs: KeyRef[]): Promise<Map<string, KeyStat>> {
   const feesBy = new Map(fees.map((r) => [r.traderAddress, num(r._sum.holderShareUsd)]));
   const recentBy = new Map<string, { supply: number; time: Date }[]>();
   for (const r of recent) (recentBy.get(r.trader) ?? recentBy.set(r.trader, []).get(r.trader)!).push(r);
-  for (const { hl, sol } of refs) {
+  for (const { hl, sol, start } of refs) {
     const a = sol ?? "";
     const trades = recentBy.get(a) ?? [];
     const supplyAt = (t: number) => {
@@ -75,10 +78,10 @@ async function keyStats(refs: KeyRef[]): Promise<Map<string, KeyStat>> {
       return s;
     };
     const minted = lastBy.get(a) ?? 0;
-    const price = keyPrice(minted);
-    const history = Array.from({ length: 30 }, (_, i) => keyPrice(supplyAt(now - (29 - i) * DAY)));
+    const price = keyPrice(minted, start);
+    const history = Array.from({ length: 30 }, (_, i) => keyPrice(supplyAt(now - (29 - i) * DAY), start));
     history[29] = price;
-    const dayAgo = keyPrice(supplyAt(now - DAY));
+    const dayAgo = keyPrice(supplyAt(now - DAY), start);
     const yearly = (feesBy.get(hl) ?? 0) * (365 / 30);
     out.set(hl, {
       minted,
@@ -102,14 +105,12 @@ export async function buildTraders(addresses: string[]): Promise<KeysTrader[]> {
   const now = new Date();
   const users = await prisma.user.findMany({ where: { address: { in: addrs } }, include: { creator: true } });
   const userBy = new Map(users.map((u) => [u.address, u]));
-  const creatorIds = users.flatMap((u) => (u.creator ? [u.creator.id] : []));
-  const [stats, keys, open, mix, followers, subs] = await Promise.all([
+  const [stats, keys, open, mix, followers] = await Promise.all([
     traderStatsBulk(addrs),
-    keyStats(addrs.map((a) => ({ hl: a, sol: userBy.get(a)?.solanaAddress ?? null }))),
+    keyStats(addrs.map((a) => ({ hl: a, sol: userBy.get(a)?.solanaAddress ?? null, start: startOf(userBy.get(a)?.creator) }))),
     prisma.position.findMany({ where: { address: { in: addrs }, closedAt: null }, orderBy: { sizeUsd: "desc" } }),
     prisma.position.groupBy({ by: ["address", "coin"], where: { address: { in: addrs } }, _count: { _all: true }, _min: { openedAt: true } }),
     prisma.follow.groupBy({ by: ["followingId"], where: { followingId: { in: users.map((u) => u.id) } }, _count: { _all: true } }),
-    prisma.subscription.groupBy({ by: ["creatorId"], where: { creatorId: { in: creatorIds }, paidUntil: { gt: now } }, _count: { _all: true } }),
   ]);
   const top = new Map<string, (typeof open)[number]>();
   for (const p of open) if (!top.has(p.address)) top.set(p.address, p);
@@ -118,7 +119,6 @@ export async function buildTraders(addresses: string[]): Promise<KeysTrader[]> {
     : [];
   const copiesBy = new Map(copies.map((c) => [c.copiedFromPositionId!, c._count._all]));
   const followersBy = new Map(followers.map((f) => [f.followingId, f._count._all]));
-  const subsBy = new Map(subs.map((s) => [s.creatorId, s._count._all]));
   const mixBy = new Map<string, { coin: string; n: number; first: Date | null }[]>();
   for (const m of mix) (mixBy.get(m.address) ?? mixBy.set(m.address, []).get(m.address)!).push({ coin: m.coin, n: m._count._all, first: m._min.openedAt });
 
@@ -156,11 +156,8 @@ export async function buildTraders(addresses: string[]): Promise<KeysTrader[]> {
       live: p
         ? { id: p.id, side: p.side === "SHORT" ? "SHORT" : "LONG", coin: p.coin, leverage: p.leverage, size: num(p.sizeUsd), entry, mark, liq: null, pnl, opened: ago(p.openedAt), copiers: copiesBy.get(p.id) ?? 0 }
         : null,
-      key: { listed: !!c?.keysListed, price: k.price, change24h: k.change24h, holders: k.holders, minted: k.minted, yieldPct: k.yieldPct, history: k.history },
-      sub: {
-        price: c ? num(c.priceUsd) : 0,
-        subscribers: c ? (subsBy.get(c.id) ?? 0) : 0,
-        renewRate: null,
+      key: { listed: !!c?.keysListed, start: startOf(c), price: k.price, change24h: k.change24h, holders: k.holders, minted: k.minted, yieldPct: k.yieldPct, history: k.history },
+      feed: {
         cadence: (c?.cadence ?? "whenever") as Cadence,
         leadTime: null,
         offers: (c?.offers ?? []) as OfferKey[],
@@ -171,26 +168,51 @@ export async function buildTraders(addresses: string[]): Promise<KeysTrader[]> {
   });
 }
 
-/** creators first by what people have put behind them: key value, then subscribers, then followers */
-const rank = (t: KeysTrader) => t.key.minted * t.key.price * 10 + t.sub.subscribers * Math.max(t.sub.price, 1) + t.followers;
+/** a key's starting price: what the trader chose, else the studio's default */
+const startOf = (c: { keyStartPrice: unknown } | null | undefined) => (c ? num(c.keyStartPrice) : KEY_START_DEFAULT);
 
-/* ---------- access ---------- */
+/** creators first by what people have put behind them: key value and holders, then followers */
+const rank = (t: KeysTrader) => t.key.minted * t.key.price * 10 + t.key.holders * 100 + t.followers;
 
-/** the creators whose subscriber posts `viewerId` may read: their own, free feeds, and paid-up subscriptions */
-async function unlockedFor(viewerId: string | null, creators: { id: string; userId: string; priceUsd: unknown }[]): Promise<Set<string>> {
-  const open = new Set(creators.filter((c) => num(c.priceUsd) === 0 || c.userId === viewerId).map((c) => c.id));
-  if (!viewerId) return open;
-  const subs = await prisma.subscription.findMany({ where: { subscriberId: viewerId, creatorId: { in: creators.map((c) => c.id) }, paidUntil: { gt: new Date() } }, select: { creatorId: true } });
-  for (const s of subs) open.add(s.creatorId);
+/* ---------- access: a key is the pass ---------- */
+
+/** the traders (by Solana wallet) whose key `wallet` holds right now, from the indexed trades */
+async function heldBy(wallet: string | null | undefined, traders: string[]): Promise<Set<string>> {
+  if (!wallet || !traders.length) return new Set();
+  const rows = await prisma.$queryRaw<{ trader: string }[]>`SELECT trader FROM "KeyTrade" WHERE account = ${wallet} AND trader = ANY(${traders}) GROUP BY trader HAVING SUM(CASE WHEN "isBuy" THEN amount ELSE -amount END) > 0`;
+  return new Set(rows.map((r) => r.trader));
+}
+
+type Viewer = { id: string; solana: string | null } | null;
+type Gate = { id: string; userId: string; user: { solanaAddress: string | null } };
+
+/**
+ * the creators whose holders-only posts the viewer may read: their own, and every trader whose key they hold.
+ * `fresh` asks the chain instead, so a key bought seconds ago unlocks, and one sold seconds ago locks, before the
+ * indexer has seen it. the index is the fallback when the node does not answer
+ */
+async function unlockedFor(viewer: Viewer, creators: Gate[], fresh = false): Promise<Set<string>> {
+  const open = new Set(creators.filter((c) => c.userId === viewer?.id).map((c) => c.id));
+  if (!viewer?.solana) return open;
+  const keyed = creators.filter((c) => c.user.solanaAddress && !open.has(c.id));
+  const onchain = fresh ? await Promise.all(keyed.map((c) => readHolding(c.user.solanaAddress, viewer.solana))) : keyed.map(() => null);
+  const unknown = keyed.filter((_, i) => onchain[i] === null);
+  const held = await heldBy(viewer.solana, unknown.map((c) => c.user.solanaAddress!));
+  keyed.forEach((c, i) => {
+    if (onchain[i] !== null ? onchain[i]! > 0 : held.has(c.user.solanaAddress!)) open.add(c.id);
+  });
   return open;
 }
+
+const viewerOf = async (viewerId: string | null): Promise<Viewer> =>
+  viewerId ? { id: viewerId, solana: (await prisma.user.findUnique({ where: { id: viewerId }, select: { solanaAddress: true } }))?.solanaAddress ?? null } : null;
 
 async function toCalls(posts: CreatorPost[], unlocked: Set<string>): Promise<KeysCall[]> {
   const ids = posts.flatMap((p) => (p.positionId ? [p.positionId] : []));
   const positions = ids.length ? await prisma.position.findMany({ where: { id: { in: ids } } }) : [];
   const posBy = new Map(positions.map((p) => [p.id, p]));
   return posts.map((p) => {
-    const open = unlocked.has(p.creatorId) || !p.subscribersOnly;
+    const open = unlocked.has(p.creatorId) || !p.holdersOnly;
     const pos = p.positionId ? posBy.get(p.positionId) : undefined;
     return {
       id: p.id,
@@ -207,10 +229,10 @@ async function toCalls(posts: CreatorPost[], unlocked: Set<string>): Promise<Key
 /* ---------- index ---------- */
 
 export async function keysIndex(viewerId: string | null): Promise<KeysIndex> {
-  const creators = await prisma.creator.findMany({ where: { active: true, user: { claimedAt: { not: null }, handle: { not: null } } }, select: { id: true, userId: true, priceUsd: true, user: { select: { address: true, handle: true } } }, take: 300 });
+  const creators = await prisma.creator.findMany({ where: { active: true, user: { claimedAt: { not: null }, handle: { not: null } } }, select: { id: true, userId: true, user: { select: { address: true, handle: true, solanaAddress: true } } }, take: 300 });
   const traders = (await buildTraders(creators.map((c) => c.user.address))).sort((a, b) => rank(b) - rank(a));
   const posts = creators.length ? await prisma.creatorPost.findMany({ where: { creatorId: { in: creators.map((c) => c.id) } }, orderBy: { createdAt: "desc" }, take: 12 }) : [];
-  const unlocked = await unlockedFor(viewerId, creators);
+  const unlocked = await unlockedFor(await viewerOf(viewerId), creators);
   const calls = await toCalls(posts, unlocked);
   const handleOf = new Map(creators.map((c) => [c.id, c.user.handle!]));
   const posIds = posts.flatMap((p) => (p.positionId ? [p.positionId] : []));
@@ -222,9 +244,8 @@ export async function keysIndex(viewerId: string | null): Promise<KeysIndex> {
 
 async function platformStats(traders: KeysTrader[]): Promise<KeysPlatform> {
   const since = new Date(Date.now() - 30 * DAY);
-  const [tracked, subPaid, cuts, feePaid, routed, holders30, reserve] = await Promise.all([
+  const [tracked, cuts, feePaid, routed, holders30, reserve] = await Promise.all([
     prisma.trackedAddress.count(),
-    prisma.paymentIntent.aggregate({ where: { usedAt: { not: null } }, _sum: { amountCreator: true } }),
     prisma.keyTrade.aggregate({ where: { isBuy: true }, _sum: { traderCutUsd: true } }),
     prisma.keyFeeAccrual.aggregate({ where: { creatorStatus: "paid" }, _sum: { creatorShareUsd: true } }),
     prisma.position.aggregate({ where: { copiedFromAddress: { not: null } }, _sum: { sizeUsd: true } }),
@@ -235,7 +256,7 @@ async function platformStats(traders: KeysTrader[]): Promise<KeysPlatform> {
   return {
     live: traders.filter((t) => t.live).length,
     traders: tracked,
-    paidToCreators: num(subPaid._sum.amountCreator) + num(cuts._sum.traderCutUsd) + num(feePaid._sum.creatorShareUsd),
+    paidToCreators: num(cuts._sum.traderCutUsd) + num(feePaid._sum.creatorShareUsd),
     routed: num(routed._sum.sizeUsd),
     paidToHolders30d: num(holders30._sum.holderShareUsd),
     heldInKeys: num(reserve[0]?.r),
@@ -296,7 +317,7 @@ function leadTime(posts: CreatorPost[], positions: { coin: string; openedAt: Dat
   return `about ${Math.round(m / 3_600_000)}h before entry`;
 }
 
-/** a trader's page: the record, the subscription with its posts gated for this viewer, and the key */
+/** a trader's page: the record, the key, and the feed it unlocks, gated for this viewer */
 export async function keysTrader(handleOrAddress: string, viewerId: string | null): Promise<KeysTrader | null> {
   const s = decodeURIComponent(handleOrAddress);
   const user = /^0x[0-9a-fA-F]{40}$/.test(s)
@@ -310,15 +331,13 @@ export async function keysTrader(handleOrAddress: string, viewerId: string | nul
   const c = user?.creator;
   if (c) {
     const since90 = new Date(Date.now() - 90 * DAY);
-    const [posts, unlocked, recentPositions, eligible] = await Promise.all([
+    const [posts, unlocked, recentPositions] = await Promise.all([
       prisma.creatorPost.findMany({ where: { creatorId: c.id }, orderBy: { createdAt: "desc" }, take: 30 }),
-      unlockedFor(viewerId, [c]),
+      viewerOf(viewerId).then((v) => unlockedFor(v, [{ id: c.id, userId: c.userId, user: { solanaAddress: user!.solanaAddress } }], true)),
       prisma.position.findMany({ where: { address, openedAt: { gte: since90 } }, select: { coin: true, openedAt: true }, orderBy: { openedAt: "asc" } }),
-      prisma.subscription.findMany({ where: { creatorId: c.id, createdAt: { lt: new Date(Date.now() - 30 * DAY) } }, select: { paidUntil: true } }),
     ]);
     t.calls = await toCalls(posts, unlocked);
-    t.sub.leadTime = leadTime(posts.filter((p) => p.createdAt >= since90), recentPositions);
-    if (eligible.length >= 5) t.sub.renewRate = Math.round((eligible.filter((e) => e.paidUntil > new Date()).length / eligible.length) * 100);
+    t.feed.leadTime = leadTime(posts.filter((p) => p.createdAt >= since90), recentPositions);
   }
   const r = await record(address);
   if (r) {
@@ -331,7 +350,7 @@ export async function keysTrader(handleOrAddress: string, viewerId: string | nul
 
 /* ---------- the viewer ---------- */
 
-export const DEFAULT_SETTINGS = { price: 29, offers: ["calls", "alerts"] as OfferKey[], cadence: "regular" as Cadence, pinned: "", saved: false };
+export const DEFAULT_SETTINGS = { startPrice: KEY_START_DEFAULT, offers: ["calls", "alerts"] as OfferKey[], cadence: "regular" as Cadence, pinned: "", saved: false };
 
 export async function keysMe(userId: string): Promise<KeysMe | null> {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { creator: true } });
@@ -339,20 +358,20 @@ export async function keysMe(userId: string): Promise<KeysMe | null> {
   const me = user.address;
   // keys and claims live under the linked Solana wallet
   const sol = user.solanaAddress;
-  const now = new Date();
-  const [stats, followers, subs, trades, claims] = await Promise.all([
+  const [stats, followers, trades, claims] = await Promise.all([
     traderStatsBulk([me]),
     prisma.follow.count({ where: { followingId: user.id } }),
-    prisma.subscription.findMany({ where: { subscriberId: user.id, paidUntil: { gt: now } }, include: { creator: { select: { id: true, user: { select: { address: true } } } } } }),
     sol ? prisma.keyTrade.findMany({ where: { account: sol }, orderBy: { seq: "asc" } }) : [],
     sol ? prisma.keyClaim.findMany({ where: { holder: sol }, orderBy: { time: "desc" } }) : [],
   ]);
 
   // cost basis: a running average over buys; a sale takes keys out at the average, leaving it unchanged
-  const pos = new Map<string, { qty: number; avgCost: number }>();
+  // since: when the current holding began, so a new holder's unread count starts at their first key
+  const pos = new Map<string, { qty: number; avgCost: number; since: Date }>();
   for (const t of trades) {
-    const h = pos.get(t.trader) ?? { qty: 0, avgCost: 0 };
+    const h = pos.get(t.trader) ?? { qty: 0, avgCost: 0, since: t.time };
     if (t.isBuy) {
+      if (h.qty === 0) h.since = t.time;
       const paid = num(t.curveUsd) + num(t.feeUsd);
       h.avgCost = (h.qty * h.avgCost + paid) / (h.qty + t.amount);
       h.qty += t.amount;
@@ -368,34 +387,33 @@ export async function keysMe(userId: string): Promise<KeysMe | null> {
   for (const c of claims) claimedBy.set(c.trader, (claimedBy.get(c.trader) ?? 0) + num(c.amountUsd));
 
   // the traders behind those keys, by the Solana wallets they linked
-  const keyOwners = everHeld.length ? await prisma.user.findMany({ where: { solanaAddress: { in: everHeld } }, select: { address: true, solanaAddress: true } }) : [];
-  const subAddrs = subs.map((s) => s.creator.user.address);
-  const traders = await buildTraders([...keyOwners.map((u) => u.address), ...subAddrs]);
-  const handleOf = new Map(traders.map((t) => [t.address!, t.handle]));
+  const keyOwners = everHeld.length ? await prisma.user.findMany({ where: { solanaAddress: { in: everHeld } }, select: { address: true, solanaAddress: true, creator: { select: { id: true } } } }) : [];
+  const traders = await buildTraders(keyOwners.map((u) => u.address));
   const handleOfKey = new Map(traders.filter((t) => t.solana).map((t) => [t.solana!, t.handle]));
+  const creatorOfKey = new Map(keyOwners.flatMap((u) => (u.creator && u.solanaAddress ? [[u.solanaAddress, u.creator.id] as const] : [])));
 
+  // holders-only posts since the holder last opened the feed (or since their first key, if they never have)
+  const reads = await prisma.feedRead.findMany({ where: { userId: user.id }, select: { creatorId: true, readAt: true } });
+  const readAt = new Map(reads.map((r) => [r.creatorId, r.readAt]));
   const keys: Record<string, KeysHolding> = {};
-  for (const [a, h] of pos) if (h.qty > 0) keys[handleOfKey.get(a) ?? a] = { qty: h.qty, avgCost: h.avgCost, earned: (claimedBy.get(a) ?? 0) + (pending.get(a) ?? 0) };
-
-  const unread = subs.length
-    ? await Promise.all(subs.map((s) => prisma.creatorPost.count({ where: { creatorId: s.creator.id, createdAt: { gt: s.readAt } } })))
-    : [];
-  const subsOut: Record<string, KeysSub> = {};
-  subs.forEach((s, i) => {
-    subsOut[handleOf.get(s.creator.user.address) ?? s.creator.user.address] = { since: monthShort(s.createdAt), renews: dayMonth(s.paidUntil), unread: unread[i], cancelled: !!s.cancelledAt, paidUntil: s.paidUntil.toISOString() };
-  });
+  for (const [a, h] of pos) {
+    if (h.qty <= 0) continue;
+    const creatorId = creatorOfKey.get(a);
+    const after = creatorId && readAt.get(creatorId) && readAt.get(creatorId)! > h.since ? readAt.get(creatorId)! : h.since;
+    const unread = creatorId ? await prisma.creatorPost.count({ where: { creatorId, createdAt: { gt: after } } }) : 0;
+    keys[handleOfKey.get(a) ?? a] = { qty: h.qty, avgCost: h.avgCost, earned: (claimedBy.get(a) ?? 0) + (pending.get(a) ?? 0), unread };
+  }
 
   const handle = user.handle ?? shortAddr(me);
   const c = user.creator;
   return {
     viewer: { handle, initials: initialsOf(handle), colors: colorsFor(me), avatarUrl: user.avatarUrl, address: me, solana: sol, followers, pnl30dPct: null, pnl30d: stats.get(me)?.pnl30d ?? 0 },
     keys,
-    subs: subsOut,
     claimable: [...pending.values()].reduce((a, b) => a + b, 0),
     claimFrom: [...pending.entries()].filter(([, v]) => v > 0).map(([k]) => k),
     payouts: claims.slice(0, 8).map((c) => ({ from: handleOfKey.get(c.trader) ?? shortAddr(c.trader), when: ago(c.time), amount: num(c.amountUsd) })),
-    studio: await studioFor({ hl: me, sol }, c?.id ?? null, !!c?.keysListed),
-    settings: c ? { price: num(c.priceUsd), offers: c.offers as OfferKey[], cadence: c.cadence as Cadence, pinned: c.pinned ?? "", saved: true } : DEFAULT_SETTINGS,
+    studio: await studioFor({ hl: me, sol, start: startOf(c) }, c?.id ?? null, !!c?.keysListed),
+    settings: c ? { startPrice: startOf(c), offers: c.offers as OfferKey[], cadence: c.cadence as Cadence, pinned: c.pinned ?? "", saved: true } : DEFAULT_SETTINGS,
     traders,
   };
 }
@@ -406,20 +424,17 @@ async function studioFor(ref: KeyRef, creatorId: string | null, listed: boolean)
   const now = new Date();
   const months = Array.from({ length: 6 }, (_, i) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5 + i, 1)));
   const start = months[0];
-  const [k, payments, cuts, fees, subscribers, positions] = await Promise.all([
+  const [k, cuts, fees, positions] = await Promise.all([
     keyStats([ref]),
-    creatorId ? prisma.subscriptionPayment.findMany({ where: { subscription: { creatorId }, createdAt: { gte: start } }, select: { createdAt: true, intent: { select: { amountCreator: true } } } }) : [],
     ref.sol ? prisma.keyTrade.findMany({ where: { trader: ref.sol, isBuy: true, time: { gte: start } }, select: { time: true, traderCutUsd: true } }) : [],
     prisma.keyFeeAccrual.findMany({ where: { traderAddress: address, periodStart: { gte: start }, creatorStatus: { not: "skipped" } }, select: { periodStart: true, creatorShareUsd: true } }),
-    creatorId ? prisma.subscription.count({ where: { creatorId, paidUntil: { gt: now } } }) : 0,
     prisma.position.findMany({ where: { address, OR: [{ closedAt: null }, { closedAt: { gt: new Date(now.getTime() - 7 * DAY) } }] }, orderBy: { openedAt: "desc" }, take: 12, select: { id: true, side: true, coin: true, leverage: true, closedAt: true } }),
   ]);
   const idx = (d: Date) => (d.getUTCFullYear() - start.getUTCFullYear()) * 12 + d.getUTCMonth() - start.getUTCMonth();
-  const rows = months.map((m) => ({ month: monthShort(m), sub: 0, key: 0, fee: 0 }));
-  for (const p of payments) rows[idx(p.createdAt)] && (rows[idx(p.createdAt)].sub += num(p.intent.amountCreator));
+  const rows = months.map((m) => ({ month: monthShort(m), key: 0, fee: 0 }));
   for (const c of cuts) rows[idx(c.time)] && (rows[idx(c.time)].key += num(c.traderCutUsd));
   for (const f of fees) rows[idx(f.periodStart)] && (rows[idx(f.periodStart)].fee += num(f.creatorShareUsd));
   const ks = k.get(address)!;
   const cur = rows[rows.length - 1];
-  return { key: { price: ks.price, holders: ks.holders, raised: ks.raised }, earnedThisMonth: cur.sub + cur.key + cur.fee, months: rows, isCreator: !!creatorId, listed, subscribers, positions: positions.map((p) => ({ id: p.id, label: `${p.side} ${p.coin} ${p.leverage}x`, open: !p.closedAt })) };
+  return { key: { price: ks.price, holders: ks.holders, raised: ks.raised, minted: ks.minted }, earnedThisMonth: cur.key + cur.fee, months: rows, isCreator: !!creatorId, listed, positions: positions.map((p) => ({ id: p.id, label: `${p.side} ${p.coin} ${p.leverage}x`, open: !p.closedAt })) };
 }

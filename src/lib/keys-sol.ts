@@ -22,14 +22,19 @@ const BPS = 10_000n;
 const ACC = 10n ** 18n;
 
 /** the program's custom error codes, in order */
-export const KEYS_ERRORS = ["NotAdmin", "NotListed", "AlreadyListed", "ZeroAmount", "SupplyCap", "Slippage", "Insufficient", "NoHolders", "Paused", "BadConfig", "BadAccount", "Math", "NotEmpty", "AlreadyInitialized"] as const;
+export const KEYS_ERRORS = ["NotAdmin", "NotListed", "AlreadyListed", "ZeroAmount", "SupplyCap", "Slippage", "Insufficient", "NoHolders", "Paused", "BadConfig", "BadAccount", "Math", "NotEmpty", "AlreadyInitialized", "BadPrice"] as const;
+/** the most a trader can start their key at, in USDC base units */
+export const MAX_BASE_PRICE = 1_000_000_000n;
 
+/** one trader's curve: their starting price, plus the program-wide slope, cut and fee */
 export type CurveConfig = { basePrice: bigint; slope: bigint; traderCutBps: bigint; protocolFeeBps: bigint };
-export type ConfigState = CurveConfig & { admin: string; treasuryUsdc: string; usdcMint: string; buysPaused: boolean; bump: number; vaultBump: number; eventBump: number };
-export type TraderState = { trader: string; supply: bigint; reserve: bigint; accPerKey: bigint };
+export type ConfigState = { minBasePrice: bigint; slope: bigint; traderCutBps: bigint; protocolFeeBps: bigint; admin: string; treasuryUsdc: string; usdcMint: string; buysPaused: boolean; bump: number; vaultBump: number; eventBump: number };
+export type TraderState = { trader: string; supply: bigint; reserve: bigint; accPerKey: bigint; basePrice: bigint };
+/** a trader's curve from the program config and their own record */
+export const curveOf = (c: Pick<ConfigState, "slope" | "traderCutBps" | "protocolFeeBps">, t: Pick<TraderState, "basePrice">): CurveConfig => ({ basePrice: t.basePrice, slope: c.slope, traderCutBps: c.traderCutBps, protocolFeeBps: c.protocolFeeBps });
 export type HolderState = { trader: string; holder: string; balance: bigint; rewardDebt: bigint; owed: bigint };
 export type KeysEvent =
-  | { kind: "listed"; trader: string }
+  | { kind: "listed"; trader: string; basePrice: bigint }
   | { kind: "trade"; trader: string; account: string; isBuy: boolean; amount: bigint; curve: bigint; traderCut: bigint; fee: bigint; supply: bigint }
   | { kind: "deposit"; trader: string; from: string; amount: bigint }
   | { kind: "claim"; trader: string; holder: string; amount: bigint };
@@ -129,8 +134,8 @@ export function keysProgram(web3: typeof Web3, programId: string, usdcMint: stri
       });
     },
 
-    initialize(a: { admin: Key | string; treasuryUsdc: Key | string } & CurveConfig) {
-      return ix(Buffer.concat([Buffer.from([0]), u64(a.basePrice), u64(a.slope), u16(a.traderCutBps), u16(a.protocolFeeBps)]), [
+    initialize(a: { admin: Key | string; treasuryUsdc: Key | string; minBasePrice: bigint; slope: bigint; traderCutBps: bigint; protocolFeeBps: bigint }) {
+      return ix(Buffer.concat([Buffer.from([0]), u64(a.minBasePrice), u64(a.slope), u16(a.traderCutBps), u16(a.protocolFeeBps)]), [
         [key(a.admin), true, true],
         [config, false, true],
         [vault, false, true],
@@ -141,8 +146,9 @@ export function keysProgram(web3: typeof Web3, programId: string, usdcMint: stri
       ]);
     },
 
-    list(trader: Key | string) {
-      return ix(Buffer.from([1]), [[key(trader), true, true], [config, false, false], [traderPda(trader), false, true], [SYSTEM, false, false], ...events]);
+    /** list a trader's key at a starting price of their choosing (USDC base units), fixed from then on */
+    list(trader: Key | string, basePrice: bigint) {
+      return ix(Buffer.concat([Buffer.from([1]), u64(basePrice)]), [[key(trader), true, true], [config, false, false], [traderPda(trader), false, true], [SYSTEM, false, false], ...events]);
     },
 
     buy(a: { buyer: Key | string; trader: Key | string; treasuryUsdc: Key | string; amount: bigint; maxTotal: bigint; buyerUsdc?: Key | string }) {
@@ -228,7 +234,7 @@ export function keysProgram(web3: typeof Web3, programId: string, usdcMint: stri
         admin: b58(d, 8),
         treasuryUsdc: b58(d, 40),
         usdcMint: b58(d, 72),
-        basePrice: rd64(d, 104),
+        minBasePrice: rd64(d, 104),
         slope: rd64(d, 112),
         traderCutBps: BigInt(rd16(d, 120)),
         protocolFeeBps: BigInt(rd16(d, 122)),
@@ -239,8 +245,8 @@ export function keysProgram(web3: typeof Web3, programId: string, usdcMint: stri
       };
     },
     decodeTrader(d: Uint8Array | null | undefined): TraderState | null {
-      if (!d || d.length !== 80 || !tag(d, "SLKTRDR1")) return null;
-      return { trader: b58(d, 8), supply: rd64(d, 40), reserve: rd64(d, 48), accPerKey: rd128(d, 56) };
+      if (!d || d.length !== 88 || !tag(d, "SLKTRDR1")) return null;
+      return { trader: b58(d, 8), supply: rd64(d, 40), reserve: rd64(d, 48), accPerKey: rd128(d, 56), basePrice: rd64(d, 80) };
     },
     decodeHolder(d: Uint8Array | null | undefined): HolderState | null {
       if (!d || d.length !== 112 || !tag(d, "SLKHLDR1")) return null;
@@ -252,7 +258,7 @@ export function keysProgram(web3: typeof Web3, programId: string, usdcMint: stri
       const e = d.slice(1);
       switch (e[0]) {
         case 0:
-          return e.length === 33 ? { kind: "listed", trader: b58(e, 1) } : null;
+          return e.length === 41 ? { kind: "listed", trader: b58(e, 1), basePrice: rd64(e, 33) } : null;
         case 1:
           return e.length === 106
             ? { kind: "trade", trader: b58(e, 1), account: b58(e, 33), isBuy: e[65] === 1, amount: rd64(e, 66), curve: rd64(e, 74), traderCut: rd64(e, 82), fee: rd64(e, 90), supply: rd64(e, 98) }

@@ -12,7 +12,7 @@ import { refreshHlLeaderboard, seedTrackedAddresses, syncAddress, trackFeatured,
 import { backfillPoints } from "../src/lib/points";
 import { KEYS_LIVE, KEYS_PROGRAM } from "../src/lib/keys";
 import { syncKeyEvents } from "../src/lib/keys-chain";
-import { accrueKeyFees, remindRenewals } from "../src/lib/keys-jobs";
+import { accrueKeyFees } from "../src/lib/keys-jobs";
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 5000);
 const WEIGHT_BUDGET_PER_MIN = Number(process.env.HL_WEIGHT_BUDGET_PER_MIN ?? 1000);
@@ -144,7 +144,7 @@ async function housekeeping() {
   }
 }
 
-/** keys: index the Solana program's events every 15s; accrue copier fees and send renewal alerts hourly */
+/** keys: index the Solana program's events every 15s; accrue copier fees hourly */
 let lastKeysHourly = 0;
 async function keysLoop() {
   if (!KEYS_LIVE && !KEYS_PROGRAM) return;
@@ -158,8 +158,7 @@ async function keysLoop() {
       if (KEYS_LIVE && Date.now() - lastKeysHourly >= 60 * 60_000) {
         lastKeysHourly = Date.now();
         const accrued = await accrueKeyFees();
-        const reminded = await remindRenewals();
-        if (accrued || reminded) log(`keys: ${accrued} fee accrual(s), ${reminded} renewal reminder(s)`);
+        if (accrued) log(`keys: ${accrued} fee accrual(s)`);
       }
     } catch (e) {
       log("keys error", (e as Error).message);

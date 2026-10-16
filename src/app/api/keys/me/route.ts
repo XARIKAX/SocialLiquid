@@ -5,7 +5,7 @@ import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-/** the caller's keys, subscriptions, claimable fee share and creator studio */
+/** the caller's keys (each with what is new in that feed), claimable fee share and creator studio */
 export const GET = handler(async () => {
   liveOnly();
   const s = await getSession();

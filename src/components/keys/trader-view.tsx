@@ -1,21 +1,21 @@
 "use client";
-/** /keys/[handle]: a trader's page. the record is free, the calls are behind their subscription, the key is for sale */
+/** /keys/[handle]: a trader's page. the record is free, the calls are for whoever holds their key, the key is for sale */
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBusy, useKeys, useKeysActions, useKeysTrader, type PayWith } from "@/hooks/use-keys";
 import { useSolanaWallet } from "@/lib/solana-wallet";
 import { keysToast } from "@/hooks/use-keys-toast";
 import { api } from "@/lib/client";
-import { CREATOR_KEEP_PCT, HOLDER_SHARE, KEY_PROTOCOL_FEE, KEY_SUPPLY_CAP, KEY_TRADER_CUT, KEYS_PROGRAM, cadenceLabel, keyBuy, keySell, keyYearly, offerTitle, OFFERS } from "@/lib/keys";
-import type { KeysCall, KeysSub, KeysTrader as Trader } from "@/lib/keys-model";
+import { HOLDER_SHARE, KEY_PROTOCOL_FEE, KEY_SUPPLY_CAP, KEY_TRADER_CUT, KEYS_PROGRAM, cadenceLabel, keyBuy, keySell, keyYearly, offerTitle, OFFERS } from "@/lib/keys";
+import type { KeysCall, KeysTrader as Trader } from "@/lib/keys-model";
 import { fmtNum, fmtPx, fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
 import { Face, KeyCard, KeysState, PriceChart, ResetPreview, Stepper, Verified, pctOrDash, priceLabel, sidePill } from "./parts";
 
 /** what a locked post shows under the blur: the real text never reaches the browser */
-const LOCKED_TEXT = "Entry, invalidation and targets are in this post, with the reasoning behind the size. Subscribe to read it.";
+const LOCKED_TEXT = "Entry, invalidation and targets are in this post, with the reasoning behind the size. Hold a key to read it.";
 
 export function KeysTrader({ handle }: { handle: string }) {
   const { t, loading, missing } = useKeysTrader(handle);
@@ -27,18 +27,25 @@ export function KeysTrader({ handle }: { handle: string }) {
 function TraderPage({ t }: { t: Trader }) {
   const data = useKeys();
   const actions = useKeysActions();
-  const [subBusy, runSub] = useBusy();
+  const [buyBusy, runBuy] = useBusy();
+  const [payWith, setPayWith] = useState<PayWith>("USDC");
   const live = data.mode === "live";
-  const sub = data.me.subs[t.handle] as KeysSub | undefined;
-  const subscribed = !!sub;
-  const free = t.sub.price === 0;
   const own = live && !!data.me.viewer?.address && data.me.viewer.address === t.address;
-  // live, the server decides what this viewer may read; the preview unlocks on its own subscription state
-  const unlocked = live ? !t.calls.some((c) => c.locked) : subscribed || free;
-  const lockedCount = t.calls.filter((c) => c.locked).length;
-  /** subscribe, renew a cancelled one, or cancel an active one */
-  const toggle = () => runSub(() => (subscribed && !sub?.cancelled ? actions.unsubscribe(t) : actions.subscribe(t)));
   const held = data.me.keys[t.handle]?.qty ?? 0;
+  const unread = data.me.keys[t.handle]?.unread ?? 0;
+  // live, the server decides what this viewer may read (it checks the chain); the preview unlocks on the keys held here
+  const unlocked = live ? !t.calls.some((c) => c.locked) : held > 0;
+  const lockedCount = t.calls.filter((c) => c.locked).length;
+  const canBuy = t.key.listed && (!live || !!KEYS_PROGRAM) && t.key.minted < KEY_SUPPLY_CAP;
+  const one = keyBuy(t.key.minted, 1, t.key.start);
+  /** one key is all it takes to unlock the feed */
+  const buyOne = () => runBuy(() => actions.buy(t, 1, payWith));
+  const { markRead } = actions;
+
+  // a holder looking at the page has read what is new
+  useEffect(() => {
+    if (held > 0 && unread > 0) markRead(t.handle);
+  }, [held, unread, t.handle, markRead]);
 
   return (
     <div data-testid={`keys-trader-${t.handle}`}>
@@ -58,15 +65,17 @@ function TraderPage({ t }: { t: Trader }) {
         </div>
         <div className="flex gap-2.5 pb-2">
           {own ? (
-            <Link href="/keys/studio" className="btn btn-primary h-12 px-6 rounded-[14px] text-[14.5px]">Post to subscribers</Link>
+            <Link href="/keys/studio" className="btn btn-primary h-12 px-6 rounded-[14px] text-[14.5px]">Post to holders</Link>
           ) : (
             <>
               <FollowButton t={t} />
-              {(!free || live) && (
-                <button type="button" onClick={toggle} disabled={subBusy} className={`btn h-12 px-6 rounded-[14px] text-[14.5px] ${subscribed && !sub?.cancelled ? "" : "btn-primary btn-glow"}`} data-testid="trader-subscribe-top">
-                  {subscribed && !sub?.cancelled ? <><Icon.check /> {free ? "Alerts on" : "Subscribed"}</> : free ? "Get alerts" : `${sub?.cancelled ? "Renew" : "Subscribe"} · $${t.sub.price}/mo`}
+              {held > 0 ? (
+                <span className="btn h-12 px-6 rounded-[14px] text-[14.5px] pointer-events-none" data-testid="trader-holder"><Icon.check /> Holder · {held} {held === 1 ? "key" : "keys"}</span>
+              ) : canBuy ? (
+                <button type="button" onClick={buyOne} disabled={buyBusy} className="btn btn-primary btn-glow h-12 px-6 rounded-[14px] text-[14.5px]" data-testid="trader-buy-top">
+                  {buyBusy ? "Working…" : `Buy key · ${fmtUsd(one.total)}`}
                 </button>
-              )}
+              ) : null}
             </>
           )}
         </div>
@@ -79,7 +88,7 @@ function TraderPage({ t }: { t: Trader }) {
           { v: fmtUsd(t.pnlAllTime, { compact: true, sign: true }), l: "All time", tone: t.pnlAllTime >= 0 ? "text-up" : "text-down" },
           { v: pctOrDash(t.winRate), l: "Win rate" },
           { v: pctOrDash(t.maxDrawdown), l: "Max drawdown", tone: t.maxDrawdown ? "text-down" : "" },
-          { v: fmtNum(t.sub.subscribers), l: free ? "Following free" : "Subscribers" },
+          { v: t.key.listed ? fmtUsd(t.key.price) : "—", l: "Key price" },
           { v: fmtNum(t.key.holders), l: "Key holders" },
         ].map((s, i) => (
           <div key={s.l} className={`px-6 py-5 ${i % 3 ? "border-l border-[var(--hair)]" : ""} ${i >= 3 ? "border-t border-[var(--hair)] @5xl:border-t-0 @5xl:border-l" : ""}`}>
@@ -90,28 +99,28 @@ function TraderPage({ t }: { t: Trader }) {
       </section>
 
       <div className="grid @5xl:grid-cols-[minmax(0,1fr)_380px] gap-6 mt-8 items-start">
-        {/* subscription + key: first on phones, right column on wide screens */}
+        {/* what the key unlocks + the key itself: first on phones, right column on wide screens */}
         <aside className="space-y-5 @5xl:order-2">
-          <SubscriptionCard t={t} sub={sub} own={own} busy={subBusy} onToggle={toggle} />
-          <KeyPanel t={t} held={held} own={own} />
+          <AccessCard t={t} held={held} own={own} canBuy={canBuy} price={one.total} busy={buyBusy} onBuy={buyOne} />
+          <KeyPanel t={t} held={held} own={own} payWith={payWith} setPayWith={setPayWith} />
         </aside>
 
         <main className="space-y-4 min-w-0 @5xl:order-1">
           {t.live && <LivePosition t={t} own={own} />}
 
-          {t.sub.pinned && (
+          {t.feed.pinned && (
             <article className="card !rounded-[24px] p-6">
               <div className="flex items-center gap-2 text-[12.5px] font-semibold text-muted">
                 <Icon.star /> Pinned · free for everyone
               </div>
-              <p className="mt-3 text-[17px] leading-relaxed whitespace-pre-line">{t.sub.pinned}</p>
+              <p className="mt-3 text-[17px] leading-relaxed whitespace-pre-line">{t.feed.pinned}</p>
             </article>
           )}
 
           {t.calls.length === 0 && (
             <div className="card !rounded-[24px] p-8 text-center">
               <div className="text-[17px] font-semibold">{own ? "Nothing posted yet" : `${t.handle} has not posted yet`}</div>
-              <p className="text-[14px] text-muted mt-1.5">{own ? "Post your first call from the studio. Every subscriber gets an alert." : "Subscribers get an alert the moment the first call goes up."}</p>
+              <p className="text-[14px] text-muted mt-1.5">{own ? "Post your first call from the studio. Every key holder gets an alert." : "Key holders get an alert the moment the first call goes up."}</p>
             </div>
           )}
 
@@ -125,10 +134,14 @@ function TraderPage({ t }: { t: Trader }) {
               <div className="k-veil absolute inset-0 rounded-[24px] flex items-start justify-center pt-16 px-4" data-testid="trader-paywall">
                 <div className="k-glow-panel w-full max-w-[420px] text-center px-8 py-9">
                   <span className="w-14 h-14 rounded-full bg-brand/12 text-brand ring-1 ring-brand/35 inline-flex items-center justify-center"><Icon.lock className="w-6 h-6" /></span>
-                  <h2 className="text-[23px] font-bold tracking-tight mt-4">{live ? `${lockedCount} ${lockedCount === 1 ? "post" : "posts"} for subscribers` : `${t.calls.length} calls this month`}</h2>
-                  <p className="text-[15px] text-fg-2 mt-2 leading-relaxed">Subscribers see every call {t.sub.leadTime ? t.sub.leadTime : "as it happens"}, plus {t.sub.offers.filter((o) => o !== "calls").map((o) => offerTitle(o).toLowerCase()).join(", ") || "the reasoning behind each one"}.</p>
-                  <button type="button" onClick={toggle} disabled={subBusy} className="btn btn-primary btn-glow w-full h-[52px] mt-6 rounded-[15px] text-[15.5px]" data-testid="trader-subscribe-paywall">{sub?.cancelled ? "Renew" : "Subscribe"} · ${t.sub.price} / month</button>
-                  <p className="text-[12.5px] text-muted mt-3">{live ? "Paid in USDC from your Hyperliquid balance · nothing renews on its own" : "Cancel any time · paid in USDC"}</p>
+                  <h2 className="text-[23px] font-bold tracking-tight mt-4">{live ? `${lockedCount} ${lockedCount === 1 ? "post" : "posts"} for key holders` : `${t.calls.length} calls this month`}</h2>
+                  <p className="text-[15px] text-fg-2 mt-2 leading-relaxed">Hold one {t.handle} key and you see every call {t.feed.leadTime ? t.feed.leadTime : "as it happens"}, plus {t.feed.offers.filter((o) => o !== "calls").map((o) => offerTitle(o).toLowerCase()).join(", ") || "the reasoning behind each one"}.</p>
+                  {canBuy ? (
+                    <button type="button" onClick={buyOne} disabled={buyBusy} className="btn btn-primary btn-glow w-full h-[52px] mt-6 rounded-[15px] text-[15.5px]" data-testid="trader-buy-paywall">{buyBusy ? "Working…" : `Buy 1 key · ${fmtUsd(one.total)}`}</button>
+                  ) : (
+                    <div className="card-2 !rounded-[15px] mt-6 h-[52px] flex items-center justify-center text-[14.5px] text-fg-2">{t.key.listed ? "All keys are out" : "Key not listed yet"}</div>
+                  )}
+                  <p className="text-[12.5px] text-muted mt-3">No monthly fee · sell the key back any time</p>
                 </div>
               </div>
             )}
@@ -141,7 +154,7 @@ function TraderPage({ t }: { t: Trader }) {
   );
 }
 
-/** follow for the social feed and alerts; separate from paying for the subscription */
+/** follow for the social feed; separate from holding the key, which is what unlocks the private feed */
 function FollowButton({ t }: { t: Trader }) {
   const data = useKeys();
   const auth = useAuth();
@@ -169,38 +182,28 @@ function FollowButton({ t }: { t: Trader }) {
   );
 }
 
-function SubscriptionCard({ t, sub, own, busy, onToggle }: { t: Trader; sub: KeysSub | undefined; own: boolean; busy: boolean; onToggle: () => void }) {
+/** what holding the key gets you: the trader's feed, for as long as you hold it */
+function AccessCard({ t, held, own, canBuy, price, busy, onBuy }: { t: Trader; held: number; own: boolean; canBuy: boolean; price: number; busy: boolean; onBuy: () => void }) {
   const { mode } = useKeys();
   const live = mode === "live";
-  const free = t.sub.price === 0;
-  const subscribed = !!sub;
-  const active = subscribed && !sub?.cancelled;
   const note = own
-    ? "This is your feed. Change the price or what is included in the studio."
-    : active
-      ? live
-        ? free
-          ? "You get an alert for every post. Press again to stop."
-          : `Paid to ${sub!.renews}. You will get a reminder to renew; nothing is taken automatically. Press again to stop the reminders.`
-        : "Press again to cancel."
-      : sub?.cancelled
-        ? `Cancelled · you can read until ${sub.renews}`
-        : free
-          ? `${t.handle} has chosen not to charge.`
-          : `${live ? "One month · paid once · USDC" : "Cancel any time · USDC"} · ${CREATOR_KEEP_PCT}% goes to ${t.handle}`;
+    ? "This is your feed. Change what is included in the studio."
+    : held > 0
+      ? "Unlocked for as long as you hold a key. New posts alert you."
+      : `No subscription: one key is the pass. ${Math.round(KEY_TRADER_CUT * 100)}% of every key sold goes to ${t.handle}.`;
   return (
-    <section className="k-glow-panel p-7" data-testid="trader-sub-card">
+    <section className="k-glow-panel p-7" data-testid="trader-access">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[13.5px] font-semibold text-brand-2">{free ? "Free feed" : "Subscription"}</span>
-        <span className="text-[12px] text-muted">Price set by {own ? "you" : t.handle}</span>
+        <span className="text-[13.5px] font-semibold text-brand-2">{held > 0 ? "Unlocked" : "A key unlocks the feed"}</span>
+        <span className="text-[12px] text-muted">Started at {priceLabel(t.key.start)}</span>
       </div>
       <div className="flex items-baseline gap-1.5 mt-3">
-        <span className="num text-[56px] font-semibold tracking-[-0.05em] leading-none">{priceLabel(t.sub.price)}</span>
-        {!free && <span className="text-[16px] text-muted">/ month</span>}
+        <span className="num text-[56px] font-semibold tracking-[-0.05em] leading-none">{held > 0 ? held : 1}</span>
+        <span className="text-[16px] text-muted">{held > 0 ? (held === 1 ? "key held" : "keys held") : "key to get in"}</span>
       </div>
-      {t.sub.offers.length > 0 && (
+      {t.feed.offers.length > 0 && (
         <ul className="mt-6 space-y-3.5">
-          {OFFERS.filter((o) => t.sub.offers.includes(o.key)).map((o) => (
+          {OFFERS.filter((o) => t.feed.offers.includes(o.key)).map((o) => (
             <li key={o.key} className="flex gap-3">
               <span className="w-9 h-9 rounded-[11px] bg-brand/10 text-brand inline-flex items-center justify-center shrink-0"><Icon.check /></span>
               <span>
@@ -213,44 +216,45 @@ function SubscriptionCard({ t, sub, own, busy, onToggle }: { t: Trader; sub: Key
       )}
       <div className="grid grid-cols-3 gap-2 mt-6">
         <div className="card-2 !rounded-[13px] px-3 py-2.5">
-          <div className="text-[12.5px] font-semibold leading-tight">{cadenceLabel(t.sub.cadence)}</div>
+          <div className="text-[12.5px] font-semibold leading-tight">{cadenceLabel(t.feed.cadence)}</div>
           <div className="text-[11.5px] text-muted mt-1">posting</div>
         </div>
         <div className="card-2 !rounded-[13px] px-3 py-2.5">
-          <div className="text-[12.5px] font-semibold leading-tight">{t.sub.leadTime ?? (live ? "—" : "On fill")}</div>
+          <div className="text-[12.5px] font-semibold leading-tight">{t.feed.leadTime ?? (live ? "—" : "On fill")}</div>
           <div className="text-[11.5px] text-muted mt-1">lead time</div>
         </div>
         <div className="card-2 !rounded-[13px] px-3 py-2.5">
-          <div className="num text-[15px] font-semibold">{t.sub.renewRate === null ? "New" : `${t.sub.renewRate}%`}</div>
-          <div className="text-[11.5px] text-muted mt-1">renew</div>
+          <div className="num text-[15px] font-semibold">{fmtNum(t.key.holders)}</div>
+          <div className="text-[11.5px] text-muted mt-1">holders</div>
         </div>
       </div>
       {own ? (
         <Link href="/keys/studio" className="btn w-full h-[54px] mt-6 rounded-[16px] text-[15.5px]">Open studio</Link>
-      ) : free && !live ? (
-        <div className="card-2 !rounded-[15px] mt-6 h-[52px] flex items-center justify-center gap-2 text-[14.5px] text-fg-2"><Icon.check /> Everything here is free to read</div>
-      ) : (
-        <button type="button" onClick={onToggle} disabled={busy} className={`btn w-full h-[54px] mt-6 rounded-[16px] text-[15.5px] ${active ? "" : "btn-primary btn-glow"}`} data-testid="trader-subscribe">
-          {busy ? "Working…" : active ? (free ? "Alerts on" : `Subscribed · ${live ? "to" : "renews"} ${sub!.renews}`) : free ? "Get alerts for every post" : `${sub?.cancelled ? "Renew" : "Subscribe"} · $${t.sub.price} / month`}
+      ) : held > 0 ? (
+        <div className="card-2 !rounded-[15px] mt-6 h-[52px] flex items-center justify-center gap-2 text-[14.5px] text-fg-2"><Icon.check /> You can read everything here</div>
+      ) : canBuy ? (
+        <button type="button" onClick={onBuy} disabled={busy} className="btn btn-primary btn-glow w-full h-[54px] mt-6 rounded-[16px] text-[15.5px]" data-testid="trader-buy-access">
+          {busy ? "Working…" : `Buy 1 key · ${fmtUsd(price)}`}
         </button>
+      ) : (
+        <div className="card-2 !rounded-[15px] mt-6 h-[52px] flex items-center justify-center text-[14.5px] text-fg-2">{t.key.listed ? "All keys are out" : `${t.handle} has not listed a key yet`}</div>
       )}
       <p className="text-[12.5px] text-muted text-center mt-3">{note}</p>
     </section>
   );
 }
 
-function KeyPanel({ t, held, own }: { t: Trader; held: number; own: boolean }) {
+function KeyPanel({ t, held, own, payWith, setPayWith }: { t: Trader; held: number; own: boolean; payWith: PayWith; setPayWith: (p: PayWith) => void }) {
   const { mode } = useKeys();
   const actions = useKeysActions();
   const live = mode === "live";
   const room = KEY_SUPPLY_CAP - t.key.minted;
   const [qty, setQty] = useState(Math.min(3, Math.max(1, room)));
   const [sellQty, setSellQty] = useState(1);
-  const [payWith, setPayWith] = useState<PayWith>("USDC");
   const solana = useSolanaWallet();
   const [busy, run] = useBusy();
-  const cost = keyBuy(t.key.minted, qty);
-  const back = keySell(t.key.minted, Math.min(sellQty, held));
+  const cost = keyBuy(t.key.minted, qty, t.key.start);
+  const back = keySell(t.key.minted, Math.min(sellQty, held), t.key.start);
   const yearly = keyYearly(t.key.price, qty, t.key.yieldPct);
   const launched = !live || !!KEYS_PROGRAM;
   return (
@@ -298,7 +302,7 @@ function KeyPanel({ t, held, own }: { t: Trader; held: number; own: boolean }) {
             <div className="card-2 !rounded-[14px] mt-6 px-4 py-3 text-[14px] text-fg-2">All {fmtNum(KEY_SUPPLY_CAP)} keys are out. Buy from a holder when one sells.</div>
           )}
           <p className="text-[12.5px] text-muted mt-4 leading-relaxed">
-            Holders split {Math.round(HOLDER_SHARE * 100)}% of the trading fees {t.handle}&apos;s followers generate — about <b className="num text-fg-2">{fmtUsd(yearly)}</b> a year for {qty} {qty === 1 ? "key" : "keys"} at today&apos;s flow. Of the price, {Math.round(KEY_TRADER_CUT * 100)}% goes to {t.handle} and the rest backs your keys, so you can always sell them back; a {Math.round(KEY_PROTOCOL_FEE * 100)}% fee applies each way. A key does not include the private feed.
+            Holders split {Math.round(HOLDER_SHARE * 100)}% of the trading fees {t.handle}&apos;s followers generate — about <b className="num text-fg-2">{fmtUsd(yearly)}</b> a year for {qty} {qty === 1 ? "key" : "keys"} at today&apos;s flow. Of the price, {Math.round(KEY_TRADER_CUT * 100)}% goes to {t.handle} and the rest backs your keys, so you can always sell them back; a {Math.round(KEY_PROTOCOL_FEE * 100)}% fee applies each way. Any key you hold unlocks {t.handle}&apos;s feed.
             {live && (payWith === "SOL" ? " Keys trade in USDC on Solana: your SOL is swapped to USDC through Jupiter in the same transaction." : " Keys trade in USDC on Solana.")}
           </p>
           {held > 0 && (
@@ -320,9 +324,9 @@ function KeyPanel({ t, held, own }: { t: Trader; held: number; own: boolean }) {
         <div className="mt-6">
           <p className="text-[14px] text-fg-2 leading-relaxed">
             {!launched
-              ? "Keys open soon. When they do, each trader's key trades on a public price curve and holders share in the fees their followers pay."
+              ? "Keys open soon. When they do, each trader's key unlocks their feed and trades on a public price curve, and holders share in the fees their followers pay."
               : own
-                ? `List your key and anyone can buy a share in you. You get ${Math.round(KEY_TRADER_CUT * 100)}% of every key sold, and your holders earn ${Math.round(HOLDER_SHARE * 100)}% of the fees your copiers pay.`
+                ? `List your key and it becomes the pass to your feed. You get ${Math.round(KEY_TRADER_CUT * 100)}% of every key sold, and your holders earn ${Math.round(HOLDER_SHARE * 100)}% of the fees your copiers pay. Set the starting price in the studio.`
                 : `${t.handle} has not listed a key yet.`}
           </p>
           {own && launched && (

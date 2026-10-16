@@ -5,7 +5,7 @@ import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-/** every creator with their record, key and subscription, the latest posts (gated for the caller) and platform totals */
+/** every creator with their record, key and feed, the latest posts (gated on the caller holding a key) and platform totals */
 export const GET = handler(async () => {
   liveOnly();
   const s = await getSession();

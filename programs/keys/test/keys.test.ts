@@ -1,45 +1,69 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as web3 from "@solana/web3.js";
-import { buyQuote, curveCost, pendingOf, sellQuote } from "../../../src/lib/keys-sol.ts";
+import { buyQuote, curveCost, curveOf, pendingOf, sellQuote } from "../../../src/lib/keys-sol.ts";
 import { usd, world } from "./harness.ts";
 
 const { Keypair, SystemProgram, TransactionInstruction } = web3;
 
-/** a listed trader with their USDC account open, as the app sets it up */
-function listed(w: ReturnType<typeof world>) {
+/** a listed trader with their USDC account open, as the app sets it up; at the default $5 start unless given */
+function listed(w: ReturnType<typeof world>, base?: bigint) {
   const t = w.user();
   w.openUsdc(t);
-  w.must([w.k.list(t.publicKey)], [t]);
+  w.must([w.k.list(t.publicKey, base ?? w.curve.basePrice)], [t]);
   return t;
 }
+/** a trader's curve as the program holds it */
+const curveFor = (w: ReturnType<typeof world>, trader: web3.PublicKey) => curveOf(w.read.config()!, w.read.trader(trader)!);
 const buyIx = (w: ReturnType<typeof world>, buyer: web3.Keypair, trader: web3.PublicKey, amount: bigint, maxTotal?: bigint) => {
-  const supply = w.read.trader(trader)?.supply ?? 0n;
-  return w.k.buy({ buyer: buyer.publicKey, trader, treasuryUsdc: w.treasuryUsdc, amount, maxTotal: maxTotal ?? buyQuote(w.curve, supply, amount).total });
+  const t = w.read.trader(trader);
+  return w.k.buy({ buyer: buyer.publicKey, trader, treasuryUsdc: w.treasuryUsdc, amount, maxTotal: maxTotal ?? (t ? buyQuote(curveFor(w, trader), t.supply, amount).total : 10n ** 12n) });
 };
 const buy = (w: ReturnType<typeof world>, buyer: web3.Keypair, trader: web3.PublicKey, amount: bigint) => w.must([buyIx(w, buyer, trader, amount)], [buyer]);
 const sell = (w: ReturnType<typeof world>, seller: web3.Keypair, trader: web3.PublicKey, amount: bigint, minNet = 0n) => w.send([w.k.sell({ seller: seller.publicKey, trader, treasuryUsdc: w.treasuryUsdc, amount, minNet })], [seller]);
 const claim = (w: ReturnType<typeof world>, holder: web3.Keypair, trader: web3.PublicKey) => w.send([w.k.claim({ holder: holder.publicKey, trader })], [holder]);
 const deposit = (w: ReturnType<typeof world>, from: web3.Keypair, trader: web3.PublicKey, amount: bigint) => w.send([w.k.depositFees({ depositor: from.publicKey, trader, amount })], [from]);
 
-test("initialize refuses an inexact trader cut, a fee over 5%, and a second run", () => {
-  const bad = world({ init: false, base: 5.000001 });
-  const r1 = bad.send([bad.k.initialize({ admin: bad.admin.publicKey, treasuryUsdc: bad.treasuryUsdc, ...bad.curve })], [bad.admin]);
+test("initialize refuses an inexact slope, a fee over 5%, and a second run", () => {
+  const bad = world({ init: false, slope: 0.250001 });
+  const r1 = bad.send([bad.k.initialize(bad.init)], [bad.admin]);
   assert.equal(r1.ok ? "" : r1.reason, "BadConfig");
-  const r2 = bad.send([bad.k.initialize({ admin: bad.admin.publicKey, treasuryUsdc: bad.treasuryUsdc, ...bad.curve, basePrice: usd(5), protocolFeeBps: 501n })], [bad.admin]);
+  const r2 = bad.send([bad.k.initialize({ ...bad.init, slope: usd(0.25), protocolFeeBps: 501n })], [bad.admin]);
   assert.equal(r2.ok ? "" : r2.reason, "BadConfig");
   const w = world();
-  const again = w.send([w.k.initialize({ admin: w.admin.publicKey, treasuryUsdc: w.treasuryUsdc, ...w.curve })], [w.admin]);
+  const again = w.send([w.k.initialize(w.init)], [w.admin]);
   assert.equal(again.ok ? "" : again.reason, "AlreadyInitialized");
   const c = w.read.config()!;
-  assert.equal(c.basePrice, usd(5));
+  assert.equal(c.minBasePrice, usd(1));
   assert.equal(c.treasuryUsdc, w.treasuryUsdc.toBase58());
+});
+
+test("each trader picks their starting price: within bounds, exact under the cut, fixed once listed", () => {
+  const w = world();
+  const t = w.user();
+  w.openUsdc(t);
+  for (const [base, why] of [[usd(0.99), "under the $1 floor"], [usd(1000.01), "over $1000"], [5_000_001n, "inexact under a 10% cut"]] as const) {
+    const r = w.send([w.k.list(t.publicKey, base)], [t]);
+    assert.equal(r.ok ? "" : r.reason, "BadPrice", why);
+  }
+  const r = w.must([w.k.list(t.publicKey, usd(50))], [t]);
+  assert.deepEqual(r.events, [{ kind: "listed", trader: t.publicKey.toBase58(), basePrice: usd(50) }]);
+  assert.equal(w.read.trader(t.publicKey)!.basePrice, usd(50));
+  // a $50 key: the first two cost 50 + 50.25, of which the trader gets 10%
+  const b = w.user();
+  w.fund(b, usd(1000));
+  buy(w, b, t.publicKey, 2n);
+  assert.equal(w.usdc(t.publicKey), usd(10.025));
+  assert.equal(w.read.trader(t.publicKey)!.reserve, usd(90.225));
+  // and the curve stays where it was listed: listing again is refused
+  const again = w.send([w.k.list(t.publicKey, usd(5))], [t]);
+  assert.equal(again.ok ? "" : again.reason, "AlreadyListed");
 });
 
 test("listing: once, by the trader's own wallet; buying an unlisted key fails", () => {
   const w = world();
   const t = listed(w);
-  const again = w.send([w.k.list(t.publicKey)], [t]);
+  const again = w.send([w.k.list(t.publicKey, usd(5))], [t]);
   assert.equal(again.ok ? "" : again.reason, "AlreadyListed");
   const nobody = w.user();
   w.openUsdc(nobody);
@@ -61,7 +85,7 @@ test("a buy splits the price: 10% to the trader, 90% to the reserve, 2% fee to t
   assert.equal(w.balance(w.k.vault), usd(14.175));
   assert.equal(w.balance(w.treasuryUsdc), usd(0.315));
   assert.equal(w.usdc(b.publicKey), usd(100) - usd(16.065));
-  assert.deepEqual(w.read.trader(t.publicKey), { trader: t.publicKey.toBase58(), supply: 3n, reserve: usd(14.175), accPerKey: 0n });
+  assert.deepEqual(w.read.trader(t.publicKey), { trader: t.publicKey.toBase58(), supply: 3n, reserve: usd(14.175), accPerKey: 0n, basePrice: usd(5) });
   assert.equal(w.read.holder(t.publicKey, b.publicKey)!.balance, 3n);
   assert.deepEqual(r.events, [{ kind: "trade", trader: t.publicKey.toBase58(), account: b.publicKey.toBase58(), isBuy: true, amount: 3n, curve: usd(15.75), traderCut: usd(1.575), fee: usd(0.315), supply: 3n }]);
   assert.ok(r.cu < 60_000n, `buy used ${r.cu} CU`);
@@ -257,7 +281,7 @@ test("closing an empty holder record returns its rent; a non-empty one cannot be
 
 test("random walk against an exact model: reserves, every holder's earnings, payouts and solvency", () => {
   const w = world();
-  const traders = [listed(w), listed(w)];
+  const traders = [listed(w), listed(w, usd(37.5))];
   const people = Array.from({ length: 4 }, () => w.user(50));
   for (const p of people) w.fund(p, usd(200_000));
   const dist = w.user();
@@ -283,7 +307,7 @@ test("random walk against an exact model: reserves, every holder's earnings, pay
     if (op < 4) {
       const n = BigInt(1 + rnd(12));
       if (m.supply + n > 2000n) continue;
-      const q = buyQuote(w.curve, m.supply, n);
+      const q = buyQuote(curveFor(w, t), m.supply, n);
       buy(w, p, t, n);
       settle(m, pi);
       m.supply += n;
@@ -293,7 +317,7 @@ test("random walk against an exact model: reserves, every holder's earnings, pay
     } else if (op < 7) {
       if (m.bal[pi] === 0n) continue;
       const n = BigInt(1 + rnd(Number(m.bal[pi])));
-      const q = sellQuote(w.curve, m.supply, n);
+      const q = sellQuote(curveFor(w, t), m.supply, n);
       const before = w.usdc(p.publicKey);
       assert.ok(sell(w, p, t, n).ok);
       assert.equal(w.usdc(p.publicKey) - before, q.net);

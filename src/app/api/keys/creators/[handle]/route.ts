@@ -5,7 +5,7 @@ import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-/** one trader's page. subscriber posts come back without their text unless the caller has access */
+/** one trader's page. holder posts come back without their text unless the caller holds the key */
 export const GET = handler(async (_req: Request, { params }: { params: Promise<{ handle: string }> }) => {
   liveOnly();
   const { handle } = await params;

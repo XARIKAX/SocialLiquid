@@ -12,7 +12,7 @@ export const POST = handler(async () => {
   const s = await getSession();
   if (!s) throw new HttpError(401, "sign in first");
   const creator = await prisma.creator.findUnique({ where: { userId: s.userId }, include: { user: { select: { solanaAddress: true } } } });
-  if (!creator) throw new HttpError(400, "set up your subscription first");
+  if (!creator) throw new HttpError(400, "set up your page first");
   const wallet = creator.user.solanaAddress;
   if (!wallet) throw new HttpError(400, "link your Solana wallet first");
   // the transaction can take a moment to show up on the node
@@ -23,6 +23,6 @@ export const POST = handler(async () => {
   }
   if (!state) throw new HttpError(503, "could not reach Solana, try again in a moment");
   if (!state.listed) return json({ listed: false });
-  await prisma.creator.update({ where: { id: creator.id }, data: { keysListed: true } });
-  return json({ listed: true });
+  await prisma.creator.update({ where: { id: creator.id }, data: { keysListed: true, keyStartPrice: state.start } });
+  return json({ listed: true, startPrice: state.start });
 });

@@ -1,7 +1,8 @@
 //! socialLiquid keys on Solana.
 //!
-//! A key is a share in a trader. Each trader who lists gets their own capped supply on a linear bonding curve,
-//! priced in USDC. Buying pays the curve price plus a protocol fee: `trader_cut_bps` of the curve price goes to
+//! A key is a share in a trader, and the pass to their private feed. Each trader who lists picks their key's
+//! starting price and gets their own capped supply on a linear bonding curve from there, priced in USDC: every
+//! key costs `slope` more than the one before. Buying pays the curve price plus a protocol fee: `trader_cut_bps` of the curve price goes to
 //! the trader at once and the rest stays in the program's vault as that trader's reserve. Selling refunds exactly
 //! the reserve share of the same curve range, minus the protocol fee, so the reserve always covers every
 //! outstanding key and any holder can always exit. The trader cut is fixed at initialisation for that reason.
@@ -36,6 +37,8 @@ mod system_program {
 
 pub const SUPPLY_CAP: u64 = 2000;
 pub const MAX_PROTOCOL_FEE_BPS: u16 = 500;
+/// the most a trader can start their key at: 1000 USDC
+pub const MAX_BASE_PRICE: u64 = 1_000_000_000;
 const BPS: u128 = 10_000;
 const ACC: u128 = 1_000_000_000_000_000_000;
 
@@ -49,7 +52,7 @@ const CONFIG_DISC: &[u8; 8] = b"SLKCONF1";
 const TRADER_DISC: &[u8; 8] = b"SLKTRDR1";
 const HOLDER_DISC: &[u8; 8] = b"SLKHLDR1";
 pub const CONFIG_LEN: usize = 128;
-pub const TRADER_LEN: usize = 80;
+pub const TRADER_LEN: usize = 88;
 pub const HOLDER_LEN: usize = 112;
 const TOKEN_ACCOUNT_LEN: usize = 165;
 const MINT_LEN: usize = 82;
@@ -72,6 +75,7 @@ pub enum KeysError {
     Math = 11,
     NotEmpty = 12,
     AlreadyInitialized = 13,
+    BadPrice = 14,
 }
 
 impl From<KeysError> for ProgramError {
@@ -90,7 +94,9 @@ pub struct Config {
     pub admin: Pubkey,
     pub treasury_usdc: Pubkey,
     pub usdc_mint: Pubkey,
-    pub base_price: u64,
+    /// the lowest starting price a trader may choose
+    pub min_base_price: u64,
+    /// price added per key already in supply, the same for every trader
     pub slope: u64,
     pub trader_cut_bps: u16,
     pub protocol_fee_bps: u16,
@@ -108,6 +114,9 @@ pub struct Trader {
     /// cumulative fee share per key, scaled by 1e18
     pub acc_per_key: u128,
     pub bump: u8,
+    /// the price of this trader's first key, chosen when they listed and fixed after: the reserve owes each
+    /// holder what their keys put in, so the curve can never move under them
+    pub base_price: u64,
 }
 
 pub struct Holder {
@@ -141,7 +150,7 @@ impl Config {
             admin: pk(d, 8),
             treasury_usdc: pk(d, 40),
             usdc_mint: pk(d, 72),
-            base_price: u64_at(d, 104),
+            min_base_price: u64_at(d, 104),
             slope: u64_at(d, 112),
             trader_cut_bps: u16_at(d, 120),
             protocol_fee_bps: u16_at(d, 122),
@@ -156,7 +165,7 @@ impl Config {
         d[8..40].copy_from_slice(self.admin.as_ref());
         d[40..72].copy_from_slice(self.treasury_usdc.as_ref());
         d[72..104].copy_from_slice(self.usdc_mint.as_ref());
-        d[104..112].copy_from_slice(&self.base_price.to_le_bytes());
+        d[104..112].copy_from_slice(&self.min_base_price.to_le_bytes());
         d[112..120].copy_from_slice(&self.slope.to_le_bytes());
         d[120..122].copy_from_slice(&self.trader_cut_bps.to_le_bytes());
         d[122..124].copy_from_slice(&self.protocol_fee_bps.to_le_bytes());
@@ -166,12 +175,13 @@ impl Config {
         d[127] = self.event_bump;
     }
 
-    /// the curve price of `amount` keys starting at `supply`: the sum of base + slope * k over that range
-    pub fn curve_cost(&self, supply: u64, amount: u64) -> Result<u64, ProgramError> {
+    /// the curve price of `amount` keys starting at `supply` for a key starting at `base`: the sum of
+    /// base + slope * k over that range
+    pub fn curve_cost(&self, base: u64, supply: u64, amount: u64) -> Result<u64, ProgramError> {
         let (s, a) = (supply as u128, amount as u128);
         let steps = a.checked_mul(s).and_then(|x| x.checked_add(a * a.saturating_sub(1) / 2)).ok_or(err(KeysError::Math))?;
         let cost = a
-            .checked_mul(self.base_price as u128)
+            .checked_mul(base as u128)
             .and_then(|x| x.checked_add((self.slope as u128).checked_mul(steps)?))
             .ok_or(err(KeysError::Math))?;
         u64::try_from(cost).map_err(|_| err(KeysError::Math))
@@ -189,7 +199,7 @@ impl Trader {
         if d.len() != TRADER_LEN || &d[0..8] != TRADER_DISC {
             return Err(err(KeysError::BadAccount));
         }
-        Ok(Trader { trader: pk(d, 8), supply: u64_at(d, 40), reserve: u64_at(d, 48), acc_per_key: u128_at(d, 56), bump: d[72] })
+        Ok(Trader { trader: pk(d, 8), supply: u64_at(d, 40), reserve: u64_at(d, 48), acc_per_key: u128_at(d, 56), bump: d[72], base_price: u64_at(d, 80) })
     }
     fn write(&self, d: &mut [u8]) {
         d[0..8].copy_from_slice(TRADER_DISC);
@@ -198,6 +208,7 @@ impl Trader {
         d[48..56].copy_from_slice(&self.reserve.to_le_bytes());
         d[56..72].copy_from_slice(&self.acc_per_key.to_le_bytes());
         d[72] = self.bump;
+        d[80..88].copy_from_slice(&self.base_price.to_le_bytes());
     }
 }
 
@@ -412,7 +423,7 @@ pub fn process_instruction(program_id: &Pubkey, accs: &[AccountInfo], data: &[u8
     let (&tag, args) = data.split_first().ok_or(ProgramError::InvalidInstructionData)?;
     match tag {
         0 => initialize(program_id, accs, args),
-        1 => list(program_id, accs),
+        1 => list(program_id, accs, arg_u64(args, 0)?),
         2 => buy(program_id, accs, arg_u64(args, 0)?, arg_u64(args, 8)?),
         3 => sell(program_id, accs, arg_u64(args, 0)?, arg_u64(args, 8)?),
         4 => deposit_fees(program_id, accs, arg_u64(args, 0)?),
@@ -429,22 +440,23 @@ pub fn process_instruction(program_id: &Pubkey, accs: &[AccountInfo], data: &[u8
     }
 }
 
-/// 0: create the config and the USDC vault
+/// 0: create the config and the USDC vault. args: min starting price, slope, trader cut bps, protocol fee bps
 /// accounts: admin (signer, payer), config, vault, usdc_mint, treasury_usdc, system_program, token_program
 fn initialize(program_id: &Pubkey, accs: &[AccountInfo], args: &[u8]) -> ProgramResult {
     let [admin, config, vault, mint, treasury, system, token_program] = accounts::<7>(accs)?;
     signer(admin)?;
     programs_check(token_program)?;
-    let base_price = arg_u64(args, 0)?;
+    let min_base_price = arg_u64(args, 0)?;
     let slope = arg_u64(args, 8)?;
     let trader_cut_bps = arg_u16(args, 16)?;
     let protocol_fee_bps = arg_u16(args, 18)?;
-    if base_price == 0 || trader_cut_bps as u128 >= BPS || protocol_fee_bps > MAX_PROTOCOL_FEE_BPS {
+    if min_base_price == 0 || min_base_price > MAX_BASE_PRICE || trader_cut_bps as u128 >= BPS || protocol_fee_bps > MAX_PROTOCOL_FEE_BPS {
         return Err(err(KeysError::BadConfig));
     }
     // the trader's cut of any curve range must be exact, so the reserve always equals the sum of what each
-    // outstanding key put in and every seller is refunded exactly that, in any order and any chunk size
-    if (base_price as u128 * trader_cut_bps as u128) % BPS != 0 || (slope as u128 * trader_cut_bps as u128) % BPS != 0 {
+    // outstanding key put in and every seller is refunded exactly that, in any order and any chunk size. the
+    // slope is checked here; each trader's starting price is checked when they list
+    if (slope as u128 * trader_cut_bps as u128) % BPS != 0 {
         return Err(err(KeysError::BadConfig));
     }
     if mint.owner != &TOKEN_PROGRAM_ID || mint.data_len() != MINT_LEN {
@@ -471,26 +483,31 @@ fn initialize(program_id: &Pubkey, accs: &[AccountInfo], args: &[u8]) -> Program
     let ix = Instruction { program_id: TOKEN_PROGRAM_ID, accounts: vec![AccountMeta::new(vault_key, false), AccountMeta::new_readonly(*mint.key, false)], data };
     invoke(&ix, &[vault.clone(), mint.clone(), token_program.clone()])?;
 
-    let c = Config { admin: *admin.key, treasury_usdc: *treasury.key, usdc_mint: *mint.key, base_price, slope, trader_cut_bps, protocol_fee_bps, buys_paused: false, bump, vault_bump, event_bump };
+    let c = Config { admin: *admin.key, treasury_usdc: *treasury.key, usdc_mint: *mint.key, min_base_price, slope, trader_cut_bps, protocol_fee_bps, buys_paused: false, bump, vault_bump, event_bump };
     c.write(&mut config.try_borrow_mut_data()?);
     Ok(())
 }
 
-/// 1: a trader opts in. only the trader's own wallet can list it
+/// 1: a trader opts in, at a starting price of their choosing. only the trader's own wallet can list it
 /// accounts: trader (signer, payer), config, trader_state, system_program, event_authority, program
-fn list(program_id: &Pubkey, accs: &[AccountInfo]) -> ProgramResult {
+fn list(program_id: &Pubkey, accs: &[AccountInfo], base_price: u64) -> ProgramResult {
     let [trader, config, state, system, ea, program] = accounts::<6>(accs)?;
     signer(trader)?;
     let c = load_config(program_id, config)?;
+    // within bounds, and exact under the trader cut (see initialize)
+    if base_price < c.min_base_price || base_price > MAX_BASE_PRICE || (base_price as u128 * c.trader_cut_bps as u128) % BPS != 0 {
+        return Err(err(KeysError::BadPrice));
+    }
     if state.owner == program_id && state.data_len() != 0 {
         return Err(err(KeysError::AlreadyListed));
     }
     let (key, bump) = Pubkey::find_program_address(&[TRADER_SEED, trader.key.as_ref()], program_id);
     key_is(state, &key)?;
     create_pda(trader, state, system, &[TRADER_SEED, trader.key.as_ref(), &[bump]], TRADER_LEN, program_id)?;
-    Trader { trader: *trader.key, supply: 0, reserve: 0, acc_per_key: 0, bump }.write(&mut state.try_borrow_mut_data()?);
+    Trader { trader: *trader.key, supply: 0, reserve: 0, acc_per_key: 0, bump, base_price }.write(&mut state.try_borrow_mut_data()?);
     let mut e = vec![0u8];
     e.extend_from_slice(trader.key.as_ref());
+    e.extend_from_slice(&base_price.to_le_bytes());
     emit(program_id, &c, ea, program, &e)
 }
 
@@ -513,7 +530,7 @@ fn buy(program_id: &Pubkey, accs: &[AccountInfo], amount: u64, max_total: u64) -
     if after > SUPPLY_CAP {
         return Err(err(KeysError::SupplyCap));
     }
-    let curve = c.curve_cost(t.supply, amount)?;
+    let curve = c.curve_cost(t.base_price, t.supply, amount)?;
     let cut = c.trader_cut_of(curve);
     let fee = c.fee_of(curve);
     let total = curve.checked_add(fee).ok_or(err(KeysError::Math))?;
@@ -569,7 +586,7 @@ fn sell(program_id: &Pubkey, accs: &[AccountInfo], amount: u64, min_net: u64) ->
     key_is(treasury, &c.treasury_usdc)?;
     vault_check(program_id, vault, &c)?;
 
-    let curve = c.curve_cost(t.supply - amount, amount)?;
+    let curve = c.curve_cost(t.base_price, t.supply - amount, amount)?;
     let refund = curve - c.trader_cut_of(curve);
     let fee = c.fee_of(refund);
     let net = refund - fee;
