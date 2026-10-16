@@ -21,6 +21,10 @@ export type MarketPosition = {
   entryPx: number;
   openedAt: string;
   unrealisedPnl: number;
+  /** the viewer follows this trader */
+  followed?: boolean;
+  /** the viewer's own position */
+  mine?: boolean;
   closedCount: number;
   avgHoldMs: number | null;
   thesis: { id: string; text: string; likes: number; outcome: string } | null;
@@ -42,8 +46,10 @@ export type MarketTrade = {
 
 type Sort = "pnl" | "size";
 type Dir = "desc" | "asc";
-type Tab = "positions" | "trades" | "thesis";
+type Tab = "positions" | "trades" | "thesis" | "holders";
 export type TradersView = Tab;
+/** a tracked trader's balance of a spot token */
+export type MarketHolder = { address: string; user: UserLite | null; total: number; followed: boolean; updatedAt: string };
 
 /* =====================================================================
    shared pieces of the bottom deck (bottom-panel.tsx imports these; the
@@ -310,6 +316,8 @@ function SortHead({ k, label, sort, dir, onSort, className = "" }: { k: Sort; la
 }
 
 const VIEWS: readonly Tab[] = ["positions", "trades", "thesis"];
+/** spot markets add who holds the token */
+const SPOT_VIEWS: readonly Tab[] = [...VIEWS, "holders"];
 
 export function PositionsTable({
   label: marketLabel,
@@ -326,6 +334,8 @@ export function PositionsTable({
   initialTab = "positions",
   tab: tabProp,
   onTabChange,
+  holders,
+  token,
 }: {
   /** the market's display symbol (its base: "SOL" for SOL/USDC); the coin id stays for keys and data */
   label?: string;
@@ -343,12 +353,19 @@ export function PositionsTable({
   /** optional: drive the view from outside (the bottom panel keeps its own tabs in step) */
   tab?: Tab;
   onTabChange?: (t: Tab) => void;
+  /** spot markets: tracked traders holding the token */
+  holders?: MarketHolder[];
+  /** the spot token's name, for the holders list */
+  token?: string;
 }) {
   const sym = marketLabel ?? coin;
   const [sort, setSort] = useState<Sort>("size");
   const [dir, setDir] = useState<Dir>("desc");
   const [tabState, setTabState] = useState<Tab>(initialTab);
-  const tab = tabProp ?? tabState;
+  const views = holders ? SPOT_VIEWS : VIEWS;
+  // a perp has no holders view: a remembered "holders" falls back to positions
+  const want = tabProp ?? tabState;
+  const tab = views.includes(want) ? want : "positions";
   const setTab = (t: Tab) => {
     setTabState(t);
     onTabChange?.(t);
@@ -373,15 +390,15 @@ export function PositionsTable({
   const freshPos = useFreshRows(positions ? positions.map((p) => p.id) : null, filterKey);
   const freshFill = useFreshRows(trades ? trades.map((t) => t.id) : null, filterKey);
 
-  const counts: Record<Tab, number> = { positions: positions?.length ?? 0, trades: 0, thesis: theses?.length ?? 0 };
-  const label: Record<Tab, string> = { positions: "Positions", trades: "Trades", thesis: "Thesis" };
+  const counts: Record<Tab, number> = { positions: positions?.length ?? 0, trades: 0, thesis: theses?.length ?? 0, holders: holders?.length ?? 0 };
+  const label: Record<Tab, string> = { positions: "Positions", trades: "Trades", thesis: "Thesis", holders: "Holders" };
   const panelId = `tm-bp-traders-${tab}`;
 
   return (
     <div className="tm-bp-view">
       <div className="tm-bp-bar">
-        <div className="seg tm-bp-seg" role="tablist" aria-label="Traders view" onKeyDown={(e) => roveTabs(e, VIEWS, tab, setTab)}>
-          {VIEWS.map((t) => (
+        <div className="seg tm-bp-seg" role="tablist" aria-label="Traders view" onKeyDown={(e) => roveTabs(e, views, tab, setTab)}>
+          {views.map((t) => (
             <button
               key={t}
               type="button"
@@ -425,7 +442,7 @@ export function PositionsTable({
             </span>
           )}
           {/* the market filters shape positions and fills; the thesis list is its own stream */}
-          {tab !== "thesis" && (
+          {tab !== "thesis" && tab !== "holders" && (
             <>
               <Toggle on={thesisOnly} onChange={setThesisOnly} label="Thesis only" />
               <Toggle on={following} onChange={setFollowing} label="Following only" />
@@ -593,6 +610,37 @@ export function PositionsTable({
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          ))}
+
+        {tab === "holders" &&
+          holders &&
+          (!holders.length ? (
+            <BpEmpty icon={<BpIcon n="wallet" />} title={`No tracked holders of ${sym} yet`} hint="Spot balances of tracked traders are mirrored every few minutes." />
+          ) : (
+            <table className="tm-bp-table" data-testid="holders">
+              <thead>
+                <tr>
+                  <th className="tm-bp-c-who">Holder</th>
+                  <th className="r">Amount</th>
+                  <th className="r tm-bp-mid">≈ USD</th>
+                  <th className="r tm-bp-wide">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {holders.map((h) => (
+                  <tr key={h.address} data-testid={`holder-${h.address}`}>
+                    <td className="tm-bp-c-who">
+                      <BpTrader address={h.address} user={h.user} extra={h.followed ? <span className="pill pill-brand">following</span> : undefined} />
+                    </td>
+                    <td className="r num">
+                      {fmtQty(h.total)} {token ?? sym}
+                    </td>
+                    <td className="r num tm-bp-mid">{mid ? fmtUsd(h.total * mid) : "–"}</td>
+                    <td className="r num tm-bp-wide">{timeAgo(h.updatedAt)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           ))}

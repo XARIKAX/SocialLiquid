@@ -14,12 +14,18 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
-    "hl:top": "tsx scripts/hl-top.ts"
+    "hl:top": "tsx scripts/hl-top.ts",
+    "keys:distribute": "tsx scripts/keys-distribute.ts"
   },
   "dependencies": {
     "@nktkas/hyperliquid": "0.33.3",
+    "@noble/curves": "1.9.1",
     "@prisma/client": "6.19.3",
+    "@solana/web3.js": "1.98.4",
     "@tanstack/react-query": "^5.104.1",
+    "@wallet-standard/app": "1.1.0",
+    "bs58": "6.0.0",
+    "buffer": "6.0.3",
     "dotenv": "^17.2.0",
     "geist": "^1.7.2",
     "jose": "^6.1.0",

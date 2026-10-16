@@ -1,6 +1,6 @@
 "use client";
 import "./chart.css";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AreaSeries,
@@ -62,7 +62,8 @@ import {
   type Interval,
 } from "./chart-lib";
 import { CIcon, Clock, CtxMenu, IndMenu, Legend, PaneLegends, TfMenu, ThesisPins, TipLayer, TypeMenu, legendInd, type ChartMarker, type LegendInd, type PinGroup, type PriceLine } from "./chart-ui";
-import { DrawingLayer, createViewport, type Drawing, type Part, type Pt, type Tool } from "./chart-draw";
+import { DrawingLayer, createViewport, type Drawing, type Part, type Pt, type Tool, type Viewport } from "./chart-draw";
+import { TraderPins, type Project, type TraderPin } from "./trader-pins";
 import { downloadSnapshot } from "./chart-snapshot";
 
 export type { ChartMarker, PriceLine } from "./chart-ui";
@@ -179,6 +180,7 @@ export function Chart({
   markers = [],
   lastPx,
   lines = [],
+  pins = [],
 }: {
   /** hyperliquid's id, for the api ("BTC", "@107", "xyz:GOLD") */
   coin: string;
@@ -189,6 +191,8 @@ export function Chart({
   markers?: ChartMarker[];
   lastPx?: number;
   lines?: PriceLine[];
+  /** other traders' open positions on this market, drawn as avatars at their entries */
+  pins?: TraderPin[];
 }) {
   const [theme] = useTheme();
   const pal = useMemo(() => chartPalette(theme), [theme]);
@@ -241,6 +245,8 @@ export function Chart({
   const [overPlaceholder, setOverPlaceholder] = useState(false);
   const [showMine, setShowMine] = useState(true);
   const [showThesis, setShowThesis] = useState(true);
+  // trader pins: avatars at other traders' entries. on by default, remembered per browser
+  const [showPeople, setShowPeople] = useState(() => readPref(PEOPLE_STORE) !== "0");
   const [priceMode, setPriceMode] = useState<0 | 1 | 2>(0);
   const [autoScale, setAutoScale] = useState(true);
   const [full, setFull] = useState(false);
@@ -258,6 +264,7 @@ export function Chart({
   const [drawn, setDrawn] = useState(false);
 
   useEffect(() => writePref("sl:chart:type", chartType), [chartType]);
+  useEffect(() => writePref(PEOPLE_STORE, showPeople ? "1" : "0"), [showPeople]);
   useEffect(() => writePref(IND_STORE, JSON.stringify(inds)), [inds]);
   useEffect(() => {
     // the old key has been read into the new one: drop it so it is read once
@@ -1499,6 +1506,52 @@ export function Chart({
     return last.time + (i - (d.length - 1)) * ivRef.current;
   }, []);
   const yOf = useCallback((p: number) => mainRef.current?.priceToCoordinate(p) ?? null, []);
+  /** (time, price) → pixels inside the price pane, for the trader pins. times before the first candle clamp to the left edge */
+  const project = useCallback<Project>((timeMs, price) => {
+    const c = chartRef.current;
+    const s = mainRef.current;
+    const data = dataRef.current;
+    if (!c || !s || !data.length) return null;
+    const y = s.priceToCoordinate(price);
+    if (y === null) return null;
+    const t = timeMs / 1000;
+    const ts = c.timeScale();
+    let clampedLeft = false;
+    let x: number | null;
+    if (t < data[0].time) {
+      clampedLeft = true;
+      x = ts.logicalToCoordinate(0 as Logical);
+      if (x === null) return null;
+    } else {
+      let lo = 0;
+      let hi = data.length - 1;
+      while (lo < hi) {
+        const m = (lo + hi + 1) >> 1;
+        if (data[m].time <= t) lo = m;
+        else hi = m - 1;
+      }
+      const frac = Math.min(0.999, Math.max(0, (t - data[lo].time) / ivRef.current));
+      // logicalToCoordinate only answers whole bar indexes: interpolate between two bars
+      const x0 = ts.logicalToCoordinate(lo as Logical);
+      const x1 = ts.logicalToCoordinate((lo + 1) as Logical);
+      const xm = ts.logicalToCoordinate((lo - 1) as Logical);
+      if (x0 === null) return null;
+      const step = x1 !== null ? x1 - x0 : xm !== null ? x0 - xm : 0;
+      x = x0 + frac * step;
+    }
+    let w = 0;
+    try {
+      w = c.paneSize().width;
+    } catch {
+      return null;
+    }
+    if (x < 0) {
+      x = 0;
+      clampedLeft = true;
+    }
+    if (x > w) return null;
+    return { x: Math.max(12, x), y, clampedLeft };
+  }, []);
   const paneWidth = useCallback(() => {
     try {
       return chartRef.current?.paneSize().width ?? 0;
@@ -2092,6 +2145,11 @@ export function Chart({
             <CIcon n="thesis" size={14} className="tm-chart-pt-ico" />
             <span className="tm-chart-pt-l">Thesis</span>
           </button>
+          <button type="button" role="switch" aria-checked={showPeople} aria-label="People" className="tm-chart-pt" data-c="people" data-tip="Traders you follow and the biggest books, at their entries" onClick={() => setShowPeople((v) => !v)}>
+            <i aria-hidden />
+            <CIcon n="people" size={14} className="tm-chart-pt-ico" />
+            <span className="tm-chart-pt-l">{pins.length ? `People ${pins.length}` : "People"}</span>
+          </button>
           <i className="tm-chart-sep" aria-hidden />
           {/* spot pairs pay no funding: no funding view for them */}
           {!isSpot && (
@@ -2206,6 +2264,7 @@ export function Chart({
           />
           <span ref={pxLineRef} className="tm-chart-pxline" aria-hidden />
           {mode === "chart" && <ThesisPins groups={pinGroups} register={registerPin} />}
+          {mode === "chart" && showPeople && pins.length > 0 && drawn && <PeopleLayer vp={vp} coin={coin} pins={pins} project={project} lastPx={lastPx} width={paneWidth} height={paneHeight} />}
           {mode === "chart" && <PaneLegends chart={chart} inds={oscLegend} rows={rows.length} liveIdx={live?.idx ?? 0} prec={prec} register={registerOsc} onRemove={removeInd} onToggle={toggleIndOff} />}
           {mode === "chart" ? (
             <Legend
@@ -2467,4 +2526,12 @@ function ChartSkeleton() {
       <span className="tm-chart-skel-sweep" aria-hidden />
     </div>
   );
+}
+
+const PEOPLE_STORE = "sl:chart:people";
+
+/** trader pins over the price pane: laid out again whenever the viewport store ticks (pan, zoom, resize), never per frame */
+function PeopleLayer({ vp, coin, pins, project, lastPx, width, height }: { vp: Viewport; coin: string; pins: TraderPin[]; project: Project; lastPx?: number; width: () => number; height: () => number }) {
+  useSyncExternalStore(vp.subscribe, vp.get, vp.get);
+  return <TraderPins coin={coin} pins={pins} project={project} lastPx={lastPx} width={width()} height={height()} />;
 }

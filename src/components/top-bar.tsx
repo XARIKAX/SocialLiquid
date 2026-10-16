@@ -107,6 +107,10 @@ export function TopBar({ onToggleFeed }: { onToggleFeed?: () => void }) {
         <NavTab href="/trade" label="Trade" match={["/trade", "/m/"]} />
         <NavTab href="/tokens" label="Tokens" match={["/tokens"]} />
         <NavTab href="/leaderboard" label="Leaderboard" match={["/leaderboard"]} />
+        <NavTab href="/keys" label="Keys" match={["/keys"]} />
+        <NavTab href="/portfolio" label="Portfolio" match={["/portfolio"]} />
+        <NavTab href="/groups" label="Groups" match={["/groups", "/groups/"]} />
+        {signedIn && <NavTab href="/invite" label="Invite" match={["/invite"]} />}
       </nav>
       {env && (
         <span className="pill pill-warn tm-chrome-env" title={env.title}>

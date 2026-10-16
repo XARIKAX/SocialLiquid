@@ -12,7 +12,13 @@ import { openProfileEditor } from "../profile-editor";
 
 export type Profile = {
   address: string;
-  user: { id: string; handle: string | null; displayName: string | null; xHandle: string | null; tgHandle: string | null; bio: string | null; avatarUrl: string | null; bannerUrl: string | null; createdAt: string } | null;
+  user: { id: string; handle: string | null; displayName: string | null; xHandle: string | null; tgHandle: string | null; bio: string | null; avatarUrl: string | null; bannerUrl: string | null; createdAt: string; style?: string | null; pinnedThesisId?: string | null; pinnedPositionId?: string | null } | null;
+  pinnedPosition?: { id: string; coin: string; side: string; sizeUsd: number; leverage: number; entryPx: number; closePx: number | null; realisedPnl: number | null; unrealisedPnl: number; size: number; openedAt: string; closedAt: string | null; liquidated: boolean; thesis: { id: string; text: string; outcome: string } | null } | null;
+  points?: { total: number; week: number; rank: number } | null;
+  streaks?: { current: number; best: number; days: number };
+  badges?: { id: string; label: string; emoji: string; desc: string; earned: boolean }[];
+  invites?: { joined: number } | null;
+  invitedBy?: { address: string; handle: string | null; displayName: string | null } | null;
   mutuals: number;
   displayName: string | null;
   claimed: boolean;
@@ -28,7 +34,7 @@ export type Profile = {
   fillStats: { fills: number; closes: number; wins: number } | null;
   /** hyperliquid's own portfolio windows: cumulative pnl curve, pnl, volume, account value at window start */
   hl: Record<"day" | "week" | "month" | "allTime", { pnl: number; vlm: number; startValue: number; curve: { t: number; v: number }[] } | null> | null;
-  open: { id: string | null; coin: string; side: string; size: number; sizeUsd: number; leverage: number; entryPx: number; unrealisedPnl: number; roe: number; liquidationPx: number | null; openedAt: string | null; thesis: { id: string; text: string } | null }[];
+  open: { id: string | null; coin: string; side: string; size: number; sizeUsd: number; leverage: number; entryPx: number; unrealisedPnl: number; roe: number; liquidationPx: number | null; openedAt: string | null; thesis: { id: string; text: string } | null; copiedFrom?: { address: string; handle: string | null; displayName: string | null } | null }[];
   recentClosed: { id: string; coin: string; side: string; sizeUsd: number; leverage: number; entryPx: number; closePx: number | null; realisedPnl: number | null; openedAt: string; closedAt: string; liquidated: boolean }[];
   theses: { id: string; coin: string; text: string; outcome: string; createdAt: string; likes: number; likedByMe: boolean; position: { id: string; side: string; sizeUsd: number; leverage: number; entryPx: number; size: number; closedAt: string | null; realisedPnl: number | null; unrealisedPnl: number; openedAt: string } | null }[];
 };
@@ -74,7 +80,8 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
   const allTimePnl = p.hl?.allTime?.pnl ?? p.stats.pnlAll;
   const tradeCount = p.stats.closedTrades || p.fillStats?.closes || 0;
   const winRate = p.stats.closedTrades ? p.stats.winRate : p.fillStats?.closes ? p.fillStats.wins / p.fillStats.closes : null;
-  const pinned = useMemo(() => [...p.theses].sort((a, b) => b.likes - a.likes)[0], [p.theses]);
+  const pinned = useMemo(() => (p.user?.pinnedThesisId ? p.theses.find((t) => t.id === p.user!.pinnedThesisId) : undefined) ?? [...p.theses].sort((a, b) => b.likes - a.likes)[0], [p.theses, p.user?.pinnedThesisId]);
+  const pinnedIsChoice = !!p.user?.pinnedThesisId && pinned?.id === p.user.pinnedThesisId;
   const openUpnl = p.open.reduce((a, o) => a + (livePnl(o, mids.data?.[o.coin] ? Number(mids.data[o.coin]) : undefined) ?? o.unrealisedPnl), 0);
 
   return (
@@ -97,22 +104,40 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                   {p.claimed && <span className="text-brand" title="claimed"><Icon.check /></span>}
                   {!p.claimed && <span className="pill pill-neutral">Unclaimed</span>}
                   {p.isMe && <span className="pill pill-brand">You</span>}
+                  {p.user?.style && <span className="pill pill-neutral" data-testid="style-pill">{p.user.style}</span>}
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted mt-0.5 flex-wrap">
                   {p.user?.handle && <span className="text-fg-2">@{p.user.handle}</span>}
                   {p.user?.xHandle && <a href={`https://x.com/${p.user.xHandle}`} target="_blank" rel="noreferrer" className="hover:text-fg inline-flex items-center gap-1"><Icon.x /> {p.user.xHandle}</a>}
                   {p.user?.tgHandle && <a href={`https://t.me/${p.user.tgHandle}`} target="_blank" rel="noreferrer" className="hover:text-fg inline-flex items-center gap-1"><Icon.send /> {p.user.tgHandle}</a>}
                   <span className="num" title={p.address}>{shortAddr(p.address)}</span>
+                  {p.invitedBy && <span data-testid="invited-by">invited by <Link href={`/t/${p.invitedBy.handle ?? p.invitedBy.address}`} className="text-fg-2 hover:underline">{p.invitedBy.displayName ?? (p.invitedBy.handle ? `@${p.invitedBy.handle}` : shortAddr(p.invitedBy.address))}</Link></span>}
+                  {p.invites && p.invites.joined > 0 && <span data-testid="invited-count">brought in <b className="text-fg-2 num">{p.invites.joined}</b></span>}
                 </div>
                 {p.user?.bio && <p className="text-[13px] text-fg-2 mt-1.5 max-w-[560px] leading-snug">{p.user.bio}</p>}
+                {(p.points || (p.streaks && (p.streaks.current >= 2 || p.streaks.days >= 2)) || p.badges?.some((b) => b.earned)) && (
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap" data-testid="badges">
+                    {p.points && <span className="pill pill-brand num" title={`#${p.points.rank} on the points board · ${p.points.week} this week`} data-testid="points-pill">{p.points.total} pts · #{p.points.rank}</span>}
+                    {p.streaks && p.streaks.current >= 2 && <span className="pill pill-warn num" title={`${p.streaks.current} winning trades in a row · best ${p.streaks.best}`} data-testid="streak-pill">🔥 {p.streaks.current} win streak</span>}
+                    {p.streaks && p.streaks.days >= 2 && <span className="pill pill-neutral num" title="consecutive days with a trade">📆 {p.streaks.days}d</span>}
+                    {p.badges?.filter((b) => b.earned).map((b) => (
+                      <span key={b.id} className="pill pill-neutral" title={b.desc} data-testid={`badge-${b.id}`}>{b.emoji} {b.label}</span>
+                    ))}
+                    {p.badges && p.badges.some((b) => !b.earned) && (
+                      <span className="text-[11px] text-dim" title={p.badges.filter((b) => !b.earned).map((b) => `${b.emoji} ${b.label}: ${b.desc}`).join("\n")}>{p.badges.filter((b) => b.earned).length}/{p.badges.length} badges</span>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="hidden sm:flex items-center gap-6 pt-12 text-center">
+                {p.points && <StatBig label="Points" value={p.points.total} />}
                 <StatBig label="Mutuals" value={p.mutuals} />
                 <StatBig label="Following" value={p.following} />
                 <StatBig label="Followers" value={p.followers} />
               </div>
               <div className="flex gap-2 pt-12">
                 <button className="btn h-9 w-9 px-0" title="share" onClick={() => navigator.share?.({ url: location.href, title: name }).catch(() => navigator.clipboard?.writeText(location.href))}><Icon.share /></button>
+                {p.isMe && <Link href="/invite" className="btn h-9 px-3 inline-flex items-center gap-1.5" data-testid="invite-btn"><Icon.users /> Invite</Link>}
                 {p.isMe && <button className="btn h-9 px-4" onClick={() => openProfileEditor()}>Edit profile</button>}
                 {!p.isMe && (
                   <button className={`btn h-9 px-4 ${p.isFollowing ? "" : "bg-thesis border-thesis text-white hover:brightness-110"}`} onClick={follow} disabled={busy || !signedIn} title={signedIn ? "" : "sign in to follow"}>
@@ -127,6 +152,11 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
               {p.stats.avgHoldMs ? <span className="inline-flex items-center gap-1"><Icon.clock /> {fmtDuration(p.stats.avgHoldMs)} avg. hold</span> : null}
               <span className="inline-flex items-center gap-1"><Icon.layers /> {tradeCount} trades{!p.stats.closedTrades && p.fillStats ? ` · last ${p.fillStats.fills} fills` : ""}</span>
               <span>{winRate === null || winRate === undefined ? "" : `${fmtPct(winRate, 0, false)} win rate`}</span>
+              {p.stats.copyTrades > 0 && (
+                <span className="inline-flex items-center gap-1.5" title={`${p.stats.copyTrades} positions were opened with Copy on this trader`} data-testid="copier-stats">
+                  <Icon.copy /> Copied by <b className="text-fg-2">{p.stats.copiers}</b> {p.stats.copiers === 1 ? "trader" : "traders"} · copiers <Pnl value={p.stats.copiersPnl} compact className="font-semibold" />
+                </span>
+              )}
               {p.user?.createdAt && <span>Joined {new Date(p.user.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>}
               {p.accountValue !== null && <span className="num">Account {fmtUsd(p.accountValue, { compact: true })}</span>}
             </div>
@@ -192,19 +222,32 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                   <CoinIcon coin={mk(pinned.coin).icon} size={22} />
                   <span className="font-semibold">{mk(pinned.coin).name}</span>
                   <span className="pill pill-thesis">Thesis</span>
-                  <span className="pill pill-neutral">Most liked</span>
+                  <span className="pill pill-neutral">{pinnedIsChoice ? "Pinned" : "Most liked"}</span>
                   <span className="ml-auto"><OutcomePill outcome={pinned.outcome} /></span>
                 </div>
                 <p className="text-[13.5px] mt-2 leading-snug whitespace-pre-wrap break-words">{pinned.text}</p>
                 <div className="flex items-center gap-3 mt-2 text-xs text-dim">
                   <span className="inline-flex items-center gap-1 num"><Icon.heart /> {pinned.likes}</span>
-                  <span className="num">{timeAgo(pinned.createdAt)} ago</span>
+                  <span className="num" suppressHydrationWarning>{timeAgo(pinned.createdAt)} ago</span>
                   <Link href={`/t/${p.user?.handle ?? p.address}/thesis/${pinned.id}`} className="ml-auto hover:text-fg">Permalink</Link>
                 </div>
               </section>
             ) : (
               <section className="card p-4">
                 <Empty title={p.claimed ? "No theses yet" : "Unclaimed address"} hint={p.claimed ? "A thesis is a trade with a reason attached. Post one from the trade panel." : "Positions and PnL are tracked from chain. Connect this wallet to claim it and post theses."} />
+              </section>
+            )}
+            {p.pinnedPosition && (
+              <section className="card p-4" data-testid="pinned-trade">
+                <div className="flex items-center gap-2">
+                  <CoinIcon coin={p.pinnedPosition.coin} size={22} />
+                  <span className="font-semibold">{p.pinnedPosition.coin}</span>
+                  <span className={`pill ${p.pinnedPosition.side === "LONG" ? "pill-up" : "pill-down"}`}>{p.pinnedPosition.side === "LONG" ? "Long" : "Short"} {p.pinnedPosition.leverage}x</span>
+                  <span className="pill pill-neutral">Pinned trade</span>
+                  <span className="ml-auto"><Pnl value={p.pinnedPosition.closedAt ? p.pinnedPosition.realisedPnl : livePnl({ side: p.pinnedPosition.side, size: p.pinnedPosition.size, entryPx: p.pinnedPosition.entryPx }, mids.data?.[p.pinnedPosition.coin] ? Number(mids.data[p.pinnedPosition.coin]) : undefined) ?? p.pinnedPosition.unrealisedPnl} className="font-semibold" /></span>
+                </div>
+                <div className="text-[12px] text-muted num mt-1.5" suppressHydrationWarning>{fmtUsd(p.pinnedPosition.sizeUsd, { compact: true })} · entry {fmtPx(p.pinnedPosition.entryPx)}{p.pinnedPosition.closePx ? ` → ${fmtPx(p.pinnedPosition.closePx)}` : ""} · {p.pinnedPosition.closedAt ? `closed ${timeAgo(p.pinnedPosition.closedAt)}` : "open"}</div>
+                {p.pinnedPosition.thesis && <p className="text-[13px] mt-2 leading-snug text-fg-2"><span className="text-thesis font-medium">Thesis · </span>{p.pinnedPosition.thesis.text}</p>}
               </section>
             )}
             <section className="card overflow-hidden">
@@ -225,7 +268,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                           <td className="px-2 py-2"><span className={`pill ${f.liquidation ? "pill-liq" : open ? (long ? "pill-up" : "pill-down") : "pill-neutral"}`}>{f.liquidation ? "Liquidated" : f.dir}</span></td>
                           <td className="num px-2 py-2 text-right font-medium">{fmtUsd(f.usd)}</td>
                           <td className={`num px-2 py-2 text-right hidden sm:table-cell ${f.closedPnl > 0 ? "text-up" : f.closedPnl < 0 ? "text-down" : "text-dim"}`}>{f.closedPnl ? fmtUsd(f.closedPnl, { sign: true }) : ""}</td>
-                          <td className="num px-4 py-2 text-right text-dim">{timeAgo(f.time)}</td>
+                          <td className="num px-4 py-2 text-right text-dim" suppressHydrationWarning>{timeAgo(f.time)}</td>
                         </tr>
                       );
                     })}
@@ -262,7 +305,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                         <span className="pill pill-neutral num">{o.leverage}x</span>
                         {o.thesis && <span className="pill pill-thesis">Thesis</span>}
                       </div>
-                      <div className="text-[11px] text-dim num mt-0.5">{o.size} {mk(o.coin).base} · entry {fmtPx(o.entryPx)}{o.liquidationPx ? ` · liq ${fmtPx(o.liquidationPx)}` : ""}{o.openedAt ? ` · ${fmtDuration(Date.now() - new Date(o.openedAt).getTime())}` : ""}</div>
+                      <div className="text-[11px] text-dim num mt-0.5" suppressHydrationWarning>{o.size} {mk(o.coin).base} · entry {fmtPx(o.entryPx)}{o.liquidationPx ? ` · liq ${fmtPx(o.liquidationPx)}` : ""}{o.openedAt ? ` · ${fmtDuration(Date.now() - new Date(o.openedAt).getTime())}` : ""}</div>
                     </div>
                     <div className="text-right leading-tight">
                       <div className="num font-semibold">{fmtUsd(o.sizeUsd)}</div>
@@ -297,7 +340,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                         <span className="pill pill-neutral num">{c.leverage}x</span>
                         {c.liquidated && <span className="pill pill-liq">Liquidated</span>}
                       </div>
-                      <div className="text-[11px] text-dim num mt-0.5">{fmtPx(c.entryPx)} → {fmtPx(c.closePx)} · held {fmtDuration(new Date(c.closedAt).getTime() - new Date(c.openedAt).getTime())} · {timeAgo(c.closedAt)} ago</div>
+                      <div className="text-[11px] text-dim num mt-0.5" suppressHydrationWarning>{fmtPx(c.entryPx)} → {fmtPx(c.closePx)} · held {fmtDuration(new Date(c.closedAt).getTime() - new Date(c.openedAt).getTime())} · {timeAgo(c.closedAt)} ago</div>
                     </div>
                     <div className="text-right leading-tight">
                       <Pnl value={c.realisedPnl} className="font-semibold block" />
@@ -329,7 +372,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                     <CoinIcon coin={mk(t.coin).icon} size={18} />
                     <Link href={mk(t.coin).href} className="font-semibold text-[13px] hover:underline">{mk(t.coin).name}</Link>
                     {t.position && <span className={`num ${t.position.side === "LONG" ? "text-up" : "text-down"}`}>{t.position.side === "LONG" ? "Long" : "Short"} {fmtUsd(t.position.sizeUsd, { compact: true })} · {t.position.leverage}x</span>}
-                    <span className="ml-auto text-dim num">{timeAgo(t.createdAt)}</span>
+                    <span className="ml-auto text-dim num" suppressHydrationWarning>{timeAgo(t.createdAt)}</span>
                   </div>
                   <p className="text-[13px] mt-1.5 leading-snug whitespace-pre-wrap break-words">{t.text}</p>
                   <div className="flex items-center gap-2 mt-2">
@@ -357,7 +400,7 @@ function StatBig({ label, value }: { label: string; value: number }) {
   );
 }
 
-function Sparkline({ points }: { points: { t: number; v: number }[] }) {
+export function Sparkline({ points }: { points: { t: number; v: number }[] }) {
   if (points.length < 2) {
     return <div className="h-full flex items-center justify-center text-xs text-dim border border-dashed border-line rounded-[10px]">Not enough closed trades in this window</div>;
   }

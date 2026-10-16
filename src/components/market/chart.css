@@ -333,6 +333,10 @@
     background: radial-gradient(circle at 35% 35%, #e6edff, var(--color-thesis) 70%);
     box-shadow: 0 0 8px rgb(107 147 255 / calc(0.9 * var(--glow)));
   }
+  .tm-chart-pt[data-c="people"][aria-checked="true"] i {
+    background: radial-gradient(circle at 35% 35%, #fff4dc, #f0b94a 70%);
+    box-shadow: 0 0 8px rgb(240 185 74 / calc(0.85 * var(--glow)));
+  }
 
   /* ---------- body, rail ---------- */
   .tm-chart-body {
@@ -1863,6 +1867,9 @@
     .tm-chart-pt[data-c="thesis"][aria-checked="true"] {
       color: #a9c0ff;
     }
+    .tm-chart-pt[data-c="people"][aria-checked="true"] {
+      color: #f5cf7d;
+    }
     .tm-chart-pt[aria-checked="true"] .tm-chart-pt-ico {
       filter: drop-shadow(0 0 4px currentColor);
     }
@@ -1871,6 +1878,9 @@
     }
     [data-theme="light"] .tm-chart-pt[data-c="thesis"][aria-checked="true"] {
       color: var(--color-thesis);
+    }
+    [data-theme="light"] .tm-chart-pt[data-c="people"][aria-checked="true"] {
+      color: #a8740f;
     }
     [data-theme="light"] .tm-chart-pt[aria-checked="true"] .tm-chart-pt-ico {
       filter: none;

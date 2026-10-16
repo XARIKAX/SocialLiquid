@@ -72,7 +72,7 @@ const STAGE_NOTE: Record<Stage, string> = {
 };
 const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSummary; mid?: number }) {
+export function Ticket({ coin, market, mid, defaultSide }: { coin: string; market?: MarketSummary; mid?: number; /** the side to open on (the phone trade bar's Long / Short buttons) */ defaultSide?: "LONG" | "SHORT" }) {
   const { address, signedIn } = useAuth();
   const ob = useOnboarding();
   const ready = ob.stage === "ready";
@@ -102,7 +102,7 @@ export function Ticket({ coin, market, mid }: { coin: string; market?: MarketSum
      agree on them (a useId here was split by tree differences above the ticket and failed hydration) */
   const uid = `tm-tk-${coin.replace(/[^A-Za-z0-9_-]/g, "_")}`;
 
-  const [side, setSide] = useState<"LONG" | "SHORT">("LONG");
+  const [side, setSide] = useState<"LONG" | "SHORT">(defaultSide ?? "LONG");
   const [type, setType] = useState<OrderType>("market");
   const [proOpen, setProOpen] = useState(false);
   const [isCross, setIsCross] = useState(true);

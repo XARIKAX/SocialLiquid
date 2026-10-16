@@ -64,6 +64,13 @@ const GLYPHS: Record<string, ReactNode> = {
   funding: <path d="M3.5 20.5h17M6 16.5l4.2-5.2 3.4 3.1L20 6.5M15.5 6.5H20V11" />,
   chevrons: <path d="m6 7 5 5-5 5M13 7l5 5-5 5" />,
   mine: <path d="M8 19V6M4.5 9.5 8 6l3.5 3.5M16 5v13M12.5 14.5 16 18l3.5-3.5" />,
+  people: (
+    <>
+      <circle cx="9" cy="8.5" r="3" />
+      <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+      <path d="M15.5 6a3 3 0 0 1 0 5.5M17 14a5 5 0 0 1 3.5 5" />
+    </>
+  ),
   thesis: (
     <>
       <path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 17h-7l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z" />

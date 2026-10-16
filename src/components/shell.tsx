@@ -1,7 +1,11 @@
 "use client";
 import "./chrome.css";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { usePathname, useServerInsertedHTML } from "next/navigation";
+import { useMediaQuery } from "@/hooks/use-media";
+import { useAuth } from "@/hooks/use-auth";
+import { useConnectModal } from "./connect-modal";
 import { TopBar } from "./top-bar";
 import { FeedColumn } from "./feed/feed-column";
 import { Ticker } from "./ticker";
@@ -10,12 +14,13 @@ import { useAccount } from "wagmi";
 import { FundsHost } from "./trade/funds";
 import { ConvertHost } from "./trade/convert";
 import { ChaseRunner } from "./trade/chase-runner";
-import { ProfileHost } from "./profile-editor";
+import { ProfileHost, openProfileEditor } from "./profile-editor";
 import { AlertToasts } from "./alerts";
 
 /* =====================================================================
    the shell: the app bar, the rail and the page in one frame with even
-   gaps, the footer tape, and on phones a glass Feed / Trade tab bar.
+   gaps, the footer tape, and on phones a glass tab bar: the rail's feed
+   and the app's sections (markets, trade, keys, portfolio, you).
    the rail can be dragged wider or narrower (drag it closed to fold it),
    and folds into a slim glass column of its panels. styles: ./chrome.css
    ===================================================================== */
@@ -72,18 +77,6 @@ function useRouteScroll(path: string, onRoute: () => void) {
   }, [path]);
 }
 
-function useMediaQuery(q: string): boolean | undefined {
-  const [m, setM] = useState<boolean | undefined>(undefined);
-  useEffect(() => {
-    const mq = window.matchMedia(q);
-    const on = () => setM(mq.matches);
-    on();
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, [q]);
-  return m;
-}
-
 const S = { fill: "none", stroke: "currentColor", strokeWidth: 1.75, strokeLinecap: "round", strokeLinejoin: "round" } as const;
 const Glyph = {
   tokens: (
@@ -122,14 +115,6 @@ const MINI: { id: RailTab; label: string; icon: ReactNode }[] = [
   { id: "leaderboard", label: "Leaderboard", icon: Glyph.board },
   { id: "alerts", label: "Alerts", icon: <Icon.bell /> },
 ];
-
-/** what the page tab is called on a phone, by route */
-function pageTab(path: string): { label: string; icon: ReactNode } {
-  if (path.startsWith("/leaderboard")) return { label: "Leaderboard", icon: Glyph.board };
-  if (path.startsWith("/tokens")) return { label: "Tokens", icon: Glyph.tokens };
-  if (path.startsWith("/t/")) return { label: "Profile", icon: Glyph.user };
-  return { label: "Trade", icon: Glyph.trade };
-}
 
 /** fomo layout: framed feed on the left, page content (centre + right) owned by the route. mobile: feed / trade tabs. */
 export function Shell({ children }: { children: ReactNode }) {
@@ -170,7 +155,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const showFeed = isDesktop === true || (isDesktop === false && tab === "feed");
   const folded = collapsed && isDesktop === true;
-  const page = pageTab(path);
   // server render only: the client never renders a script tag (react warns about those), and the first paint is already right
   const initSent = useRef(false);
   useServerInsertedHTML(() => {
@@ -192,7 +176,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {folded ? (
             <MiniRail onExpand={expand} />
           ) : showFeed ? (
-            <FeedColumn onNavigate={() => switchTab("page")} onCollapse={isDesktop ? toggleCollapsed : undefined} />
+            <FeedColumn onNavigate={() => switchTab("page")} onCollapse={isDesktop ? toggleCollapsed : undefined} initialTab={isDesktop ? undefined : "feed"} />
           ) : (
             <RailSkeleton />
           )}
@@ -203,20 +187,60 @@ export function Shell({ children }: { children: ReactNode }) {
         </main>
       </div>
       <Ticker />
-      <nav className="tm-chrome-tabbar" aria-label="mobile">
-        <span className="tm-chrome-tabbar-ind" style={{ "--i": tab === "feed" ? 0 : 1 } as React.CSSProperties} aria-hidden />
-        {/* the rail opens on the market list (tokens first: a new visitor has nothing in feed or alerts yet), so the tab
-            says so. no dot on it: a dot that never goes away reads as an unread badge */}
-        <button type="button" className="tm-chrome-tabbar-btn" data-on={tab === "feed" || undefined} aria-pressed={tab === "feed"} onClick={() => switchTab("feed")}>
-          {Glyph.tokens}
-          Markets
-        </button>
-        <button type="button" className="tm-chrome-tabbar-btn" data-on={tab === "page" || undefined} aria-pressed={tab === "page"} onClick={() => switchTab("page")}>
-          {page.icon}
-          {page.label}
-        </button>
-      </nav>
+      <PhoneTabs tab={tab} onRail={() => switchTab("feed")} onPage={() => switchTab("page")} />
     </div>
+  );
+}
+
+/** the phone tab bar: the rail on its live feed, then the app's sections. the bar lights the one you are on */
+function PhoneTabs({ tab, onRail, onPage }: { tab: "feed" | "page"; onRail: () => void; onPage: () => void }) {
+  const path = usePathname();
+  const { signedIn, isConnected, me, signIn } = useAuth();
+  const connect = useConnectModal();
+  // Trade opens the last market you were on
+  const [lastCoin, setLastCoin] = useState("BTC");
+  useEffect(() => {
+    const m = path.match(/^\/m\/([^/?#]+)/);
+    try {
+      if (m) {
+        const c = decodeURIComponent(m[1]);
+        setLastCoin(c);
+        localStorage.setItem("sl:last-coin", c);
+      } else setLastCoin(localStorage.getItem("sl:last-coin") ?? "BTC");
+    } catch {}
+  }, [path]);
+  const handle = me?.user?.handle;
+  const items: { id: string; label: string; icon: ReactNode; href: string | null; on: RegExp }[] = [
+    { id: "markets", label: "Markets", icon: Glyph.tokens, href: "/tokens", on: /^\/tokens/ },
+    { id: "trade", label: "Trade", icon: Glyph.trade, href: `/m/${encodeURIComponent(lastCoin)}`, on: /^\/(m\/|trade)/ },
+    { id: "keys", label: "Keys", icon: <Icon.key />, href: "/keys", on: /^\/keys/ },
+    { id: "portfolio", label: "Portfolio", icon: <Icon.wallet />, href: "/portfolio", on: /^\/portfolio/ },
+    { id: "me", label: "Me", icon: Glyph.user, href: handle ? `/t/${handle}` : null, on: /^\/t\// },
+  ];
+  const hit = items.findIndex((x) => x.on.test(path));
+  // 0 is the feed; a page with no tab of its own (leaderboard, groups) lights none
+  const active = tab === "feed" ? 0 : hit < 0 ? -1 : hit + 1;
+  return (
+    <nav className="tm-chrome-tabbar" aria-label="Sections" style={{ "--n": items.length + 1 } as CSSProperties} data-testid="mobile-nav">
+      {active >= 0 && <span className="tm-chrome-tabbar-ind" style={{ "--i": active } as CSSProperties} aria-hidden />}
+      <button type="button" className="tm-chrome-tabbar-btn" data-on={active === 0 || undefined} aria-pressed={active === 0} onClick={onRail}>
+        {Glyph.feed}
+        Feed
+      </button>
+      {items.map((x, i) =>
+        x.href ? (
+          <Link key={x.id} href={x.href} className="tm-chrome-tabbar-btn" data-on={active === i + 1 || undefined} aria-current={active === i + 1 ? "page" : undefined} onClick={onPage}>
+            {x.icon}
+            {x.label}
+          </Link>
+        ) : (
+          <button key={x.id} type="button" className="tm-chrome-tabbar-btn" onClick={() => (!isConnected ? connect.open() : !signedIn ? void signIn() : openProfileEditor())}>
+            {x.icon}
+            {x.label}
+          </button>
+        ),
+      )}
+    </nav>
   );
 }
 

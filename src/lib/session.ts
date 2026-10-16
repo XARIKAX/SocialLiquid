@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import { inviterByCode } from "./invites";
 import { cookies } from "next/headers";
 import { prisma } from "./db";
 import { INVITE_CODE, INVITE_REQUIRED, requireEnv } from "./env";
@@ -97,7 +98,7 @@ export async function hasInvite(): Promise<boolean> {
 
 export async function grantInvite(code: string): Promise<boolean> {
   if (!INVITE_REQUIRED) return true;
-  if (code !== INVITE_CODE) return false;
+  if (code !== INVITE_CODE && !(await inviterByCode(code))) return false;
   const token = await new SignJWT({ invite: code }).setProtectedHeader({ alg: "HS256" }).setExpirationTime("365d").sign(secret());
   (await cookies()).set(INVITE_COOKIE, token, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
   return true;

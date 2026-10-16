@@ -22,12 +22,17 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
     addresses = f.map((x) => x.following.address);
   } else if (following) addresses = [];
 
-  const positions = await prisma.position.findMany({
-    where: { coin, closedAt: null, ...(addresses ? { address: { in: addresses } } : {}), ...(thesisOnly ? { theses: { some: {} } } : {}) },
-    orderBy: { sizeUsd: "desc" },
-    take: 200,
-    include: { theses: { orderBy: { createdAt: "desc" }, take: 1, include: { _count: { select: { likes: true } } } } },
-  });
+  const INCLUDE = { theses: { orderBy: { createdAt: "desc" as const }, take: 1, include: { _count: { select: { likes: true } } } } };
+  const baseWhere = { coin, closedAt: null, ...(addresses ? { address: { in: addresses } } : {}), ...(thesisOnly ? { theses: { some: {} } } : {}) };
+  // the biggest books, plus the viewer's own positions and the latest ones with a thesis: a small trader who just
+  // posted must see themselves on the chart even when 200 whales sit above them
+  const [big, own, withThesis] = await Promise.all([
+    prisma.position.findMany({ where: baseWhere, orderBy: { sizeUsd: "desc" }, take: 200, include: INCLUDE }),
+    s ? prisma.position.findMany({ where: { ...baseWhere, address: s.address }, include: INCLUDE }) : [],
+    prisma.position.findMany({ where: { ...baseWhere, theses: { some: {} } }, orderBy: { openedAt: "desc" }, take: 50, include: INCLUDE }),
+  ]);
+  const seen = new Set<string>();
+  const positions = [...big, ...own, ...withThesis].filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
   const fills = await prisma.fill.findMany({ where: { coin }, orderBy: { time: "desc" }, take: 60 });
   const dayFills = await prisma.fill.findMany({ where: { coin, time: { gte: new Date(Date.now() - 86_400_000) } }, select: { dir: true, px: true, sz: true } });
   const flow = dayFills.reduce(
@@ -41,6 +46,15 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
     { longUsd: 0, shortUsd: 0, count: 0 },
   );
   const users = await usersByAddress([...positions.map((p) => p.address), ...fills.map((f) => f.address)]);
+  // the viewer's follow graph on this market, and how often this market was copied today: the social strip and the chart pins
+  const followedSet = new Set<string>(
+    addresses ?? (s ? (await prisma.follow.findMany({ where: { followerId: s.userId }, select: { following: { select: { address: true } } } })).map((x) => x.following.address) : []),
+  );
+  // spot markets: who holds the token, from the spot balances the indexer mirrors
+  const holderRows = market.kind === "spot" && market.token ? await prisma.spotHolding.findMany({ where: { coin: market.token, total: { gt: 0 } }, orderBy: { total: "desc" }, take: 100 }) : [];
+  const holderUsers = await usersByAddress(holderRows.map((h) => h.address));
+  const holders = holderRows.map((h) => ({ address: h.address, user: holderUsers.get(h.address) ?? null, total: Number(h.total), followed: followedSet.has(h.address), updatedAt: h.updatedAt.toISOString() }));
+  const copies24h = await prisma.position.count({ where: { coin, copiedFromPositionId: { not: null }, openedAt: { gte: new Date(Date.now() - 86_400_000) } } });
   const longUsd = positions.filter((p) => p.side === "LONG").reduce((a, p) => a + Number(p.sizeUsd), 0);
   const shortUsd = positions.filter((p) => p.side === "SHORT").reduce((a, p) => a + Number(p.sizeUsd), 0);
 
@@ -62,6 +76,8 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
       market,
       longShort: { longUsd, shortUsd, ratio: longUsd + shortUsd > 0 ? longUsd / (longUsd + shortUsd) : 0.5 },
       flow24h: flow,
+      copies24h,
+      holders: market.kind === "spot" ? holders : undefined,
       trades: fills.map((f) => ({
         id: f.id,
         address: f.address,
@@ -86,6 +102,8 @@ export const GET = handler(async (req: Request, ctx: { params: Promise<{ coin: s
         entryPx: Number(p.entryPx),
         openedAt: p.openedAt.toISOString(),
         unrealisedPnl: Number(p.unrealisedPnl),
+        followed: followedSet.has(p.address),
+        mine: !!s && p.address === s.address,
         closedCount: holdAgg.get(p.address)?.n ?? 0,
         avgHoldMs: holdAgg.get(p.address) ? holdAgg.get(p.address)!.total / holdAgg.get(p.address)!.n : null,
         thesis: p.theses[0] ? { id: p.theses[0].id, text: p.theses[0].text, likes: p.theses[0]._count.likes, outcome: p.theses[0].outcome } : null,

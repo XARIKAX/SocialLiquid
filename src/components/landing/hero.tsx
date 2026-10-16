@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { FeedItem } from "@/lib/queries";
 import { fmtUsd } from "@/lib/format";
+import { CaPill } from "./ca";
 import { Globe } from "./globe";
 import { CountUp } from "./motion";
 import { Arrow, Check, Disc, TrendArrow, usdCompact, vars } from "./parts";
@@ -32,6 +33,7 @@ export function Hero({ d }: { d: LandingData }) {
           <a href="#receipts" className="lp-btn lp-btn-ghost">
             Watch the feed
           </a>
+          <CaPill />
         </div>
         <div className="lp-hero-trust" style={vars({ "--d": "1.06s" })}>
           <span><Check /> Non-custodial</span>

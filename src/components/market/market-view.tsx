@@ -1,6 +1,6 @@
 "use client";
 import "./layout.css";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/client";
@@ -10,11 +10,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBalance } from "@/hooks/use-me";
 import { useMids } from "@/hooks/use-market";
 import { useOpenOrders } from "@/hooks/use-account";
+import { usePresence } from "@/hooks/use-presence";
 import type { ChartMarker, PriceLine } from "./chart";
-import type { MarketPosition, MarketTrade } from "./positions-table";
+import type { MarketHolder, MarketPosition, MarketTrade } from "./positions-table";
 import { AboutCard } from "./about-card";
 import { FlowCard, TradersToFollow } from "./side-cards";
 import { MarketHeader } from "./market-header";
+import { SocialStrip } from "./social-strip";
+import type { TraderPin } from "./trader-pins";
 import { OrderBook } from "./order-book";
 import { BookDock, BookFoldButton, PaneSplit, useBookFold, usePaneInit } from "./layout-split";
 import { SideDefer, SideMap } from "./layout-side";
@@ -22,10 +25,11 @@ import { Ticket } from "../trade/ticket";
 import { BottomPanel } from "../trade/bottom-panel";
 import { useFeed } from "../feed/feed-column";
 import { Deferred } from "@/hooks/use-in-view";
+import { useMediaQuery } from "@/hooks/use-media";
 
 const Chart = dynamic(() => import("./chart").then((m) => m.Chart), { ssr: false, loading: () => null });
 
-type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[]; flow24h?: { longUsd: number; shortUsd: number; count: number }; closes?: number[] };
+type MarketData = { market: MarketSummary; longShort: { longUsd: number; shortUsd: number; ratio: number }; positions: MarketPosition[]; trades: MarketTrade[]; flow24h?: { longUsd: number; shortUsd: number; count: number }; copies24h?: number; holders?: MarketHolder[]; closes?: number[] };
 
 /* ---------- the chart placeholder ---------- */
 const PW = 1000;
@@ -146,6 +150,14 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
   // builder-dex markets keep their own margin account: read the balance of this market's dex
   const myBal = useBalance(signedIn ? address : null, m?.dex ?? "");
   const orders = useOpenOrders();
+  const watching = usePresence(coin);
+  // phones: the one-column layout puts the ticket last, so a Long / Short bar opens it in a bottom sheet
+  const phone = useMediaQuery("(max-width: 639px)");
+  const [sheet, setSheet] = useState<"LONG" | "SHORT" | null>(null);
+  useEffect(() => {
+    if (phone && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("copy")) setSheet((new URLSearchParams(window.location.search).get("side") as "LONG" | "SHORT") ?? "LONG");
+  }, [phone, coin]);
+  useEffect(() => setSheet(null), [coin]);
   const markers = useMemo<ChartMarker[]>(() => {
     const out: ChartMarker[] = [];
     for (const e of mine.data ?? []) {
@@ -169,6 +181,16 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
     }
     return out;
   }, [mine.data, thesisEvents.data]);
+  // trader pins: your own positions, everyone you follow who is in this market, plus the biggest books, capped so the
+  // chart stays readable. a position with a thesis already wears the chart's thesis pin, so it is not pinned twice
+  const pins = useMemo<TraderPin[]>(() => {
+    const all = (q.data?.positions ?? []).filter((p) => p.mine || !p.thesis);
+    const mine = all.filter((p) => p.mine);
+    const followed = all.filter((p) => p.followed && !p.mine);
+    const picked = new Set([...mine, ...followed].map((p) => p.id));
+    const big = all.filter((p) => !picked.has(p.id)).sort((a, b) => b.sizeUsd - a.sizeUsd).slice(0, 12);
+    return [...mine, ...followed, ...big].slice(0, 40).map((p) => ({ id: p.id, address: p.address, user: p.user, side: (p.side === "SHORT" ? "SHORT" : "LONG") as "LONG" | "SHORT", entryPx: p.entryPx, size: p.size, sizeUsd: p.sizeUsd, leverage: p.leverage, time: new Date(p.openedAt).getTime(), thesis: p.thesis?.text ?? null, followed: !!p.followed, mine: !!p.mine }));
+  }, [q.data?.positions]);
   const myPos = myBal.data?.positions.find((p) => p.coin === coin && p.szi !== 0);
   const lines = useMemo<PriceLine[]>(() => {
     const out: PriceLine[] = [];
@@ -196,7 +218,8 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
       <div className="tm-lay">
         <div className="tm-lay-col">
           <div className="card px-3 py-2 tm-lay-head">
-            <MarketHeader coin={coin} market={m} mid={mid} longShort={shown?.longShort} />
+            <MarketHeader coin={coin} market={m} mid={mid} longShort={shown?.longShort} watching={watching} />
+            <SocialStrip coin={coin} label={m?.base} positions={shown?.positions} copies24h={shown?.copies24h} signedIn={!!signedIn} onShowFollowing={() => setFollowing(true)} />
           </div>
           <div className="tm-lay-desk" id="tm-lay-desk" ref={deskRef}>
             <div className="card tm-lay-chart">
@@ -204,7 +227,7 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
                 <ChartPlaceholder coin={coin} closes={initial?.closes} />
               </div>
               <div className="absolute inset-0">
-                <Chart coin={coin} label={chartLabel} kind={m?.kind} markers={markers} lastPx={mid} lines={lines} />
+                <Chart coin={coin} label={chartLabel} kind={m?.kind} markers={markers} lastPx={mid} lines={lines} pins={pins} />
               </div>
             </div>
             <div className="tm-lay-book" id="tm-lay-book" data-tm-lay-book="">
@@ -246,9 +269,40 @@ export function MarketView({ coin, initial }: { coin: string; initial?: MarketDa
         </aside>
 
         <div className="card tm-lay-bottom">
-          <BottomPanel coin={coin} label={m?.base} positions={q.data?.positions} trades={q.data?.trades} theses={thesisEvents.data} mid={mid} loading={q.isLoading && !initial} thesisOnly={thesisOnly} following={following} setThesisOnly={setThesisOnly} setFollowing={setFollowing} />
+          <BottomPanel coin={coin} label={m?.base} positions={q.data?.positions} trades={q.data?.trades} theses={thesisEvents.data} holders={m?.kind === "spot" ? (q.data?.holders ?? []) : undefined} token={m?.token} mid={mid} loading={q.isLoading && !initial} thesisOnly={thesisOnly} following={following} setThesisOnly={setThesisOnly} setFollowing={setFollowing} />
         </div>
       </div>
+
+      {/* phones: the ticket sits at the bottom of the one-column layout, so a Long / Short bar opens it in a sheet */}
+      {phone && !sheet && (
+        <div className="fixed inset-x-0 bottom-14 z-40 px-3 pb-2 pointer-events-none" data-testid="trade-bar">
+          <div className="card shadow-2xl p-2 grid grid-cols-[88px_1fr_1fr] gap-2 items-center pointer-events-auto max-w-xl mx-auto">
+            <span className="px-2 leading-tight overflow-hidden">
+              <span className="block text-[10px] text-muted truncate">{m?.base ?? coin}</span>
+              <span className="num text-[12px] font-semibold block truncate">{fmtUsd(mid ?? m?.markPx ?? 0)}</span>
+            </span>
+            <button type="button" className="btn btn-up h-10 font-semibold" onClick={() => setSheet("LONG")}>
+              {m?.kind === "spot" ? "Buy" : "Buy / Long"}
+            </button>
+            <button type="button" className="btn btn-down h-10 font-semibold" onClick={() => setSheet("SHORT")}>
+              {m?.kind === "spot" ? "Sell" : "Sell / Short"}
+            </button>
+          </div>
+        </div>
+      )}
+      {phone && sheet && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70" onClick={() => setSheet(null)} role="dialog" aria-modal="true" aria-label={`Trade ${name}`}>
+          <div className="w-full max-w-xl max-h-[88dvh] overflow-y-auto rounded-t-2xl bg-bg border-t border-line pb-[env(safe-area-inset-bottom)]" onClick={(e) => e.stopPropagation()} data-testid="ticket-sheet">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-4 h-11 bg-bg/95 backdrop-blur border-b border-line">
+              <span className="text-[13px] font-semibold">{name}</span>
+              <button type="button" className="btn btn-ghost h-8 w-8 px-0" onClick={() => setSheet(null)} aria-label="Close">
+                ✕
+              </button>
+            </div>
+            <Ticket key={sheet} coin={coin} market={m} mid={mid} defaultSide={sheet} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

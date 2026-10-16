@@ -891,7 +891,7 @@
     bottom: 0;
     z-index: 35;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr));
     height: calc(58px + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
     background: linear-gradient(180deg, rgb(14 21 26 / 0.84), rgb(6 10 13 / 0.94));
@@ -920,9 +920,11 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    font-size: 11px;
+    min-width: 0;
+    font-size: 10.5px;
     font-weight: 500;
     letter-spacing: 0.01em;
+    white-space: nowrap;
     color: var(--color-muted);
     -webkit-tap-highlight-color: transparent;
     transition: color 0.25s;
@@ -936,7 +938,7 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 50%;
+    width: calc(100% / var(--n, 2));
     height: 44px;
     pointer-events: none;
     transform: translateX(calc(var(--i, 0) * 100%));
@@ -947,9 +949,9 @@
     position: absolute;
     top: 0;
     left: 50%;
-    width: 52px;
+    width: 40px;
     height: 2px;
-    margin-left: -26px;
+    margin-left: -20px;
     border-radius: 0 0 2px 2px;
     background: linear-gradient(90deg, transparent, var(--color-brand-2) 30%, var(--color-brand) 50%, var(--color-brand-2) 70%, transparent);
     box-shadow: 0 0 12px 1px rgb(var(--tm-chrome-mint) / calc(0.7 * var(--glow)));
@@ -959,9 +961,9 @@
     position: absolute;
     top: 0;
     left: 50%;
-    width: 128px;
+    width: 96px;
     height: 44px;
-    margin-left: -64px;
+    margin-left: -48px;
     background: radial-gradient(50% 100% at 50% 0%, rgb(var(--tm-chrome-mint) / calc(0.13 * var(--glow))), transparent 76%);
   }
 

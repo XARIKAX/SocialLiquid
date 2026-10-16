@@ -460,7 +460,7 @@ function useFit(rootRef: RefObject<HTMLDivElement | null>) {
 
 /* ---------- the header ---------- */
 
-export function MarketHeader({ coin, market, mid, longShort }: { coin: string; market?: MarketSummary; mid?: number; longShort?: LongShort }) {
+export function MarketHeader({ coin, market, mid, longShort, watching }: { coin: string; market?: MarketSummary; mid?: number; longShort?: LongShort; /** people on this market right now */ watching?: number | null }) {
   const [favs, toggleFav] = useWatchlist();
   const kind = market?.kind ?? kindOf(coin);
   const spot = kind === "spot";
@@ -524,6 +524,15 @@ export function MarketHeader({ coin, market, mid, longShort }: { coin: string; m
               {!spot && <FundingChip funding={market?.funding} />}
               {!spot && <LongShortChip ls={longShort} />}
               {kind === "hip3" && <DexChip coin={coin} market={market} />}
+              {!!watching && watching > 0 && (
+                <div className="chip tm-head-chip tm-head-quiet" data-tip="People on socialLiquid looking at this market right now." data-testid="watching">
+                  <span className="chip-label">Watching</span>
+                  <span className="chip-value num tm-head-watch">
+                    <span className="live-dot tm-head-watch-dot" aria-hidden />
+                    {watching} {watching === 1 ? "person" : "people"}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>

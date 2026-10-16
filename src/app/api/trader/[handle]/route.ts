@@ -1,11 +1,12 @@
 import { handler, json, plain, HttpError } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import * as HL from "@/lib/hl";
-import { resolveTrader, traderStats } from "@/lib/queries";
+import { resolveTrader, traderStats, usersByAddress } from "@/lib/queries";
 import { getSession } from "@/lib/session";
 import { syncAddress } from "@/lib/indexer";
 import { featuredAddresses } from "@/lib/featured";
 import type { HlFill } from "@/lib/hl-types";
+import { badgesFor, pointsSince, streaksBulk } from "@/lib/points";
 
 /** fills straight from the exchange for addresses the indexer has not reached yet; one upstream call per address per minute */
 const liveFillsCache = new Map<string, { at: number; fills: HlFill[] }>();
@@ -52,6 +53,7 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
   ]);
   // open positions live from chain, joined to our mirrored rows for ids / theses
   const openRows = await prisma.position.findMany({ where: { address: t.address, closedAt: null }, include: { theses: { take: 1, orderBy: { createdAt: "desc" } } } });
+  const copiedUsers = await usersByAddress(openRows.map((r) => r.copiedFromAddress).filter((a): a is string => !!a));
   const open = (state?.assetPositions ?? [])
     .filter((p) => Number(p.position.szi) !== 0)
     .map((p) => {
@@ -69,9 +71,15 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
         liquidationPx: p.position.liquidationPx ? Number(p.position.liquidationPx) : null,
         openedAt: row?.openedAt.toISOString() ?? null,
         thesis: row?.theses[0] ? { id: row.theses[0].id, text: row.theses[0].text } : null,
+        copiedFrom: row?.copiedFromAddress ? { address: row.copiedFromAddress, handle: copiedUsers.get(row.copiedFromAddress)?.handle ?? null, displayName: copiedUsers.get(row.copiedFromAddress)?.displayName ?? null } : null,
       };
     });
   const recentClosed = await prisma.position.findMany({ where: { address: t.address, closedAt: { not: null } }, orderBy: { closedAt: "desc" }, take: 50 });
+  // the trade this profile pinned (open or closed), with its thesis if it has one
+  const pinnedRow = t.user?.pinnedPositionId ? await prisma.position.findFirst({ where: { id: t.user.pinnedPositionId, address: t.address }, include: { theses: { take: 1, orderBy: { createdAt: "desc" } } } }) : null;
+  const pinnedPosition = pinnedRow
+    ? { id: pinnedRow.id, coin: pinnedRow.coin, side: pinnedRow.side, sizeUsd: Number(pinnedRow.sizeUsd), leverage: pinnedRow.leverage, entryPx: Number(pinnedRow.entryPx), closePx: pinnedRow.closePx === null ? null : Number(pinnedRow.closePx), realisedPnl: pinnedRow.realisedPnl === null ? null : Number(pinnedRow.realisedPnl), unrealisedPnl: Number(pinnedRow.unrealisedPnl), size: Number(pinnedRow.size), openedAt: pinnedRow.openedAt.toISOString(), closedAt: pinnedRow.closedAt?.toISOString() ?? null, liquidated: pinnedRow.liquidated, thesis: pinnedRow.theses[0] ? { id: pinnedRow.theses[0].id, text: pinnedRow.theses[0].text, outcome: pinnedRow.theses[0].outcome } : null }
+    : null;
   const series = await prisma.position.findMany({
     where: { address: t.address, closedAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
     orderBy: { closedAt: "asc" },
@@ -102,14 +110,33 @@ export const GET = handler(async (_req: Request, ctx: { params: Promise<{ handle
   };
   const hl = pf ? { day: win("day"), week: win("week"), month: win("month"), allTime: win("allTime") } : null;
   const following = t.user ? await prisma.follow.count({ where: { followerId: t.user.id } }) : 0;
+  // points, streaks, badges
+  const streaks = (await streaksBulk([t.address])).get(t.address)!;
+  const claimedUser = t.user?.claimedAt ? t.user : null;
+  const [week, profitTheses, invites, above] = await Promise.all([
+    claimedUser ? pointsSince([claimedUser.id], new Date(Date.now() - 7 * 86_400_000)).then((m) => m.get(claimedUser.id) ?? 0) : 0,
+    claimedUser ? prisma.thesis.count({ where: { userId: claimedUser.id, outcome: "PROFIT" } }) : 0,
+    claimedUser ? prisma.user.count({ where: { invitedById: claimedUser.id } }) : 0,
+    claimedUser ? prisma.user.count({ where: { claimedAt: { not: null }, points: { gt: claimedUser.points } } }) : 0,
+  ]);
+  const points = claimedUser ? { total: claimedUser.points, week, rank: above + 1 } : null;
+  // keep the denormalised streak (used by feed cards) honest whenever a profile is viewed
+  if (claimedUser && (claimedUser.winStreak !== streaks.current || claimedUser.bestStreak !== streaks.best)) await prisma.user.update({ where: { id: claimedUser.id }, data: { winStreak: streaks.current, bestStreak: streaks.best } }).catch(() => null);
+  const badges = !claimedUser ? [] : badgesFor({ closedTrades: stats.closedTrades, winRate: stats.winRate, bestStreak: streaks.best, profitTheses, copiers: stats.copiers, followers, invites, avgHoldMs: stats.avgHoldMs, days: streaks.days });
   // mutuals: accounts this profile follows that follow it back
   const mutuals = t.user ? await prisma.follow.count({ where: { followerId: t.user.id, following: { following: { some: { followingId: t.user.id } } } } }) : 0;
   return json(
     plain({
       address: t.address,
       user: t.user
-        ? { id: t.user.id, handle: t.user.handle, displayName: t.user.displayName, xHandle: t.user.xHandle, tgHandle: t.user.tgHandle, bio: t.user.bio, avatarUrl: t.user.avatarUrl, bannerUrl: t.user.bannerUrl, createdAt: t.user.createdAt }
+        ? { id: t.user.id, handle: t.user.handle, displayName: t.user.displayName, xHandle: t.user.xHandle, tgHandle: t.user.tgHandle, bio: t.user.bio, avatarUrl: t.user.avatarUrl, bannerUrl: t.user.bannerUrl, createdAt: t.user.createdAt, style: t.user.style, pinnedThesisId: t.user.pinnedThesisId, pinnedPositionId: t.user.pinnedPositionId }
         : null,
+      pinnedPosition,
+      points,
+      streaks,
+      badges,
+      invites: claimedUser ? { joined: invites } : null,
+      invitedBy: t.user?.invitedById ? await prisma.user.findUnique({ where: { id: t.user.invitedById }, select: { address: true, handle: true, displayName: true } }) : null,
       mutuals,
       displayName: tracked?.displayName ?? null,
       claimed: !!t.user?.claimedAt,

@@ -23,6 +23,15 @@ enum FeedEventType {
   LIQUIDATED
 }
 
+enum NotificationType {
+  COPIED
+  REPLY
+  REACTION
+  THESIS_SETTLED
+  /// a trader whose key you hold posted to their private feed
+  CREATOR_POST
+}
+
 enum TrackedSource {
   USER
   MANUAL
@@ -42,12 +51,29 @@ model User {
   /// data urls after client-side resize (avatar ≤ ~120kb, banner ≤ ~500kb)
   avatarUrl String?
   bannerUrl String?
+  /// the Solana wallet this account signed to link, for keys (which live on Solana). base58, case-sensitive
+  solanaAddress String? @unique
   /// set when the wallet signed in. a row without it is a shadow user (someone followed the address).
   claimedAt DateTime?
   createdAt DateTime @default(now())
 
   /// when the alerts bell was last opened; events after this count as unread
   alertsSeenAt DateTime?
+  /// profile customisation: a trading-style tag, a pinned thesis and a pinned trade
+  style            String?
+  pinnedThesisId   String?
+  pinnedPositionId String?
+  /// points and streaks (denormalised from PointEvent / closed positions, refreshed by the indexer)
+  points     Int @default(0)
+  winStreak  Int @default(0)
+  bestStreak Int @default(0)
+  /// personal invite code (minted on first visit to /invite) and who brought this account in
+  /// uniqueness is enforced by the minting code rather than a constraint, so `prisma db push` on deploy never trips the data-loss guard
+  inviteCode  String?
+  invitedById String?
+  invitedAt   DateTime?
+  invitedBy   User?     @relation("invites", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitees    User[]    @relation("invites")
 
   agentKey  AgentKey?
   theses    Thesis[]
@@ -55,6 +81,16 @@ model User {
   replies   ThesisReply[]
   followers Follow[] @relation("following")
   following Follow[] @relation("follower")
+  reactions     Reaction[]
+  eventReplies  EventReply[]
+  notifications Notification[]
+  pointEvents   PointEvent[]
+  groupMemberships GroupMember[]
+  ownedGroups      Group[]      @relation("groupOwner")
+  creator          Creator?
+  feedReads        FeedRead[]
+
+  @@index([inviteCode])
 }
 
 model AgentKey {
@@ -103,6 +139,8 @@ model Position {
   /// set when the position was opened through "copy": the trader and position it mirrors
   copiedFromAddress    String?
   copiedFromPositionId String?
+  /// rebuilt from fill history rather than watched live; leverage is the account's setting at rebuild time, not the trade's
+  reconstructed Boolean @default(false)
 
   theses     Thesis[]
   feedEvents FeedEvent[]
@@ -194,6 +232,9 @@ model FeedEvent {
   payload    Json
   time       DateTime      @default(now())
 
+  reactions Reaction[]
+  replies   EventReply[]
+
   @@index([time(sort: Desc)])
   @@index([coin, time(sort: Desc)])
   @@index([address, time(sort: Desc)])
@@ -208,9 +249,24 @@ model TrackedAddress {
   /// last fill time we have ingested, ms epoch, for incremental userFills
   lastFillTime BigInt        @default(0)
   lastPolledAt DateTime?
+  /// spot balances are mirrored every few minutes, not every poll
+  spotSyncedAt DateTime?
+  /// when the position history was rebuilt from the exchange's fill records (once per address)
+  historySyncedAt DateTime?
   createdAt    DateTime      @default(now())
 
   @@index([lastPolledAt])
+}
+
+/// a tracked address's spot balance in one token (USOL, UBTC, HYPE, PURR…), for holder lists on spot markets
+model SpotHolding {
+  address   String
+  coin      String
+  total     Decimal  @db.Decimal(30, 10)
+  updatedAt DateTime @default(now())
+
+  @@id([address, coin])
+  @@index([coin, total(sort: Desc)])
 }
 
 /// snapshot of hyperliquid's own leaderboard (stats-data endpoint), 30d window, top N.
@@ -224,9 +280,238 @@ model HlLeaderboardEntry {
   roi30d       Decimal  @db.Decimal(20, 10)
   vlm30d       Decimal  @db.Decimal(30, 6)
   pnl7d        Decimal  @db.Decimal(30, 6)
+  roi7d        Decimal  @default(0) @db.Decimal(20, 10)
+  vlm7d        Decimal  @default(0) @db.Decimal(30, 6)
+  pnl1d        Decimal  @default(0) @db.Decimal(30, 6)
+  roi1d        Decimal  @default(0) @db.Decimal(20, 10)
+  vlm1d        Decimal  @default(0) @db.Decimal(30, 6)
+  pnlAll       Decimal  @default(0) @db.Decimal(30, 6)
+  roiAll       Decimal  @default(0) @db.Decimal(20, 10)
+  vlmAll       Decimal  @default(0) @db.Decimal(30, 6)
   /// "leaderboard" = hyperliquid's stats feed verbatim, "portfolio" = rebuilt from the portfolio api for the featured traders
   source       String   @default("leaderboard")
   updatedAt    DateTime @default(now())
 
   @@index([address])
+}
+
+/// a reaction on any feed event (a trade, a close, a thesis): fire, skull or eyes. one per user per emoji per event.
+model Reaction {
+  userId    String
+  eventId   String
+  emoji     String
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event     FeedEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([userId, eventId, emoji])
+  @@index([eventId])
+}
+
+/// a comment under a trade event (theses have their own ThesisReply thread)
+model EventReply {
+  id        String    @id @default(cuid())
+  eventId   String
+  event     FeedEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String    @db.VarChar(280)
+  createdAt DateTime  @default(now())
+
+  @@index([eventId, createdAt])
+}
+
+/// social notifications for a user: someone copied your trade, replied, reacted, or your thesis settled
+model Notification {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         NotificationType
+  /// who did it (lowercase address), null for system events like a settlement
+  actorAddress String?
+  coin         String?
+  eventId      String?
+  thesisId     String?
+  positionId   String?
+  payload      Json
+  createdAt    DateTime         @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+/// points ledger. one row per (user, kind, thing) so awards are idempotent however often the indexer re-sees an event.
+model PointEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// TRADE_CLOSED | TRADE_WIN | THESIS_POSTED | THESIS_PROFIT | COPIED | COPY_MADE | INVITED | INVITE_JOINED
+  kind      String
+  refId     String
+  points    Int
+  createdAt DateTime @default(now())
+
+  @@unique([userId, kind, refId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt])
+}
+
+/// a private (or public) circle of traders: a shared feed of its members' trades and a members-only leaderboard. no chat.
+model Group {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String   @db.VarChar(40)
+  description String?  @db.VarChar(200)
+  ownerId     String
+  owner       User     @relation("groupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  /// anyone with the code (or the link carrying it) can join; rotated by the owner
+  joinCode    String
+  /// public groups are listed on /groups and readable by anyone; private ones only by members
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  members GroupMember[]
+
+  @@index([isPublic, createdAt(sort: Desc)])
+}
+
+model GroupMember {
+  groupId  String
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// OWNER | MEMBER
+  role     String   @default("MEMBER")
+  joinedAt DateTime @default(now())
+
+  @@id([groupId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------- keys: the key is the pass to a trader's feed
+
+/// a trader on keys: what their key unlocks and the price it started at. opt-in, one per user
+model Creator {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// the price of the trader's first key in USDC, chosen by them. fixed once the key is listed onchain
+  keyStartPrice Decimal  @db.Decimal(12, 2)
+  /// OfferKey values the trader includes for holders (lib/keys.ts)
+  offers        String[]
+  /// Cadence (lib/keys.ts)
+  cadence       String
+  /// shown at the top of the trader's page: how they trade, what holders get
+  pinned        String?  @db.VarChar(500)
+  /// the Hyperliquid address the trader's share of copier fees is paid to; their own unless they change it
+  payoutAddress String
+  /// the trader listed their key on the keys program from their linked Solana wallet (checked onchain before it is set)
+  keysListed    Boolean  @default(false)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  posts CreatorPost[]
+  reads FeedRead[]
+}
+
+/// when a holder last opened a trader's feed, for unread counts
+model FeedRead {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creatorId String
+  creator   Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  readAt    DateTime @default(now())
+
+  @@id([userId, creatorId])
+}
+
+/// a post to a creator's feed: calls, exits, lessons, losses. for key holders unless the creator makes it public
+model CreatorPost {
+  id              String   @id @default(cuid())
+  creatorId       String
+  creator         Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  /// call | exit | lesson | loss | note
+  kind            String
+  text            String   @db.VarChar(1000)
+  coin            String?
+  positionId      String?
+  holdersOnly     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  @@index([creatorId, createdAt(sort: Desc)])
+}
+
+/// builder fees generated by the followers who copied a trader, for one period, and how they were paid out
+model KeyFeeAccrual {
+  id              String   @id @default(cuid())
+  /// lowercase address of the trader whose calls were copied
+  traderAddress   String
+  periodStart     DateTime
+  periodEnd       DateTime
+  fills           Int
+  builderFeesUsd  Decimal  @db.Decimal(18, 6)
+  holderShareUsd  Decimal  @db.Decimal(18, 6)
+  creatorShareUsd Decimal  @db.Decimal(18, 6)
+  /// pending | deposited | skipped (no key holders, nothing listed)
+  holderStatus    String   @default("pending")
+  holderTx        String?
+  /// pending | paid | skipped
+  creatorStatus   String   @default("pending")
+  creatorTx       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([traderAddress, periodStart])
+  @@index([holderStatus])
+  @@index([creatorStatus])
+}
+
+/// Trade events from the keys program on Solana, indexed by the worker
+model KeyTrade {
+  id           String   @id @default(cuid())
+  /// insertion order, which is chain order: the worker indexes oldest first
+  seq          Int      @default(autoincrement())
+  signature    String
+  /// position of the event within its transaction
+  eventIndex   Int
+  slot         BigInt
+  /// the trader's Solana wallet (base58: the key) and the wallet that bought or sold
+  trader       String
+  account      String
+  isBuy        Boolean
+  amount       Int
+  /// curve price of the keys (on a sell, the reserve refund), USDC
+  curveUsd     Decimal  @db.Decimal(18, 6)
+  traderCutUsd Decimal  @db.Decimal(18, 6)
+  feeUsd       Decimal  @db.Decimal(18, 6)
+  /// supply after the trade
+  supply       Int
+  time         DateTime
+
+  @@unique([signature, eventIndex])
+  @@index([trader, seq])
+  @@index([trader, time])
+  @@index([account, trader])
+}
+
+/// Claimed events from the keys program: fee share paid out to a holder
+model KeyClaim {
+  id         String   @id @default(cuid())
+  signature  String
+  eventIndex Int
+  slot       BigInt
+  trader     String
+  holder     String
+  amountUsd  Decimal  @db.Decimal(18, 6)
+  time       DateTime
+
+  @@unique([signature, eventIndex])
+  @@index([holder, time(sort: Desc)])
+}
+
+/// a resumable position for a background sync (e.g. the last HyperEVM block indexed for keys)
+model SyncCursor {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

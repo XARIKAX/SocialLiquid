@@ -1,23 +1,24 @@
 /** db queries shared by route handlers and server components */
 import { Prisma, type FeedEventType } from "@prisma/client";
 import { prisma } from "./db";
+import { reactionCounts } from "./reactions";
 import { getHlBoardStatus, refreshHlLeaderboard } from "./indexer";
 import { plain } from "./api";
 
 /** handle is only set for claimed accounts and is what /t/[handle] resolves. displayName is the hyperliquid leaderboard name. */
-export type UserLite = { id: string; address: string; handle: string | null; displayName: string | null; xHandle: string | null; avatarUrl: string | null; claimed: boolean };
+export type UserLite = { id: string; address: string; handle: string | null; displayName: string | null; xHandle: string | null; avatarUrl: string | null; claimed: boolean; /** trading-style tag the trader picked */ style?: string | null; /** consecutive profitable closes, maintained by the indexer */ winStreak?: number; points?: number };
 
 export async function usersByAddress(addresses: string[]): Promise<Map<string, UserLite>> {
   const uniq = [...new Set(addresses.map((a) => a.toLowerCase()))];
   if (!uniq.length) return new Map();
   const users = await prisma.user.findMany({
     where: { address: { in: uniq } },
-    select: { id: true, address: true, handle: true, displayName: true, xHandle: true, avatarUrl: true, claimedAt: true },
+    select: { id: true, address: true, handle: true, displayName: true, xHandle: true, avatarUrl: true, claimedAt: true, style: true, winStreak: true, points: true },
   });
   const tracked = await prisma.trackedAddress.findMany({ where: { address: { in: uniq }, displayName: { not: null } }, select: { address: true, displayName: true } });
   const map = new Map<string, UserLite>();
   const names = new Map(tracked.map((t) => [t.address, t.displayName]));
-  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.claimedAt ? u.handle : null, displayName: (u.claimedAt ? u.displayName : null) ?? names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt });
+  for (const u of users) map.set(u.address, { id: u.id, address: u.address, handle: u.claimedAt ? u.handle : null, displayName: (u.claimedAt ? u.displayName : null) ?? names.get(u.address) ?? null, xHandle: u.xHandle, avatarUrl: u.avatarUrl, claimed: !!u.claimedAt, style: u.claimedAt ? u.style : null, winStreak: u.claimedAt ? u.winStreak : 0, points: u.claimedAt ? u.points : 0 });
   for (const t of tracked) if (!map.has(t.address)) map.set(t.address, { id: "", address: t.address, handle: null, displayName: t.displayName, xHandle: null, avatarUrl: null, claimed: false });
   return map;
 }
@@ -48,6 +49,10 @@ export type FeedItem = {
     copiers: number;
   } | null;
   thesis: { id: string; text: string; outcome: string; likes: number; likedByMe: boolean; replies: number; createdAt: string } | null;
+  /** fire / skull / eyes counts on this event and which ones the viewer pressed */
+  reactions: { fire: number; skull: number; eyes: number; mine: ("fire" | "skull" | "eyes")[] };
+  /** comments under a trade event (theses count their own replies) */
+  comments: number;
 };
 
 export type FeedFilters = {
@@ -59,6 +64,8 @@ export type FeedFilters = {
   before?: string;
   limit?: number;
   viewerId?: string;
+  /** the viewer's own address: their own events always pass the size filter */
+  viewerAddress?: string;
 };
 
 export async function feed(f: FeedFilters): Promise<FeedItem[]> {
@@ -86,6 +93,12 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
   const posIds = rows.map((r) => r.position?.id).filter((x): x is string => !!x);
   const copierRows = posIds.length ? await prisma.position.groupBy({ by: ["copiedFromPositionId"], where: { copiedFromPositionId: { in: posIds } }, _count: { _all: true } }) : [];
   const copiers = new Map(copierRows.map((c) => [c.copiedFromPositionId as string, c._count._all]));
+  const ids = rows.map((r) => r.id);
+  const [reactions, commentRows] = await Promise.all([
+    reactionCounts(ids, f.viewerId),
+    ids.length ? prisma.eventReply.groupBy({ by: ["eventId"], where: { eventId: { in: ids } }, _count: { _all: true } }) : [],
+  ]);
+  const comments = new Map(commentRows.map((c) => [c.eventId, c._count._all]));
   const items: FeedItem[] = rows.map((r) => ({
     id: r.id,
     type: r.type,
@@ -94,6 +107,8 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
     time: r.time.toISOString(),
     payload: (r.payload ?? {}) as Record<string, unknown>,
     user: users.get(r.address) ?? null,
+    reactions: reactions.get(r.id) ?? { fire: 0, skull: 0, eyes: 0, mine: [] },
+    comments: comments.get(r.id) ?? 0,
     position: r.position
       ? {
           id: r.position.id,
@@ -125,8 +140,10 @@ export async function feed(f: FeedFilters): Promise<FeedItem[]> {
         }
       : null,
   }));
+  // the size filter is a whale filter for trades: theses are content and always show, and so does everything you posted yourself
   const min = f.minUsd ?? 0;
-  const filtered = min > 0 ? items.filter((i) => Number(i.payload.sizeUsd ?? i.position?.sizeUsd ?? 0) >= min) : items;
+  const me = f.viewerAddress?.toLowerCase();
+  const filtered = min > 0 ? items.filter((i) => i.type === "THESIS" || (me && i.address === me) || Number(i.payload.sizeUsd ?? i.position?.sizeUsd ?? 0) >= min) : items;
   return plain(filtered.slice(0, f.limit ?? 50));
 }
 
@@ -141,6 +158,10 @@ export type TraderStats = {
   avgHoldMs: number | null;
   thesisCount: number;
   thesisAccuracy: number | null;
+  /** distinct traders who copied this one, how many positions that was, and what those copies made */
+  copiers: number;
+  copyTrades: number;
+  copiersPnl: number;
 };
 
 /** stats for many addresses in three queries instead of two per address */
@@ -149,20 +170,27 @@ export async function traderStatsBulk(addresses: string[]): Promise<Map<string, 
   const out = new Map<string, TraderStats>();
   if (!addrs.length) return out;
   const now = Date.now();
-  const [closed, theses] = await Promise.all([
+  const [closed, theses, copies] = await Promise.all([
     prisma.position.findMany({
       where: { address: { in: addrs }, closedAt: { not: null } },
       select: { address: true, realisedPnl: true, openedAt: true, closedAt: true },
     }),
     prisma.thesis.findMany({ where: { user: { address: { in: addrs } } }, select: { outcome: true, user: { select: { address: true } } } }),
+    prisma.position.findMany({ where: { copiedFromAddress: { in: addrs } }, select: { address: true, copiedFromAddress: true, realisedPnl: true, unrealisedPnl: true, closedAt: true } }),
   ]);
-  type Acc = { n: number; wins: number; pnl7: number; pnl30: number; pnlAll: number; hold: number; th: number; settled: number; profit: number };
+  type Acc = { n: number; wins: number; pnl7: number; pnl30: number; pnlAll: number; hold: number; th: number; settled: number; profit: number; copiers: Set<string>; copyTrades: number; copiersPnl: number };
   const acc = new Map<string, Acc>();
   const get = (a: string) => {
     let x = acc.get(a);
-    if (!x) acc.set(a, (x = { n: 0, wins: 0, pnl7: 0, pnl30: 0, pnlAll: 0, hold: 0, th: 0, settled: 0, profit: 0 }));
+    if (!x) acc.set(a, (x = { n: 0, wins: 0, pnl7: 0, pnl30: 0, pnlAll: 0, hold: 0, th: 0, settled: 0, profit: 0, copiers: new Set(), copyTrades: 0, copiersPnl: 0 }));
     return x;
   };
+  for (const c of copies) {
+    const x = get(c.copiedFromAddress!);
+    x.copiers.add(c.address);
+    x.copyTrades++;
+    x.copiersPnl += c.closedAt ? Number(c.realisedPnl ?? 0) : Number(c.unrealisedPnl);
+  }
   for (const p of closed) {
     const x = get(p.address);
     const pnl = Number(p.realisedPnl ?? 0);
@@ -191,6 +219,9 @@ export async function traderStatsBulk(addresses: string[]): Promise<Map<string, 
       avgHoldMs: x.n ? x.hold / x.n : null,
       thesisCount: x.th,
       thesisAccuracy: x.settled ? x.profit / x.settled : null,
+      copiers: x.copiers.size,
+      copyTrades: x.copyTrades,
+      copiersPnl: x.copiersPnl,
     });
   }
   return out;
@@ -261,17 +292,30 @@ export async function resolveTrader(handleOrAddress: string) {
 // ---------- hyperliquid leaderboard mirror (30d top N, figures as reported by hyperliquid) ----------
 
 export type HlBoardRow = {
+  /** rank within the requested window and sort */
   rank: number;
+  /** hyperliquid's own 30d rank for this account in the mirrored pool */
+  rank30d: number;
   user: UserLite;
   accountValue: number;
+  /** figures for the requested window */
+  pnl: number;
+  roi: number;
+  vlm: number;
+  /** kept for the 30d widgets */
   pnl30d: number;
   roi30d: number;
   vlm30d: number;
   pnl7d: number;
+  followers: number;
+  isFollowing: boolean;
 };
+export type HlBoardWindow = "day" | "week" | "month" | "allTime";
+export type HlBoardSort = "pnl" | "roi" | "vlm" | "accountValue";
+export type HlBoardQuery = { window?: HlBoardWindow; sort?: HlBoardSort; q?: string; claimedOnly?: boolean; limit?: number; viewerId?: string; /** include accounts that lost money in the window (hidden by default: a leaderboard lists winners) */ all?: boolean };
 
 const HL_BOARD_REFRESH_MS = Number(process.env.HL_LEADERBOARD_REFRESH_MS ?? 60 * 60_000);
-const HL_BOARD_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 10);
+const HL_BOARD_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 100);
 let hlBoardRefreshing: Promise<number> | null = null;
 /** one refresh at a time per process; the worker normally does this, the web process covers for it */
 function refreshHlBoardOnce(): Promise<number> {
@@ -283,30 +327,65 @@ function refreshHlBoardOnce(): Promise<number> {
   return hlBoardRefreshing;
 }
 
-export type HlBoard = { rows: HlBoardRow[]; updatedAt: string | null; source: "leaderboard" | "portfolio" | null; error: string | null };
+export type HlBoard = { rows: HlBoardRow[]; updatedAt: string | null; source: "leaderboard" | "portfolio" | null; error: string | null; window: HlBoardWindow; sort: HlBoardSort; total: number; /** why the fallback is showing, when it is */ note: string | null };
 
-export async function hlLeaderboard(): Promise<HlBoard> {
+export async function hlLeaderboard(opts: HlBoardQuery = {}): Promise<HlBoard> {
+  const window: HlBoardWindow = opts.window ?? "month";
+  const sort: HlBoardSort = opts.sort ?? "pnl";
+  const empty = (error: string | null): HlBoard => ({ rows: [], updatedAt: null, source: null, error, window, sort, total: 0, note: null });
   let entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
   if (!entries.length) {
     // first visitor on a fresh database: fetch hyperliquid's board right now
     try {
       if (await refreshHlBoardOnce()) entries = await prisma.hlLeaderboardEntry.findMany({ orderBy: { rank: "asc" } });
     } catch (e) {
-      return { rows: [], updatedAt: null, source: null, error: (e as Error).message };
+      return empty((e as Error).message);
     }
-    if (!entries.length) return { rows: [], updatedAt: null, source: null, error: getHlBoardStatus().lastError ?? "no rows returned" };
+    if (!entries.length) return empty(getHlBoardStatus().lastError ?? "no rows returned");
   } else if (Date.now() - entries[0].updatedAt.getTime() > HL_BOARD_REFRESH_MS) {
     void refreshHlBoardOnce().catch(() => {});
   }
   const users = await usersByAddress(entries.map((e) => e.address));
-  const rows = entries.map((e) => ({
-    rank: e.rank,
-    user: users.get(e.address) ?? { id: "", address: e.address, handle: null, displayName: e.displayName, xHandle: null, avatarUrl: null, claimed: false },
-    accountValue: Number(e.accountValue),
-    pnl30d: Number(e.pnl30d),
-    roi30d: Number(e.roi30d),
-    vlm30d: Number(e.vlm30d),
-    pnl7d: Number(e.pnl7d),
-  }));
-  return { rows, updatedAt: entries[0].updatedAt.toISOString(), source: entries[0].source === "portfolio" ? "portfolio" : "leaderboard", error: null };
+  const userIds = [...users.values()].filter((u) => u.id).map((u) => u.id);
+  const [followerRows, myFollows] = await Promise.all([
+    userIds.length ? prisma.follow.groupBy({ by: ["followingId"], where: { followingId: { in: userIds } }, _count: { _all: true } }) : [],
+    opts.viewerId && userIds.length ? prisma.follow.findMany({ where: { followerId: opts.viewerId, followingId: { in: userIds } }, select: { followingId: true } }) : [],
+  ]);
+  const followers = new Map(followerRows.map((f) => [f.followingId, f._count._all]));
+  const following = new Set(myFollows.map((f) => f.followingId));
+  const pick = (e: (typeof entries)[number]) =>
+    window === "day" ? { pnl: e.pnl1d, roi: e.roi1d, vlm: e.vlm1d } : window === "week" ? { pnl: e.pnl7d, roi: e.roi7d, vlm: e.vlm7d } : window === "allTime" ? { pnl: e.pnlAll, roi: e.roiAll, vlm: e.vlmAll } : { pnl: e.pnl30d, roi: e.roi30d, vlm: e.vlm30d };
+  let rows: HlBoardRow[] = entries.map((e) => {
+    const user = users.get(e.address) ?? { id: "", address: e.address, handle: null, displayName: e.displayName, xHandle: null, avatarUrl: null, claimed: false };
+    const w = pick(e);
+    return {
+      rank: 0,
+      rank30d: e.rank,
+      user,
+      accountValue: Number(e.accountValue),
+      pnl: Number(w.pnl),
+      roi: Number(w.roi),
+      vlm: Number(w.vlm),
+      pnl30d: Number(e.pnl30d),
+      roi30d: Number(e.roi30d),
+      vlm30d: Number(e.vlm30d),
+      pnl7d: Number(e.pnl7d),
+      followers: user.id ? (followers.get(user.id) ?? 0) : 0,
+      isFollowing: !!user.id && following.has(user.id),
+    };
+  });
+  // a leaderboard lists winners: accounts that lost money in this window only show with all=1
+  if (!opts.all) rows = rows.filter((r) => r.pnl > 0);
+  // hyperliquid ranks every window by pnl; roi/volume/account value sorts are ours, on the same pool
+  rows.sort((a, b) => (sort === "roi" ? b.roi - a.roi : sort === "vlm" ? b.vlm - a.vlm : sort === "accountValue" ? b.accountValue - a.accountValue : b.pnl - a.pnl));
+  rows = rows.map((r, i) => ({ ...r, rank: i + 1 }));
+  const total = rows.length;
+  if (opts.claimedOnly) rows = rows.filter((r) => r.user.claimed);
+  if (opts.q) {
+    const q = opts.q.trim().toLowerCase();
+    rows = rows.filter((r) => r.user.address.includes(q) || (r.user.handle ?? "").toLowerCase().includes(q) || (r.user.displayName ?? "").toLowerCase().includes(q));
+  }
+  if (opts.limit) rows = rows.slice(0, opts.limit);
+  const source = entries[0].source === "portfolio" ? "portfolio" : "leaderboard";
+  return { rows, updatedAt: entries[0].updatedAt.toISOString(), source, error: null, window, sort, total, note: source === "portfolio" ? `showing the featured traders only: hyperliquid's leaderboard feed could not be read (${getHlBoardStatus().lastError ?? "unknown reason"}); retried hourly` : null };
 }

@@ -17,6 +17,7 @@ export const GET = handler(async (req: Request) => {
     before: u.searchParams.get("before") || undefined,
     limit: Math.min(100, Number(u.searchParams.get("limit") ?? 50) || 50),
     viewerId: s?.userId,
+    viewerAddress: s?.address,
   });
   // following filter with no session = empty, by design
   return json({ items: following && !s ? [] : items });

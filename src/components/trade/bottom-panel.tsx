@@ -28,6 +28,7 @@ import {
   fmtSignedPct,
   roveTabs,
   type BpIconName,
+  type MarketHolder,
   type MarketPosition,
   type MarketTrade,
   type TradersView,
@@ -109,6 +110,8 @@ export function BottomPanel(props: {
   positions?: MarketPosition[];
   trades?: MarketTrade[];
   theses?: FeedItem[];
+  holders?: MarketHolder[];
+  token?: string;
   mid?: number;
   loading: boolean;
   thesisOnly: boolean;
@@ -117,7 +120,7 @@ export function BottomPanel(props: {
   setFollowing: (v: boolean) => void;
 }) {
   const [tab, setTabState] = useState<Tab>("traders");
-  const [view, setView] = useState<"positions" | "trades">("positions");
+  const [view, setView] = useState<Exclude<TradersView, "thesis">>("positions");
   const [onlyCoin, setOnlyCoin] = useState(false);
   // hyperliquid's Type / Side / Market filters on the open orders and history tabs: one set, shared by the three
   const [filter, setFilter] = useState<RowFilter>(NO_FILTER);
@@ -167,7 +170,7 @@ export function BottomPanel(props: {
       const t = localStorage.getItem(TAB_KEY) as Tab | null;
       if (t && IDS.includes(t)) setTabState(t);
       const v = localStorage.getItem(VIEW_KEY);
-      if (v === "positions" || v === "trades") setView(v);
+      if (v === "positions" || v === "trades" || v === "holders") setView(v);
       const hh = Number(localStorage.getItem(H_KEY));
       if (hh >= H_MIN && hh <= 4000) setH(hh);
     } catch {}
@@ -353,6 +356,8 @@ export function BottomPanel(props: {
             positions={props.positions}
             trades={props.trades}
             theses={props.theses}
+            holders={props.holders}
+            token={props.token}
             mid={props.mid}
             loading={props.loading}
             thesisOnly={props.thesisOnly}

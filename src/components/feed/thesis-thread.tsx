@@ -35,15 +35,18 @@ function useModKey() {
 }
 
 /**
+ * the same thread under a thesis (`thesisId`) or under a trade event (`eventId`).
  * `compact` is the rail's style (inside a feed card); without it the slightly larger thesis-page style.
  * `onNavigate` (optional) runs when a reply's author is opened, so the rail can bring the page forward on a phone.
  */
-export function ThesisThread({ thesisId, onCount, compact = false, autoFocus = false, onNavigate }: { thesisId: string; onCount?: (n: number) => void; compact?: boolean; autoFocus?: boolean; onNavigate?: () => void }) {
+export function ThesisThread({ thesisId, eventId, onCount, compact = false, autoFocus = false, onNavigate }: { thesisId?: string; eventId?: string; onCount?: (n: number) => void; compact?: boolean; autoFocus?: boolean; onNavigate?: () => void }) {
+  const base = thesisId ? `/api/thesis/${thesisId}/replies` : `/api/feed/${eventId}/replies`;
+  const key = thesisId ? ["replies", thesisId] : ["event-replies", eventId];
   const { signedIn, me, needsSignIn, busy: authBusy } = useAuth();
   const prompt = useSignInPrompt();
   const mod = useModKey();
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["replies", thesisId], queryFn: () => api<{ replies: Reply[] }>(`/api/thesis/${thesisId}/replies`).then((r) => r.replies) });
+  const q = useQuery({ queryKey: key, queryFn: () => api<{ replies: Reply[] }>(base).then((r) => r.replies) });
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -55,8 +58,8 @@ export function ThesisThread({ thesisId, onCount, compact = false, autoFocus = f
     setBusy(true);
     setErr(null);
     try {
-      const r = await api<{ reply: Reply; count: number }>(`/api/thesis/${thesisId}/replies`, { method: "POST", json: { text: body } });
-      qc.setQueryData<Reply[]>(["replies", thesisId], (d) => [...(d ?? []), r.reply]);
+      const r = await api<{ reply: Reply; count: number }>(base, { method: "POST", json: { text: body } });
+      qc.setQueryData<Reply[]>(key, (d) => [...(d ?? []), r.reply]);
       onCount?.(r.count);
       setText("");
       qc.invalidateQueries({ queryKey: ["feed"] });
@@ -124,13 +127,13 @@ export function ThesisThread({ thesisId, onCount, compact = false, autoFocus = f
             void post();
           }}
         >
-          {none && <p className="tm-rail-thread-note">No replies yet. Be the first.</p>}
+          {none && <p className="tm-rail-thread-note">{thesisId ? "No replies yet. Be the first." : "No comments yet. Be the first."}</p>}
           <div className="tm-rail-compose">
             <div className="tm-rail-compose-field">
               <textarea
                 rows={1}
-                placeholder="Add a reply…"
-                aria-label="Reply"
+                placeholder={thesisId ? "Add a reply…" : "Add a comment…"}
+                aria-label={thesisId ? "Reply" : "Comment"}
                 value={text}
                 maxLength={MAX}
                 autoFocus={autoFocus}

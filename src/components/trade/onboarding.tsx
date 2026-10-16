@@ -162,7 +162,7 @@ function InviteStep({ onDone }: { onDone: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return (
-    <Step n={3} title="Invite code" hint="Mainnet trading is invite only while we test with real money.">
+    <Step n={3} title="Invite code" hint="Mainnet trading is invite only while we test with real money. Any socialLiquid trader can give you their personal code from their Invite page.">
       <form
         className="tm-tk-step-inline"
         onSubmit={async (e) => {

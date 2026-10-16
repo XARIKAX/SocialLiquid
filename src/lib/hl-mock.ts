@@ -533,6 +533,11 @@ export async function clearinghouseState(address: string, dex = ""): Promise<HlC
   });
 }
 
+export async function userFillsRange(address: string, startTime: number, endTime?: number): Promise<HlFill[]> {
+  const a = address.toLowerCase();
+  return withState((s) => (s.fills[a] ?? []).filter((f) => f.time >= startTime && (endTime === undefined || f.time <= endTime)).sort((x, y) => x.time - y.time).slice(0, 2000));
+}
+
 export async function userFills(address: string, since?: number): Promise<HlFill[]> {
   const a = address.toLowerCase();
   return withState((s) => {

@@ -7,6 +7,7 @@ import type { FeedItem } from "@/lib/queries";
 import { api } from "@/lib/client";
 import { fmtDuration, fmtPx, fmtUsd, shortAddr, timeAgo, userPath } from "@/lib/format";
 import { livePnl, useMarketIdentity } from "@/hooks/use-market";
+import { EMOJIS, EMOJI_CHAR, type Emoji } from "@/lib/reactions";
 import { Avatar, CoinIcon, EventPill, Icon, OutcomePill } from "../ui";
 import { ThesisThread, useSignInPrompt } from "./thesis-thread";
 
@@ -172,6 +173,8 @@ export const FeedCard = memo(function FeedCard({ item, mid, onNavigate, signedIn
               <Icon.x />
             </a>
           )}
+          {item.user?.style && <span className="pill pill-neutral hidden sm:inline-flex">{item.user.style}</span>}
+          {(item.user?.winStreak ?? 0) >= 3 && <span className="pill pill-warn num" title={`${item.user!.winStreak} winning trades in a row`} data-testid="feed-streak">🔥 {item.user!.winStreak}</span>}
           <EventPill type={item.type} />
         </div>
         {open && !isClosed && (
@@ -245,6 +248,7 @@ export const FeedCard = memo(function FeedCard({ item, mid, onNavigate, signedIn
         )}
 
         {item.thesis && <ThesisBody item={item} signedIn={signedIn} roe={roe} onNavigate={onNavigate} />}
+        <Reactions item={item} signedIn={signedIn} withComments={!isThesis} />
       </div>
     </article>
   );
@@ -328,5 +332,56 @@ function ThesisBody({ item, signedIn, roe, onNavigate }: { item: FeedItem; signe
       </div>
       {threadOpen && <ThesisThread thesisId={t.id} compact autoFocus onCount={setReplies} onNavigate={onNavigate} />}
     </>
+  );
+}
+
+/** fire / skull / eyes on any card, plus a comment thread on trade cards (theses have their own replies above) */
+function Reactions({ item, signedIn, withComments }: { item: FeedItem; signedIn: boolean; withComments: boolean }) {
+  const [state, setState] = useState(item.reactions ?? { fire: 0, skull: 0, eyes: 0, mine: [] as Emoji[] });
+  const [busy, setBusy] = useState<Emoji | null>(null);
+  const [open, setOpen] = useState(false);
+  const [comments, setComments] = useState(item.comments ?? 0);
+  const react = async (e: Emoji) => {
+    if (!signedIn || busy) return;
+    setBusy(e);
+    try {
+      const r = await api<{ reacted: boolean; fire: number; skull: number; eyes: number; mine: Emoji[] }>("/api/react", { method: "POST", json: { eventId: item.id, emoji: e } });
+      setState({ fire: r.fire, skull: r.skull, eyes: r.eyes, mine: r.mine });
+    } finally {
+      setBusy(null);
+    }
+  };
+  const total = state.fire + state.skull + state.eyes;
+  return (
+    <div className="mt-2" data-testid={`reactions-${item.id}`}>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {EMOJIS.map((e) => {
+          const n = state[e];
+          const on = state.mine.includes(e);
+          if (!on && n === 0 && !signedIn) return null;
+          return (
+            <button
+              key={e}
+              onClick={() => react(e)}
+              disabled={!signedIn || busy === e}
+              className={`h-6 px-2 rounded-full text-[11px] num inline-flex items-center gap-1 border transition-colors ${on ? "border-brand/50 bg-brand/10 text-fg" : n > 0 ? "border-line-2 bg-panel-2 text-fg-2 hover:border-brand/40" : "border-transparent text-dim hover:bg-panel-2 hover:text-fg-2"} ${signedIn ? "" : "cursor-default"}`}
+              title={signedIn ? (on ? "remove reaction" : "react") : "sign in to react"}
+              aria-pressed={on}
+              data-testid={`react-${e}`}
+            >
+              <span aria-hidden>{EMOJI_CHAR[e]}</span>
+              {n > 0 && <span>{n}</span>}
+            </button>
+          );
+        })}
+        {withComments && (
+          <button onClick={() => setOpen((v) => !v)} className={`h-6 px-2 rounded-full text-[11px] num inline-flex items-center gap-1 ${open ? "text-fg bg-panel-2" : "text-dim hover:text-fg-2 hover:bg-panel-2"}`} title="comments" data-testid="comments-toggle">
+            <Icon.reply /> {comments > 0 ? comments : "Comment"}
+          </button>
+        )}
+        {total === 0 && !withComments && !signedIn && null}
+      </div>
+      {open && withComments && <ThesisThread eventId={item.id} compact autoFocus onCount={setComments} />}
+    </div>
   );
 }

@@ -303,6 +303,8 @@
   .tm-head-chip .chip-value { display: inline-flex; align-items: center; height: 16px; }
   [data-theme="light"] .tm-head-chip .chip-label { color: var(--color-muted); }
   .tm-head-quiet .chip-value { color: var(--color-fg-2); font-weight: 550; }
+  .tm-head-watch { display: inline-flex; align-items: center; gap: 6px; }
+  .tm-head-watch-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-up); flex: none; }
 
   .tm-head-skel { display: inline-block; height: 12px; border-radius: 4px; vertical-align: middle; }
   /* on the dark glass the shared recess colour is darker than the chip itself: lift it so loading reads as loading */

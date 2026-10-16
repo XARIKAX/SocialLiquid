@@ -1,7 +1,9 @@
 "use client";
 /**
- * alerts for followed traders: a bell with an unread dot and a dropdown in the top bar,
- * plus toasts that slide in when a followed trader opens, closes or gets liquidated while you are on the page.
+ * alerts: a bell with an unread dot and a dropdown in the top bar, plus toasts that slide in while you are on the
+ * page. two kinds of entry share them: followed traders opening, closing or getting liquidated, and notifications
+ * about your own things (someone copied, commented on or reacted to your trade, your thesis settled, a trader whose
+ * key you hold posted).
  * styles: ./chrome.css (.tm-chrome-alert*, .tm-chrome-toast*).
  */
 import "./chrome.css";
@@ -15,7 +17,22 @@ import type { FeedItem } from "@/lib/queries";
 import { fmtUsd, timeAgo, userLabel } from "@/lib/format";
 import { Avatar, CoinIcon, EventPill, Icon } from "./ui";
 
-type Alerts = { items: FeedItem[]; seenAt: string | null; unread: number };
+type NoteType = "COPIED" | "REPLY" | "REACTION" | "THESIS_SETTLED" | "CREATOR_POST";
+type Note = { id: string; type: NoteType; actorAddress: string | null; actor: { address: string; handle: string | null; displayName: string | null; avatarUrl: string | null } | null; coin: string | null; eventId: string | null; thesisId: string | null; positionId: string | null; payload: Record<string, unknown>; createdAt: string };
+type Alerts = { items: FeedItem[]; notes?: Note[]; seenAt: string | null; unread: number };
+/** one row in the bell or one toast: a followed trader's event, or a notification about something of yours */
+type Entry = { key: string; time: string; event?: FeedItem; note?: Note };
+const EMOJI: Record<string, string> = { fire: "🔥", skull: "💀", eyes: "👀" };
+const POST_WORD: Record<string, string> = { call: "a call", exit: "an exit", lesson: "a lesson", loss: "a loss breakdown", note: "a note" };
+
+/** followed-trader events and notifications in one list, newest first */
+function entries(d: Alerts | undefined): Entry[] {
+  if (!d) return [];
+  return [
+    ...d.items.map((it) => ({ key: `e-${it.id}`, time: it.time, event: it })),
+    ...(d.notes ?? []).map((n) => ({ key: `n-${n.id}`, time: n.createdAt, note: n })),
+  ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+}
 
 export function useAlerts() {
   const { signedIn } = useAuth();
@@ -48,6 +65,85 @@ function tone(it: FeedItem): "up" | "down" | "thesis" | "mint" {
 }
 
 const EYEBROW: Record<string, string> = { LONG: "New position", SHORT: "New position", CLOSED: "Position closed", LIQUIDATED: "Liquidation", THESIS: "New thesis" };
+const NOTE_EYEBROW: Record<NoteType, string> = { COPIED: "Copied · yours", REPLY: "New comment · yours", REACTION: "New reaction · yours", THESIS_SETTLED: "Thesis settled · yours", CREATOR_POST: "New post · key you hold" };
+const NOTE_PILL: Record<NoteType, [string, string]> = { COPIED: ["Copied", "pill-brand"], REPLY: ["Comment", "pill-neutral"], REACTION: ["Reaction", "pill-neutral"], THESIS_SETTLED: ["Settled", "pill-thesis"], CREATOR_POST: ["Key holders", "pill-thesis"] };
+
+function noteTone(n: Note): "up" | "down" | "thesis" | "mint" {
+  if (n.type === "THESIS_SETTLED") return (n.payload as { outcome?: string }).outcome === "PROFIT" ? "up" : "down";
+  if (n.type === "CREATOR_POST") return "thesis";
+  return "mint";
+}
+
+/** what a notification says, shared by the row and its spoken summary. `me` is the viewer's handle, for thesis links */
+function noteFacts(n: Note, me: string | null | undefined, mk: ReturnType<typeof marketIdentity>) {
+  const name = n.actor ? userLabel(n.actor) : n.actorAddress ? n.actorAddress.slice(0, 6) + "…" + n.actorAddress.slice(-4) : "";
+  const p = n.payload as { side?: string; sizeUsd?: number; leverage?: number; text?: string; emoji?: string; outcome?: string; realisedPnl?: number; eventType?: string; kind?: string; handle?: string };
+  const thing = p.eventType === "THESIS" ? "thesis" : "trade";
+  const coin = n.coin ? mk.name : "";
+  let what: string;
+  switch (n.type) {
+    case "COPIED":
+      what = `copied your ${coin} ${p.side === "SHORT" ? "short" : "long"}`;
+      break;
+    case "REPLY":
+      what = `commented on your ${coin} ${thing}`;
+      break;
+    case "REACTION":
+      what = `reacted ${EMOJI[p.emoji ?? ""] ?? ""} to your ${coin} ${thing}`;
+      break;
+    case "CREATOR_POST":
+      what = `posted ${POST_WORD[p.kind ?? ""] ?? "an update"}${coin ? ` on ${coin}` : ""}`;
+      break;
+    default:
+      what = `${coin} thesis settled: ${(p.outcome ?? "").toLowerCase()}`;
+  }
+  const pnl = n.type === "THESIS_SETTLED" && p.realisedPnl !== undefined ? p.realisedPnl : null;
+  const quote = n.type === "REPLY" || n.type === "CREATOR_POST" ? p.text : undefined;
+  const href = n.type === "CREATOR_POST" ? `/keys/${encodeURIComponent(p.handle ?? n.actorAddress ?? "")}` : n.thesisId && me ? `/t/${me}/thesis/${n.thesisId}` : n.coin ? mk.href : "/";
+  const ago = timeAgo(n.createdAt);
+  const who = n.type === "THESIS_SETTLED" ? "Your" : name;
+  const label = `${who} ${what}${pnl !== null ? `, ${fmtUsd(pnl, { sign: true })}` : ""}, ${ago} ago`;
+  return { name: n.type === "THESIS_SETTLED" ? "Your thesis" : name, what, pnl, quote, href, ago, label, lev: p.leverage, size: p.sizeUsd };
+}
+
+function NoteRow({ n, me, onClick, fresh }: { n: Note; me?: string | null; onClick?: () => void; fresh?: boolean }) {
+  const mk = useMarketIdentity()(n.coin ?? "");
+  const { name, what, pnl, quote, href, ago, label, lev, size } = noteFacts(n, me, mk);
+  const [pill, cls] = NOTE_PILL[n.type];
+  return (
+    <Link href={href} onClick={onClick} className="tm-chrome-alert" data-new={fresh || undefined} aria-label={label} data-testid={`note-${n.type}`}>
+      <span className="tm-chrome-alert-av" aria-hidden>
+        {n.actorAddress && n.type !== "THESIS_SETTLED" ? (
+          <Avatar address={n.actorAddress} url={n.actor?.avatarUrl} handle={n.actor?.handle ?? n.actor?.displayName} size={32} />
+        ) : (
+          <span className="tm-chrome-glyph">
+            <Icon.check />
+          </span>
+        )}
+        {n.coin && <CoinIcon coin={mk.icon} size={15} className="tm-chrome-alert-coinbadge" />}
+      </span>
+      <span className="tm-chrome-alert-body" aria-hidden>
+        <span className="tm-chrome-alert-line">
+          <span className="tm-chrome-alert-name">{name}</span>
+          <span className={`pill ${cls}`}>{pill}</span>
+          <span className="tm-chrome-alert-time">{ago}</span>
+        </span>
+        <span className="tm-chrome-alert-meta tm-chrome-num">
+          <span>{what}</span>
+          {n.type === "COPIED" && size ? <span>{fmtUsd(size, { compact: true })}</span> : null}
+          {n.type === "COPIED" && lev ? <span className="tm-chrome-alert-lev">{lev}x</span> : null}
+          {pnl !== null && <span className={`tm-chrome-alert-pnl ${pnl >= 0 ? "tm-chrome-up glow-up" : "tm-chrome-down glow-down"}`}>{fmtUsd(pnl, { sign: true })}</span>}
+        </span>
+        {quote && <span className="tm-chrome-alert-quote">{quote}</span>}
+      </span>
+    </Link>
+  );
+}
+
+/** a row for either kind of entry */
+function EntryRow({ e, me, onClick, fresh }: { e: Entry; me?: string | null; onClick?: () => void; fresh?: boolean }) {
+  return e.event ? <AlertRow it={e.event} onClick={onClick} fresh={fresh} /> : <NoteRow n={e.note!} me={me} onClick={onClick} fresh={fresh} />;
+}
 
 const closeIcon = (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
@@ -100,6 +196,7 @@ function AlertRow({ it, onClick, fresh }: { it: FeedItem; onClick?: () => void; 
 /** top-bar bell: unread dot, dropdown with the latest alerts, mark-read on open */
 export function AlertsBell() {
   const q = useAlerts();
+  const { me } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   // how many rows were unread when the list opened: they stay lit while you read them
@@ -133,7 +230,7 @@ export function AlertsBell() {
       qc.setQueryData<Alerts>(["alerts"], (d) => (d ? { ...d, unread: 0, seenAt: new Date().toISOString() } : d));
     }
   };
-  const items = q.data?.items ?? [];
+  const items = entries(q.data);
   return (
     <div className="relative" ref={ref}>
       <button ref={btn} type="button" className="tm-chrome-iconbtn" onClick={toggle} title="Alerts" aria-label={`Alerts${unread ? `, ${unread} unread` : ""}`} aria-expanded={open} aria-haspopup="dialog">
@@ -145,7 +242,7 @@ export function AlertsBell() {
           <div className="tm-chrome-alerts-head">
             <span className="tm-chrome-alerts-title">Alerts</span>
             {fresh > 0 && <span className="pill pill-brand">{fresh > 99 ? "99+" : fresh} new</span>}
-            <span className="tm-chrome-alerts-sub">Traders you follow</span>
+            <span className="tm-chrome-alerts-sub">Traders you follow · keys you hold · yours</span>
           </div>
           <div className="tm-chrome-alerts-list">
             {q.isLoading && (
@@ -170,8 +267,8 @@ export function AlertsBell() {
                 </p>
               </div>
             )}
-            {items.map((it, i) => (
-              <AlertRow key={it.id} it={it} fresh={i < fresh} onClick={() => setOpen(false)} />
+            {items.map((e, i) => (
+              <EntryRow key={e.key} e={e} me={me?.user?.handle} fresh={i < fresh} onClick={() => setOpen(false)} />
             ))}
           </div>
           {items.length > 0 && (
@@ -200,26 +297,27 @@ const GAP = 8;
  */
 export function AlertToasts() {
   const q = useAlerts();
+  const { me } = useAuth();
   const seen = useRef<Set<string> | null>(null);
-  const [toasts, setToasts] = useState<FeedItem[]>([]);
+  const [toasts, setToasts] = useState<Entry[]>([]);
   const [heights, setHeights] = useState<Record<string, number>>({});
   const [open, setOpen] = useState(false);
   const closeT = useRef<number | undefined>(undefined);
   useEffect(() => {
-    const items = q.data?.items;
-    if (!items) return;
+    if (!q.data) return;
+    const items = entries(q.data);
     if (seen.current === null) {
       // first load: everything already on the list is old news
-      seen.current = new Set(items.map((i) => i.id));
+      seen.current = new Set(items.map((i) => i.key));
       return;
     }
-    const fresh = items.filter((i) => !seen.current!.has(i.id));
+    const fresh = items.filter((i) => !seen.current!.has(i.key));
     if (!fresh.length) return;
-    for (const i of fresh) seen.current.add(i.id);
+    for (const i of fresh) seen.current.add(i.key);
     setToasts((t) => [...fresh.slice(0, MAX_TOASTS), ...t].slice(0, MAX_TOASTS));
   }, [q.data]);
   const done = useCallback((id: string) => {
-    setToasts((t) => t.filter((x) => x.id !== id));
+    setToasts((t) => t.filter((x) => x.key !== id));
     setHeights((m) => {
       const next = { ...m };
       delete next[id];
@@ -242,7 +340,7 @@ export function AlertToasts() {
     window.clearTimeout(closeT.current);
     closeT.current = window.setTimeout(() => setOpen(false), 180);
   };
-  const front = toasts[0] ? heights[toasts[0].id] : undefined;
+  const front = toasts[0] ? heights[toasts[0].key] : undefined;
   let below = 0;
   // the live region is always in the page, so the first toast is announced too (a region born with its content is not)
   return (
@@ -258,18 +356,22 @@ export function AlertToasts() {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) release();
       }}
     >
-      {toasts.map((it, i) => {
-        const h = heights[it.id];
+      {toasts.map((e, i) => {
+        const h = heights[e.key];
         const lift = below;
         below += (h ?? 0) + GAP;
-        return <Toast key={it.id} it={it} index={i} height={h} front={front} lift={lift} hold={open} onDone={done} onHeight={onHeight} />;
+        return <Toast key={e.key} e={e} me={me?.user?.handle} index={i} height={h} front={front} lift={lift} hold={open} onDone={done} onHeight={onHeight} />;
       })}
     </div>
   );
 }
 
 /** one card: a coloured edge, a life bar, its own clock (held while the deck is open), then out */
-function Toast({ it, index, height, front, lift, hold, onDone, onHeight }: { it: FeedItem; index: number; height?: number; front?: number; lift: number; hold: boolean; onDone: (id: string) => void; onHeight: (id: string, h: number) => void }) {
+function Toast({ e, me, index, height, front, lift, hold, onDone, onHeight }: { e: Entry; me?: string | null; index: number; height?: number; front?: number; lift: number; hold: boolean; onDone: (id: string) => void; onHeight: (id: string, h: number) => void }) {
+  const mkOf = useMarketIdentity();
+  const id = e.key;
+  const eyebrow = e.event ? `${EYEBROW[e.event.type] ?? "Alert"} · following` : NOTE_EYEBROW[e.note!.type];
+  const spoken = e.event ? `${EYEBROW[e.event.type] ?? "Alert"}: ${facts(e.event, mkOf(e.event.coin)).label}` : noteFacts(e.note!, me, mkOf(e.note!.coin ?? "")).label;
   const [leaving, setLeaving] = useState(false);
   const body = useRef<HTMLDivElement>(null);
   const left = useRef(TOAST_MS);
@@ -286,36 +388,34 @@ function Toast({ it, index, height, front, lift, hold, onDone, onHeight }: { it:
   }, [hold, leaving, leave]);
   useEffect(() => {
     if (!leaving) return;
-    const t = window.setTimeout(() => onDone(it.id), 240);
+    const t = window.setTimeout(() => onDone(id), 240);
     return () => window.clearTimeout(t);
-  }, [leaving, it.id, onDone]);
+  }, [leaving, id, onDone]);
   // the card's natural height (its body, not the card, which is cut to the front card's height while tucked behind)
   useLayoutEffect(() => {
     const el = body.current;
     if (!el) return;
-    const report = () => onHeight(it.id, el.offsetHeight);
+    const report = () => onHeight(id, el.offsetHeight);
     report();
     const ro = new ResizeObserver(report);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [it.id, onHeight]);
+  }, [id, onHeight]);
   const vars: Record<string, string | number> = { "--life": `${TOAST_MS}ms`, "--i": index, "--lift": `${-lift}px` };
   if (height !== undefined) vars["--h"] = `${height}px`;
   if (front !== undefined) vars["--fh"] = `${front}px`;
   return (
-    <div className="tm-chrome-toast" data-tone={tone(it)} data-front={index === 0 || undefined} data-leaving={leaving || undefined} style={vars as React.CSSProperties}>
+    <div className="tm-chrome-toast" data-tone={e.event ? tone(e.event) : noteTone(e.note!)} data-front={index === 0 || undefined} data-leaving={leaving || undefined} style={vars as React.CSSProperties}>
       <div ref={body} className="tm-chrome-toast-body">
-        <span className="sr-only">
-          {EYEBROW[it.type] ?? "Alert"}: {facts(it).label}
-        </span>
+        <span className="sr-only">{spoken}</span>
         <div className="tm-chrome-toast-eyebrow" aria-hidden>
           <i />
-          {EYEBROW[it.type] ?? "Alert"} · following
+          {eyebrow}
         </div>
         <button type="button" className="tm-chrome-toast-x" onClick={leave} aria-label="Dismiss alert">
           {closeIcon}
         </button>
-        <AlertRow it={it} onClick={leave} />
+        <EntryRow e={e} me={me} onClick={leave} />
       </div>
       <span className="tm-chrome-toast-life" aria-hidden />
     </div>

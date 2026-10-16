@@ -1,5 +1,6 @@
 "use client";
 import "./feed.css";
+import { TrendingStrip } from "../market/trending";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type UIEvent } from "react";
@@ -39,11 +40,11 @@ function readTab(): Tab {
   return "tokens";
 }
 
-export function FeedColumn({ onNavigate, onCollapse }: { onNavigate?: () => void; onCollapse?: () => void }) {
+export function FeedColumn({ onNavigate, onCollapse, initialTab }: { onNavigate?: () => void; onCollapse?: () => void; /** phones open the column on this tab (the bottom bar's Feed button) instead of the remembered one */ initialTab?: Tab }) {
   // markets first: a new visitor has no alerts and nobody followed yet. the shell mounts the rail only on the
   // client (after its media query resolves), so the remembered tab is read before the first paint, no flash.
   const [state, setState] = useState<{ tab: Tab; open: Tab[] }>(() => {
-    const t = typeof window === "undefined" ? "tokens" : readTab();
+    const t = initialTab ?? (typeof window === "undefined" ? "tokens" : readTab());
     return { tab: t, open: [t] };
   });
   const { tab } = state;
@@ -658,6 +659,7 @@ export function Tokens({ onNavigate, full, active = true }: { onNavigate?: () =>
 
   return (
     <div className={`tm-rail-tokens ${full ? "tm-rail-tokens-full tm-rail-page" : ""}`}>
+      {!full && <TrendingStrip onNavigate={onNavigate} />}
       <div className="tm-rail-head">
         <div className="tm-rail-tokens-top">
           <label className="tm-rail-search">
@@ -826,10 +828,14 @@ function TokensSkeleton({ full }: { full?: boolean }) {
 
 const isSrc = (v: unknown): v is "hl" | "own" => v === "hl" || v === "own";
 
+const MINI_WINDOWS = [["day", "24H"], ["week", "7D"], ["month", "30D"], ["allTime", "All"]] as const;
+type MiniWindow = (typeof MINI_WINDOWS)[number][0];
+const isWindow = (v: unknown): v is MiniWindow => MINI_WINDOWS.some(([w]) => w === v);
+
 function MiniLeaderboard({ onNavigate, active = true }: { onNavigate?: () => void; active?: boolean }) {
   const [src, setSrc] = useStored<"hl" | "own">("sl:rail-board", "hl", isSrc);
-  // same key and shape as the /leaderboard page so both can be mounted at once and share the cache
-  const hlq = useQuery({ queryKey: ["leaderboard", "hl"], queryFn: () => api<HlBoard>("/api/leaderboard/hl"), refetchInterval: 60_000, enabled: active });
+  const [win, setWin] = useStored<MiniWindow>("sl:rail-board-window", "month", isWindow);
+  const hlq = useQuery({ queryKey: ["leaderboard", "hl", win, "pnl", "", false, "mini"], queryFn: () => api<HlBoard>(`/api/leaderboard/hl?window=${win}&limit=25`), refetchInterval: 60_000, placeholderData: (d) => d, enabled: active });
   const own = useQuery({ queryKey: ["leaderboard", "pnl7d"], queryFn: () => api<{ rows: LeaderboardRow[] }>("/api/leaderboard?by=pnl7d").then((r) => r.rows), refetchInterval: 30_000, enabled: active });
 
   let body: ReactNode;
@@ -848,7 +854,7 @@ function MiniLeaderboard({ onNavigate, active = true }: { onNavigate?: () => voi
       );
     else
       body = rows.map((r) => (
-        <BoardRow key={r.rank} rank={r.rank} user={r.user} sub={`${fmtUsd(r.accountValue, { compact: true })} · ROI ${(r.roi30d * 100).toFixed(1)}%`} pnl={r.pnl30d} onNavigate={onNavigate} />
+        <BoardRow key={r.user.address} rank={r.rank} user={r.user} sub={`${fmtUsd(r.accountValue, { compact: true })} · ROI ${(r.roi * 100).toFixed(1)}%`} pnl={r.pnl} onNavigate={onNavigate} />
       ));
   } else {
     const rows = own.data;
@@ -873,12 +879,21 @@ function MiniLeaderboard({ onNavigate, active = true }: { onNavigate?: () => voi
       <div className="tm-rail-head tm-rail-lb-head">
         <span className="seg" role="group" aria-label="Ranking">
           <button type="button" className={`seg-item ${src === "hl" ? "seg-active" : ""}`} aria-pressed={src === "hl"} onClick={() => setSrc("hl")}>
-            Hyperliquid 30D
+            Hyperliquid
           </button>
           <button type="button" className={`seg-item ${src === "own" ? "seg-active" : ""}`} aria-pressed={src === "own"} onClick={() => setSrc("own")}>
-            7d PnL
+            socialLiquid 7d
           </button>
         </span>
+        {src === "hl" && (
+          <span className="seg" role="group" aria-label="Window" data-testid="mini-windows">
+            {MINI_WINDOWS.map(([w, label]) => (
+              <button key={w} type="button" className={`seg-item ${win === w ? "seg-active" : ""}`} aria-pressed={win === w} onClick={() => setWin(w)}>
+                {label}
+              </button>
+            ))}
+          </span>
+        )}
         <Link href="/leaderboard" onClick={onNavigate} className="tm-rail-link">
           Full board <ArrowRight />
         </Link>

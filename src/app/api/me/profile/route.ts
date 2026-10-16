@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { STYLES } from "@/lib/styles";
 import { body, handler, json, HttpError } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/session";
@@ -41,11 +42,24 @@ export const POST = handler(async (req: Request) => {
       /** undefined = unchanged, null = remove */
       avatar: z.string().regex(IMAGE, "bad image").max(160_000, "avatar too large").optional().nullable(),
       banner: z.string().regex(IMAGE, "bad image").max(700_000, "banner too large").optional().nullable(),
+      /** trading-style tag; undefined = unchanged, null = none */
+      style: z.enum(STYLES).optional().nullable(),
+      pinnedThesisId: z.string().max(40).optional().nullable(),
+      pinnedPositionId: z.string().max(40).optional().nullable(),
     }),
   );
   if (RESERVED.has(b.handle) || b.handle.startsWith("0x")) throw new HttpError(400, "that handle is reserved");
   const taken = await prisma.user.findFirst({ where: { handle: b.handle, NOT: { id: s.userId } }, select: { id: true } });
   if (taken) throw new HttpError(409, "handle taken");
+  // pins must be the caller's own
+  if (b.pinnedThesisId) {
+    const t = await prisma.thesis.findFirst({ where: { id: b.pinnedThesisId, userId: s.userId }, select: { id: true } });
+    if (!t) throw new HttpError(400, "that thesis is not yours");
+  }
+  if (b.pinnedPositionId) {
+    const p = await prisma.position.findFirst({ where: { id: b.pinnedPositionId, address: s.address }, select: { id: true } });
+    if (!p) throw new HttpError(400, "that trade is not yours");
+  }
   const user = await prisma.user.update({
     where: { id: s.userId },
     data: {
@@ -56,7 +70,10 @@ export const POST = handler(async (req: Request) => {
       tgHandle: b.tgHandle ?? null,
       ...(b.avatar !== undefined ? { avatarUrl: b.avatar } : {}),
       ...(b.banner !== undefined ? { bannerUrl: b.banner } : {}),
+      ...(b.style !== undefined ? { style: b.style } : {}),
+      ...(b.pinnedThesisId !== undefined ? { pinnedThesisId: b.pinnedThesisId } : {}),
+      ...(b.pinnedPositionId !== undefined ? { pinnedPositionId: b.pinnedPositionId } : {}),
     },
   });
-  return json({ user: { id: user.id, address: user.address, handle: user.handle, displayName: user.displayName, xHandle: user.xHandle, tgHandle: user.tgHandle, bio: user.bio, avatarUrl: user.avatarUrl, bannerUrl: user.bannerUrl } });
+  return json({ user: { id: user.id, address: user.address, handle: user.handle, displayName: user.displayName, xHandle: user.xHandle, tgHandle: user.tgHandle, bio: user.bio, avatarUrl: user.avatarUrl, bannerUrl: user.bannerUrl, style: user.style, pinnedThesisId: user.pinnedThesisId, pinnedPositionId: user.pinnedPositionId } });
 });

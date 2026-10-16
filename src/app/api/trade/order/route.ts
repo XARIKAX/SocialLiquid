@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { award, awardAddress } from "@/lib/points";
+import { creditInviterOnTrade } from "@/lib/invites";
 import { body, handler, json, HttpError, plain } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { syncAddress } from "@/lib/indexer";
 import { getSession, hasInvite } from "@/lib/session";
 import { createThesis } from "@/lib/thesis";
+import { notifyAddress } from "@/lib/notify";
 import { placeOrder } from "@/lib/trade";
 
 const Body = z
@@ -45,12 +48,16 @@ export const POST = handler(async (req: Request) => {
   let positionId: string | null = null;
   if (result.status === "filled") {
     await syncAddress(s.address, { forceFills: true }).catch((e) => console.warn("[trade] sync after fill:", e.message));
+    await creditInviterOnTrade(s.userId).catch(() => null);
     let pos = await prisma.position.findFirst({ where: { address: s.address, coin: input.coin, closedAt: null }, orderBy: { openedAt: "desc" } });
     positionId = pos?.id ?? null;
     if (pos && input.copyOf && !pos.copiedFromPositionId && input.copyOf.address.toLowerCase() !== s.address) {
       const src = await prisma.position.findUnique({ where: { id: input.copyOf.positionId }, select: { id: true, address: true, coin: true } });
       if (src && src.address === input.copyOf.address.toLowerCase() && src.coin === input.coin) {
         pos = await prisma.position.update({ where: { id: pos.id }, data: { copiedFromAddress: src.address, copiedFromPositionId: src.id } });
+        await awardAddress(src.address, "COPIED", pos.id).catch(() => null);
+        await award(s.userId, "COPY_MADE", pos.id).catch(() => null);
+        await notifyAddress(src.address, { type: "COPIED", actorAddress: s.address, coin: input.coin, positionId: src.id, payload: { side: pos.side, sizeUsd: Number(pos.sizeUsd), leverage: pos.leverage } }).catch(() => null);
       }
     }
     if (input.thesis) thesis = await createThesis({ userId: s.userId, address: s.address, coin: input.coin, text: input.thesis, position: pos });

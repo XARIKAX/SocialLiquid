@@ -9,11 +9,15 @@ import * as hl from "@nktkas/hyperliquid";
 import { prisma } from "../src/lib/db";
 import { HL_MOCK, IS_TESTNET } from "../src/lib/env";
 import { refreshHlLeaderboard, seedTrackedAddresses, syncAddress, trackFeatured, trackUsers } from "../src/lib/indexer";
+import { backfillPoints } from "../src/lib/points";
+import { KEYS_LIVE, KEYS_PROGRAM } from "../src/lib/keys";
+import { syncKeyEvents } from "../src/lib/keys-chain";
+import { accrueKeyFees } from "../src/lib/keys-jobs";
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 5000);
 const WEIGHT_BUDGET_PER_MIN = Number(process.env.HL_WEIGHT_BUDGET_PER_MIN ?? 1000);
 const SEED_COUNT = Number(process.env.SEED_COUNT ?? 200);
-const HL_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 10);
+const HL_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 100);
 const HL_LEADERBOARD_REFRESH_MS = Number(process.env.HL_LEADERBOARD_REFRESH_MS ?? 60 * 60_000);
 const CONCURRENCY = 4;
 /** hyperliquid allows 10 unique users across user-specific ws subscriptions per ip */
@@ -121,7 +125,7 @@ let lastHlRefresh = 0;
 async function refreshHlBoard(reason: string) {
   const n = await refreshHlLeaderboard(HL_TOP_N);
   lastHlRefresh = Date.now();
-  log(`${reason}: mirrored hyperliquid leaderboard top ${n} (30d)`);
+  log(`${reason}: mirrored hyperliquid leaderboard, ${n} accounts across 24h / 7d / 30d / all-time top ${HL_TOP_N}`);
 }
 
 async function housekeeping() {
@@ -140,12 +144,36 @@ async function housekeeping() {
   }
 }
 
+/** keys: index the Solana program's events every 15s; accrue copier fees hourly */
+let lastKeysHourly = 0;
+async function keysLoop() {
+  if (!KEYS_LIVE && !KEYS_PROGRAM) return;
+  log(`keys: ${KEYS_LIVE ? "live" : "preview"}${KEYS_PROGRAM ? `, indexing program ${KEYS_PROGRAM}` : ", no program set"}`);
+  for (;;) {
+    try {
+      if (KEYS_PROGRAM) {
+        const r = await syncKeyEvents();
+        if (r && (r.trades || r.claims || r.listed)) log(`keys: +${r.trades} trade(s) +${r.claims} claim(s) +${r.listed} listed from ${r.txs} transaction(s)`);
+      }
+      if (KEYS_LIVE && Date.now() - lastKeysHourly >= 60 * 60_000) {
+        lastKeysHourly = Date.now();
+        const accrued = await accrueKeyFees();
+        if (accrued) log(`keys: ${accrued} fee accrual(s)`);
+      }
+    } catch (e) {
+      log("keys error", (e as Error).message);
+    }
+    await sleep(15_000);
+  }
+}
+
 async function main() {
   log(`starting. network=${HL_MOCK ? "mock" : IS_TESTNET ? "testnet" : "mainnet"} budget=${WEIGHT_BUDGET_PER_MIN}w/min floor=${POLL_INTERVAL_MS}ms`);
   if (/^0x0{40}$/i.test(process.env.BUILDER_ADDRESS ?? "")) log("WARNING: BUILDER_ADDRESS is the zero address; builder fees will not accrue until it is set to a wallet you control");
   const featured = await trackFeatured();
   log(`featured traders tracked (+${featured} new)`);
   await refreshHlBoard("startup");
+  void backfillPoints().then((r) => log(`points backfill: +${r.awarded} award(s)`)).catch((e) => log(`points backfill failed: ${(e as Error).message}`));
   const tracked = await prisma.trackedAddress.count();
   if (tracked < SEED_COUNT) {
     const n = await seedTrackedAddresses(SEED_COUNT);
@@ -155,7 +183,7 @@ async function main() {
   const perCycleWeight = total * 2;
   const minCycleSec = (perCycleWeight / WEIGHT_BUDGET_PER_MIN) * 60;
   log(`tracking ${total} address(es). budget-bound full cycle ≈ ${Math.max(POLL_INTERVAL_MS / 1000, minCycleSec).toFixed(0)}s`);
-  await Promise.all([pollLoop(), housekeeping()]);
+  await Promise.all([pollLoop(), housekeeping(), keysLoop()]);
 }
 
 /** a failed startup (database unreachable, hyperliquid down) logs the reason and retries instead of crash-looping the service */
