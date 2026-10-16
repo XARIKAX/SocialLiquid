@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
 import { prisma } from "@/lib/db";
+import { marketByRef } from "@/lib/hl";
 import { fmtPx, fmtUsd, shortAddr } from "@/lib/format";
 
 export const runtime = "nodejs";
@@ -26,6 +27,10 @@ try {
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const t = await prisma.thesis.findUnique({ where: { id }, include: { user: true, position: true } });
+  // the market as people name it ("SOL/USDC", "GOLD"), never its raw id
+  const coin = t?.coin ?? "";
+  const market = coin ? await marketByRef(coin).catch(() => undefined) : undefined;
+  const coinName = market?.name ?? (coin.includes(":") ? coin.slice(coin.indexOf(":") + 1) : coin);
   const who = t ? (t.user.handle ?? shortAddr(t.user.address)) : "socialLiquid";
   const p = t?.position;
   const pnl = p ? Number(p.closedAt ? p.realisedPnl ?? 0 : p.unrealisedPnl) : null;
@@ -43,8 +48,8 @@ export default async function Image({ params }: { params: Promise<{ id: string }
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 20, marginTop: 48, fontSize: 40 }}>
           <span style={{ fontWeight: 700 }}>{who}</span>
-          {p && <span style={{ color: p.side === "LONG" ? "#22c55e" : "#ef4444", fontWeight: 700 }}>{p.side.toLowerCase()} {t?.coin} {p.leverage}x</span>}
-          {!p && <span style={{ color: "#8c8c98" }}>{t?.coin}</span>}
+          {p && <span style={{ color: p.side === "LONG" ? "#22c55e" : "#ef4444", fontWeight: 700 }}>{p.side.toLowerCase()} {coinName} {p.leverage}x</span>}
+          {!p && <span style={{ color: "#8c8c98" }}>{coinName}</span>}
         </div>
         <div style={{ display: "flex", fontSize: 44, lineHeight: 1.25, marginTop: 32, flex: 1, overflow: "hidden" }}>{t?.text ?? "thesis not found"}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 28, fontSize: 32, color: "#8c8c98" }}>

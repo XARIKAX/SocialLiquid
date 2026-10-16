@@ -1,0 +1,1541 @@
+/* =====================================================================
+   bottom panel (.tm-bp-*): the terminal's lower deck, in the landing
+   mock's language. a lit tab strip (glass pill, mint count lozenges,
+   edges that dissolve when it scrolls), a quiet control bar per view,
+   then dense tables: mono micro heads on a faint band that stays put,
+   hairline rows, sphere avatars, tinted pills, and pnl that glows in
+   its own colour. empty states sit in a breathing ring. the deck keeps
+   one height across tabs (drag its foot to resize it).
+   glows scale with --glow (light paper = 45%).
+   ===================================================================== */
+
+@layer components {
+  .tm-bp {
+    /* rgb triplets so every tint and halo can carry its own alpha */
+    --tm-bp-up: 34 211 107;
+    --tm-bp-down: 255 77 79;
+    --tm-bp-mint: 77 227 193;
+    --tm-bp-thesis: 107 147 255;
+    --tm-bp-warn: 245 178 54;
+    /* luminous text tints on ink (the mock's #6ff5a5 / #ff7f81); deepened on paper for 4.5:1 */
+    --tm-bp-up-text: color-mix(in srgb, var(--color-up) 68%, #e9fff3);
+    --tm-bp-down-text: color-mix(in srgb, var(--color-down) 74%, #fff0f0);
+    --tm-bp-thesis-text: #b3c7ff;
+    --tm-bp-warn-text: #ffd68a;
+    /* mint as text (a lit filter, a sell action): the bright mint on ink, a deep teal on paper for 4.5:1 */
+    --tm-bp-mint-text: var(--color-brand-2);
+    /* the deck's default height grows with taller screens; a drag on the foot overrides it */
+    --tm-bp-h: clamp(340px, calc(40vh + 20px), 540px);
+    /* opaque tones for sticky cells: the head band, and a row (plain and hovered) */
+    --tm-bp-head-solid: color-mix(in srgb, var(--surface-top) 98.4%, #fff);
+    --tm-bp-solid: color-mix(in srgb, var(--surface-top) 40%, var(--surface-bot));
+    --tm-bp-solid-hover: color-mix(in srgb, var(--tm-bp-solid) 96.5%, #fff);
+    /* the quiet ink for micro labels and secondary marks: dim on ink (5:1), deepened on paper to clear 4.5:1 */
+    --tm-bp-quiet: var(--color-dim);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    font-size: 12.5px;
+    line-height: 1.3;
+    color: var(--color-fg);
+    container: tm-bp / inline-size;
+  }
+  [data-theme="light"] .tm-bp {
+    --tm-bp-up: 31 157 85;
+    --tm-bp-down: 217 68 74;
+    --tm-bp-mint: 15 159 152;
+    --tm-bp-thesis: 63 106 224;
+    --tm-bp-warn: 168 114 28;
+    --tm-bp-up-text: color-mix(in srgb, var(--color-up) 82%, #000);
+    --tm-bp-down-text: color-mix(in srgb, var(--color-down) 86%, #000);
+    --tm-bp-thesis-text: var(--color-thesis);
+    --tm-bp-warn-text: var(--color-warn);
+    --tm-bp-mint-text: color-mix(in srgb, var(--color-brand) 72%, #000);
+    --tm-bp-head-solid: color-mix(in srgb, var(--surface-top) 97.2%, #1c1d21);
+    --tm-bp-solid-hover: color-mix(in srgb, var(--tm-bp-solid) 96.5%, #1c1d21);
+    --tm-bp-quiet: #6b6f79;
+  }
+  .tm-bp .label-caps { color: var(--tm-bp-quiet); }
+  .tm-bp button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ---------- colour helpers ---------- */
+  .tm-bp-up { color: var(--tm-bp-up-text); }
+  .tm-bp-down { color: var(--tm-bp-down-text); }
+  .tm-bp-flat { color: var(--color-muted); }
+  .tm-bp-dim { color: var(--color-dim); }
+  .tm-bp-fg2 { color: var(--color-fg-2); }
+  .tm-bp-warn { color: var(--tm-bp-warn-text); }
+  .tm-bp-glow.tm-bp-up,
+  .tm-bp-glow.tm-bp-up b { text-shadow: 0 0 14px rgb(var(--tm-bp-up) / calc(0.55 * var(--glow))); }
+  .tm-bp-glow.tm-bp-down,
+  .tm-bp-glow.tm-bp-down b { text-shadow: 0 0 14px rgb(var(--tm-bp-down) / calc(0.45 * var(--glow))); }
+  .tm-bp-pnl.tm-bp-glow small { text-shadow: none; }
+
+  /* ---------- head: the tab strip + a contextual summary ---------- */
+  .tm-bp-head {
+    position: relative;
+    z-index: 3;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 46px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--hair);
+    background: linear-gradient(180deg, rgb(255 255 255 / calc(0.026 * var(--glow))), transparent);
+  }
+  [data-theme="light"] .tm-bp-head {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.7), transparent);
+  }
+  .tm-bp-strip {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+  }
+  .tm-bp-tabs {
+    /* each faded edge: a clear zone (where the nudge disc sits), then a ramp up to full ink */
+    --tm-bp-fl0: 0px;
+    --tm-bp-fl: 0px;
+    --tm-bp-fr0: 0px;
+    --tm-bp-fr: 0px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    height: 100%;
+    padding-inline: 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .tm-bp-tabs::-webkit-scrollbar { display: none; }
+  /* soft fades on whichever edge still has tabs to scroll to (set from js). the nudge sits on clear ground, so no
+     half-letter peeks out from under it */
+  .tm-bp-strip[data-fade-l] .tm-bp-tabs { --tm-bp-fl0: 26px; --tm-bp-fl: 76px; }
+  .tm-bp-strip[data-fade-r] .tm-bp-tabs { --tm-bp-fr0: 26px; --tm-bp-fr: 76px; }
+  .tm-bp-strip:is([data-fade-l], [data-fade-r]) .tm-bp-tabs {
+    -webkit-mask: linear-gradient(90deg, transparent var(--tm-bp-fl0), #000 var(--tm-bp-fl), #000 calc(100% - var(--tm-bp-fr)), transparent calc(100% - var(--tm-bp-fr0)));
+    mask: linear-gradient(90deg, transparent var(--tm-bp-fl0), #000 var(--tm-bp-fl), #000 calc(100% - var(--tm-bp-fr)), transparent calc(100% - var(--tm-bp-fr0)));
+  }
+  /* touch has no nudges: a plain, shorter dissolve */
+  @media (pointer: coarse) {
+    .tm-bp-strip[data-fade-l] .tm-bp-tabs { --tm-bp-fl0: 0px; --tm-bp-fl: 44px; }
+    .tm-bp-strip[data-fade-r] .tm-bp-tabs { --tm-bp-fr0: 0px; --tm-bp-fr: 44px; }
+  }
+  .tm-bp-strip[data-scrollable] .tm-bp-tabs { cursor: grab; }
+  .tm-bp-strip[data-dragging] .tm-bp-tabs { cursor: grabbing; user-select: none; }
+  @media (pointer: coarse) {
+    .tm-bp-tabs { scroll-snap-type: x proximity; scroll-padding-inline: 16px; }
+    .tm-bp-tab { scroll-snap-align: start; }
+  }
+
+  .tm-bp-tab {
+    position: relative;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 30px;
+    padding-inline: 11px;
+    border-radius: 9px;
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    color: var(--color-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s, background-color 0.2s, box-shadow 0.25s;
+  }
+  .tm-bp-tab:hover { color: var(--color-fg); background-color: var(--row-hover); }
+  /* the strip clips vertically, so the ring sits inside the pill */
+  .tm-bp-tab:focus-visible { outline: 2px solid var(--color-brand); outline-offset: -2px; }
+  .tm-bp-tab[aria-selected="true"] {
+    color: var(--color-fg);
+    background: linear-gradient(180deg, rgb(255 255 255 / calc(0.1 * var(--glow))), rgb(255 255 255 / calc(0.035 * var(--glow))));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.06), 0 4px 12px -4px rgb(0 0 0 / 0.7);
+  }
+  [data-theme="light"] .tm-bp-tab[aria-selected="true"] {
+    background: linear-gradient(180deg, #ffffff, #f5f5f1);
+    box-shadow: inset 0 1px 0 #ffffff, inset 0 0 0 1px var(--hair-2), 0 3px 10px -4px rgb(28 29 33 / 0.28);
+  }
+  .tm-bp-tab .count { min-width: 16px; height: 16px; padding-inline: 4px; font-size: 9.5px; }
+
+  /* quiet count: inactive tabs keep their number without competing with the open one */
+  .tm-bp-q {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding-inline: 4px;
+    border-radius: 999px;
+    font-size: 9.5px;
+    font-weight: 650;
+    font-style: normal;
+    line-height: 1;
+    color: var(--color-muted);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 0 0 1px var(--hair-2);
+    transition: color 0.2s;
+  }
+  /* your own live things (positions, resting orders): tinted, never glowing until opened */
+  .tm-bp-q-live {
+    color: var(--color-brand-2);
+    background: linear-gradient(180deg, rgb(var(--tm-bp-mint) / 0.2), rgb(var(--tm-bp-mint) / 0.07));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-bp-mint) / 0.32);
+  }
+  [data-theme="light"] .tm-bp-q-live { color: var(--color-brand); }
+  /* a count that changes (an order placed, a fill, a chase ending) lifts for a beat and a mint ring leaves it;
+     arriving figures never do. transform and opacity only, once per change */
+  .tm-bp-tab > i { position: relative; }
+  .tm-bp-tab > i[data-bump] { animation: tm-bp-bump 0.7s var(--ease-out); }
+  .tm-bp-tab > i[data-bump]::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    box-shadow: 0 0 0 1px rgb(var(--tm-bp-mint) / 0.8), 0 0 10px rgb(var(--tm-bp-mint) / calc(0.6 * var(--glow)));
+    animation: tm-bp-bump-ring 1s var(--ease-out);
+  }
+
+  /* market | account */
+  .tm-bp-vsep {
+    flex: none;
+    width: 1px;
+    height: 16px;
+    margin-inline: 7px;
+    background: linear-gradient(180deg, transparent, var(--hair-2) 25%, var(--hair-2) 75%, transparent);
+  }
+
+  /* overflow nudges: small lit discs over the faded edges (mouse only) */
+  .tm-bp-nudge {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin-top: -11px;
+    border-radius: 50%;
+    color: var(--color-fg-2);
+    cursor: pointer;
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 1px var(--hair-2), 0 4px 10px -2px rgb(0 0 0 / calc(0.6 * var(--glow)));
+    transition: color 0.2s, box-shadow 0.25s, transform 0.2s;
+  }
+  .tm-bp-nudge:hover {
+    color: var(--color-fg);
+    box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 1px rgb(var(--tm-bp-mint) / 0.35), 0 0 14px -3px rgb(var(--tm-bp-mint) / calc(0.55 * var(--glow)));
+  }
+  .tm-bp-nudge:active { transform: scale(0.94); }
+  .tm-bp-nudge-l { left: 0; }
+  .tm-bp-nudge-r { right: 0; }
+  .tm-bp-strip[data-fade-l] .tm-bp-nudge-l,
+  .tm-bp-strip[data-fade-r] .tm-bp-nudge-r { display: inline-flex; }
+  @media (pointer: coarse) {
+    .tm-bp-strip:is([data-fade-l], [data-fade-r]) .tm-bp-nudge { display: none; }
+  }
+
+  /* the number that matters for the open view (the mock's uPnL) */
+  .tm-bp-sum {
+    flex: none;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 0 6px 0 14px;
+    border-left: 1px solid var(--hair);
+    line-height: 26px;
+    font-size: 11.5px;
+    color: var(--tm-bp-quiet);
+    white-space: nowrap;
+  }
+  .tm-bp-sum b {
+    font-size: 13.5px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+  }
+  /* the headline number is live: a slow mint dot says so */
+  .tm-bp-live {
+    flex: none;
+    align-self: center;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #d9fff6, #4de3c1 60%);
+    box-shadow: 0 0 8px rgb(77 227 193 / calc(0.85 * var(--glow)));
+  }
+  [data-theme="light"] .tm-bp-live { background: radial-gradient(circle at 35% 35%, #7fe0d6, var(--color-brand) 62%); }
+
+  /* ---------- body: one height for every tab, set by the foot grip on desktop ---------- */
+  .tm-bp-body {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  @media (min-width: 768px) {
+    .tm-bp-body { height: var(--tm-bp-h); }
+  }
+  .tm-bp-view {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* ---------- the control bar under the strip ---------- */
+  .tm-bp-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    min-height: 44px;
+    padding: 7px 12px 7px 10px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .tm-bp-bar-end {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px 14px;
+    margin-left: auto;
+  }
+  .tm-bp-bar .toggle { font-size: 12px; }
+  .tm-bp-seg .seg-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 27px;
+    padding-inline: 11px;
+  }
+  .tm-bp-seg .seg-item:focus-visible { outline: 2px solid var(--color-brand); outline-offset: -2px; }
+  .tm-bp-seg .count { min-width: 16px; height: 16px; padding-inline: 4px; font-size: 9.5px; }
+  .tm-bp-sortctl { display: inline-flex; align-items: center; gap: 8px; }
+  .tm-bp-sortctl .seg-item { height: 24px; padding-inline: 9px; font-size: 11.5px; }
+
+  /* mini stats on the left of a bar: mono label, tabular value */
+  .tm-bp-stats {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    min-width: 0;
+  }
+  .tm-bp-stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 7px;
+    white-space: nowrap;
+  }
+  .tm-bp-stat b {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .tm-bp-stat-meter { align-items: center; }
+
+  /* ---------- scroller: the head band sticks inside it ---------- */
+  .tm-bp-scroll {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior-x: contain;
+  }
+  @media (max-width: 767px) {
+    .tm-bp-scroll { max-height: 560px; }
+  }
+  /* rows dissolve into the deck's foot instead of being cut at its edge. the veil is a sticky block laid over the
+     list's last 28px: it rides the bottom edge while there is more to scroll, and the scroll position itself fades
+     it out over the final 40px, so the last row is never veiled. a list that does not overflow has no scroll
+     timeline at all, and the veil keeps its resting opacity of 0 (no band under a short list). one static
+     gradient layer, untouched by the rows' updates; browsers without scroll timelines simply go without it */
+  @supports (animation-timeline: scroll()) {
+    .tm-bp-scroll:has(> .tm-bp-table, > .tm-bp-theses)::after {
+      content: "";
+      position: sticky;
+      bottom: 0;
+      left: 0;
+      z-index: 2;
+      display: block;
+      height: 28px;
+      margin-top: -28px;
+      pointer-events: none;
+      opacity: 0;
+      background: linear-gradient(180deg, transparent, var(--surface-bot) 92%);
+      animation: tm-bp-veil linear both;
+      animation-timeline: scroll(nearest block);
+      animation-range: calc(100% - 40px) 100%;
+    }
+  }
+
+  /* ---------- tables ---------- */
+  .tm-bp-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12.5px;
+    line-height: 1.3;
+  }
+  .tm-bp-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 32px;
+    padding: 0 12px;
+    text-align: left;
+    white-space: nowrap;
+    font-family: var(--font-label);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--tm-bp-quiet);
+    /* opaque, so rows slide under it: the panel's own top tone plus the mock's faint band */
+    background: var(--tm-bp-head-solid);
+    border-bottom: 1px solid var(--hair);
+    /* each sticky cell is composited on its own and rounds to the pixel grid alone, which can open a
+       hairline seam between two heads at fractional widths: every head reaches 1px under its neighbour */
+    box-shadow: 1px 0 0 var(--tm-bp-head-solid);
+  }
+  .tm-bp-table td {
+    height: 47px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--row);
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  .tm-bp-tape td { height: 44px; }
+  .tm-bp-table th:first-child,
+  .tm-bp-table td:first-child { padding-left: 16px; }
+  .tm-bp-table th:last-child,
+  .tm-bp-table td:last-child { padding-right: 16px; }
+  .tm-bp-table .r { text-align: right; }
+  .tm-bp-table .c { text-align: center; }
+  /* hover: the row lifts, a faint mint edge marks it (own positions keep their side edge) */
+  .tm-bp-table tbody tr:not([data-side]):not(.tm-bp-skel):not(.tm-bp-note):hover > td:first-child { box-shadow: inset 2px 0 0 rgb(var(--tm-bp-mint) / 0.55); }
+  .tm-bp-table tbody tr:hover .tm-bp-name { color: #fff; }
+  [data-theme="light"] .tm-bp-table tbody tr:hover .tm-bp-name { color: var(--color-fg); }
+  /* floors for phones (the deck scrolls sideways under a pinned action column); wider decks fit by dropping columns */
+  .tm-bp-w-orders { min-width: 600px; }
+  .tm-bp-w-hist { min-width: 640px; }
+  .tm-bp-w-pos { min-width: 600px; }
+  .tm-bp-w-fills { min-width: 600px; }
+  .tm-bp-w-twap { min-width: 660px; }
+  .tm-bp-w-fund { min-width: 500px; }
+  .tm-bp-w-bal { min-width: 560px; }
+
+  /* the action column stays pinned on the right; content scrolling under it dissolves into it */
+  .tm-bp-table .tm-bp-c-act {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    padding-left: 26px;
+    background: linear-gradient(90deg, transparent, var(--tm-bp-solid) 22px);
+  }
+  /* the head keeps its band edge to edge: nothing scrolls under a label but other labels */
+  .tm-bp-table th.tm-bp-c-act {
+    z-index: 3;
+    background: var(--tm-bp-head-solid);
+  }
+  .tm-bp-table tbody tr:hover > .tm-bp-c-act { background: linear-gradient(90deg, transparent, var(--tm-bp-solid-hover) 22px); }
+  .tm-bp-acts {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  /* sortable heads: the whole label is the button, an arrow shows the order */
+  .tm-bp-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    margin-inline: -6px;
+    padding-inline: 6px;
+    border-radius: 6px;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: inherit;
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+  }
+  /* over a right-aligned number column the arrow leads, so the label's edge lines up with the figures under it */
+  .r > .tm-bp-sort { flex-direction: row-reverse; }
+  .tm-bp-sort:hover { color: var(--color-fg-2); background: var(--row-hover); }
+  .tm-bp-sort:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 0; }
+  .tm-bp-sort svg { flex: none; opacity: 0; transition: opacity 0.2s, transform 0.25s var(--ease-out); }
+  .tm-bp-sort:hover svg,
+  .tm-bp-sort:focus-visible svg { opacity: 0.5; }
+  .tm-bp-sort[data-on] { color: var(--color-fg-2); }
+  .tm-bp-sort[data-on] svg { opacity: 1; color: var(--color-brand); }
+  .tm-bp-sort[data-dir="asc"] svg { transform: rotate(180deg); }
+
+  /* two-line cells: the value, then a mono sub line */
+  .tm-bp-2 {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 3px;
+    line-height: 1.15;
+    vertical-align: middle;
+  }
+  .r > .tm-bp-2 { align-items: flex-end; }
+  /* a status pill over its sub line keeps its own width */
+  .tm-bp-2 > .pill { align-self: flex-start; }
+  .tm-bp-strong { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+  /* a figure that matters but is not the headline (the mock's plain size column): pnl keeps the weight */
+  .tm-bp-val { font-size: 13px; font-weight: 500; letter-spacing: -0.01em; color: var(--color-fg); }
+  .tm-bp-sub {
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    letter-spacing: 0;
+    color: var(--color-dim);
+    white-space: nowrap;
+  }
+  /* on paper the dim ink falls to 3:1; sub lines carry real numbers, so they take the muted ink */
+  [data-theme="light"] .tm-bp-sub { color: var(--color-muted); }
+
+  /* ---------- trader cell: sphere avatar, handle, claim seal, mono sub line ---------- */
+  .tm-bp-who {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .tm-bp-who-txt {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .tm-bp-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .tm-bp-name {
+    min-width: 0;
+    max-width: 12.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-fg);
+    transition: color 0.2s;
+  }
+  .tm-bp-name:focus-visible,
+  .tm-bp-av-link:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 4px; }
+  .tm-bp-av-link { display: inline-flex; flex: none; border-radius: 50%; }
+  .tm-bp-av {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 3px 9px -3px rgb(0 0 0 / 0.7);
+    transition: box-shadow 0.3s var(--ease-out);
+  }
+  /* spheres, as in the mock: the name sits right beside it, so the initials go */
+  .tm-bp-av > span { color: transparent !important; }
+  .tm-bp-av::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle at 30% 22%, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0) 46%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2), inset 0 -3px 6px rgb(0 0 0 / 0.2);
+  }
+  .tm-bp-table tbody tr:hover .tm-bp-av {
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 0 0 3px rgb(255 255 255 / calc(0.05 * var(--glow))), 0 3px 9px -3px rgb(0 0 0 / 0.7);
+  }
+  [data-theme="light"] .tm-bp-av { box-shadow: 0 0 0 1px rgb(28 29 33 / 0.08), 0 2px 6px -2px rgb(28 29 33 / 0.3); }
+  .tm-bp-seal {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    color: #04251f;
+    background: linear-gradient(180deg, #b6fff0, #4de3c1);
+    box-shadow: 0 0 8px -1px rgb(77 227 193 / calc(0.75 * var(--glow)));
+  }
+  [data-theme="light"] .tm-bp-seal { color: #fff; background: linear-gradient(180deg, #17b8ad, #0f9690); }
+
+  /* thesis marker next to a name when the thesis column is out of room */
+  .tm-bp-tmark {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 17px;
+    padding-inline: 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--tm-bp-thesis-text);
+    background: linear-gradient(180deg, rgb(var(--tm-bp-thesis) / 0.22), rgb(var(--tm-bp-thesis) / 0.08));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-bp-thesis) / 0.32), 0 0 12px -5px rgb(var(--tm-bp-thesis) / calc(0.6 * var(--glow)));
+    transition: box-shadow 0.25s, color 0.2s;
+  }
+  .tm-bp-tmark:hover { box-shadow: inset 0 0 0 1px rgb(var(--tm-bp-thesis) / 0.55), 0 0 14px -4px rgb(var(--tm-bp-thesis) / calc(0.75 * var(--glow))); }
+  .tm-bp-tmark:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+
+  /* ---------- pills, coins ---------- */
+  .tm-bp .pill { height: 21px; padding-inline: 8px; font-size: 11px; }
+  .tm-bp .pill-up { color: var(--tm-bp-up-text); }
+  .tm-bp .pill-down { color: var(--tm-bp-down-text); }
+  .tm-bp-coin {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .tm-bp-coin .tm-bp-sub { font-weight: 400; }
+  .tm-bp-coin-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tm-bp-coin-ic {
+    display: inline-flex;
+    flex: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.3), 0 0 0 3px rgb(255 255 255 / calc(0.04 * var(--glow))), 0 2px 6px -2px rgb(0 0 0 / 0.6);
+  }
+  [data-theme="light"] .tm-bp-coin-ic { box-shadow: 0 0 0 1px rgb(28 29 33 / 0.08), 0 2px 5px -2px rgb(28 29 33 / 0.28); }
+  .tm-bp-usdc {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    background: radial-gradient(circle at 32% 26%, #7fb2ec, #2775ca 58%, #1b5596);
+  }
+
+  /* ---------- pnl: the value glows in its colour, roe sits under it ---------- */
+  .tm-bp-pnl {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    line-height: 1.15;
+    vertical-align: middle;
+  }
+  .tm-bp-pnl b { font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
+  .tm-bp-pnl small { font-size: 10.5px; font-weight: 500; opacity: 0.8; }
+
+  /* ---------- thesis cell: a periwinkle quote that truncates into the space left ---------- */
+  .tm-bp-table .tm-bp-c-thesis { width: 40%; max-width: 0; padding-left: 28px; padding-right: 20px; }
+  .tm-bp-thesis {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 4px 0 4px 11px;
+    border-radius: 4px;
+    color: var(--color-fg-2);
+  }
+  .tm-bp-thesis::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 3px;
+    bottom: 3px;
+    width: 2px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, rgb(var(--tm-bp-thesis) / 0.95), rgb(var(--tm-bp-thesis) / 0.35));
+    box-shadow: 0 0 8px rgb(var(--tm-bp-thesis) / calc(0.6 * var(--glow)));
+  }
+  .tm-bp-thesis-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    transition: color 0.2s;
+  }
+  .tm-bp-thesis:hover .tm-bp-thesis-text { color: var(--color-fg); }
+  .tm-bp-thesis:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  .tm-bp-likes {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--tm-bp-quiet);
+  }
+  .tm-bp-likes svg { width: 12px; height: 12px; }
+
+  /* columns that come and go with the deck's own width (not the viewport's) */
+  .tm-bp-wide,
+  .tm-bp-xwide { display: none; }
+  @container tm-bp (min-width: 880px) {
+    .tm-bp-table .tm-bp-wide { display: table-cell; }
+    .tm-bp-narrow { display: none; }
+  }
+  @container tm-bp (min-width: 1080px) {
+    .tm-bp-table .tm-bp-xwide { display: table-cell; }
+  }
+  @container tm-bp (max-width: 999px) {
+    .tm-bp-table .tm-bp-h1000 { display: none; }
+  }
+  @container tm-bp (max-width: 899px) {
+    .tm-bp-table .tm-bp-h900 { display: none; }
+  }
+  @container tm-bp (max-width: 639px) {
+    .tm-bp-table .tm-bp-h640 { display: none; }
+  }
+
+  /* narrow decks: secondary columns fold into the first cell's mono sub line */
+  .tm-bp-nsub,
+  .tm-bp-nsub-line { display: none; }
+  @container tm-bp (max-width: 539px) {
+    .tm-bp-nsub { display: inline; }
+    .tm-bp-nsub-line { display: block; }
+    .tm-bp-table .tm-bp-h540,
+    .tm-bp-fold { display: none; }
+    .tm-bp-w-pos,
+    .tm-bp-w-orders,
+    .tm-bp-w-fills,
+    .tm-bp-w-fund,
+    .tm-bp-w-hist,
+    .tm-bp-w-bal { min-width: 0; }
+    .tm-bp-w-twap { min-width: 0; }
+    /* tp/sl collapses to its pencil; the editor shows the values */
+    .tm-bp-tpsl-v,
+    .tm-bp-tpsl-l { display: none; }
+    .tm-bp-tpsl { width: 30px; padding: 0; justify-content: center; }
+    .tm-bp-tpsl:has(.tm-bp-tpsl-v) { height: 27px; }
+    .tm-bp-table .tm-bp-c-act { padding-left: 18px; }
+    .tm-bp-acts { gap: 4px; }
+    .tm-bp-table th,
+    .tm-bp-table td { padding-inline: 10px; }
+    .tm-bp .pill { padding-inline: 7px; }
+  }
+  @container tm-bp (max-width: 539px) {
+    .tm-bp-table .tm-bp-mid { display: none; }
+    .tm-bp-sort-l,
+    .tm-bp-tmark-l { display: none; }
+    .tm-bp-sum { padding-left: 10px; gap: 6px; }
+    /* the trader column takes what is left and truncates, so pnl always stays on screen (the mock's minmax(0, 1fr)) */
+    .tm-bp-table .tm-bp-c-who { width: 100%; max-width: 0; }
+    .tm-bp-c-who .tm-bp-who,
+    .tm-bp-c-who .tm-bp-who-txt,
+    .tm-bp-c-who .tm-bp-name-row { min-width: 0; overflow: hidden; }
+    .tm-bp-name { max-width: none; }
+    .tm-bp-tmark { width: 17px; padding: 0; justify-content: center; }
+    .tm-bp-bar { padding-inline: 10px; }
+    .tm-bp-bar-end { margin-left: 0; justify-content: flex-start; }
+    .tm-bp-table th:first-child,
+    .tm-bp-table td:first-child { padding-left: 12px; }
+    .tm-bp-table th:last-child,
+    .tm-bp-table td:last-child { padding-right: 12px; }
+  }
+
+  /* ---------- actions: compact glass, close tinted down ---------- */
+  .tm-bp-act {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 27px;
+    padding-inline: 10px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    color: var(--color-fg-2);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    border: 1px solid var(--hair-2);
+    box-shadow: inset 0 1px 0 var(--inset-hi);
+    transition: color 0.2s, border-color 0.2s, background-color 0.2s, box-shadow 0.25s, transform 0.15s;
+  }
+  .tm-bp-act:hover { color: var(--color-fg); border-color: var(--color-line-2); background-color: var(--row-hover); }
+  .tm-bp-act:active { transform: translateY(1px); }
+  .tm-bp-act:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  .tm-bp-act:disabled { opacity: 0.42; cursor: not-allowed; transform: none; }
+  .tm-bp-act svg { flex: none; }
+  .tm-bp-act-down {
+    color: var(--tm-bp-down-text);
+    border-color: rgb(var(--tm-bp-down) / 0.3);
+    background: linear-gradient(180deg, rgb(var(--tm-bp-down) / 0.15), rgb(var(--tm-bp-down) / 0.05));
+  }
+  .tm-bp-act-down:hover:not(:disabled) {
+    color: var(--tm-bp-down-text);
+    border-color: rgb(var(--tm-bp-down) / 0.55);
+    background: linear-gradient(180deg, rgb(var(--tm-bp-down) / 0.26), rgb(var(--tm-bp-down) / 0.09));
+    box-shadow: inset 0 1px 0 rgb(255 220 220 / calc(0.12 * var(--glow))), 0 0 16px -4px rgb(var(--tm-bp-down) / calc(0.6 * var(--glow)));
+  }
+  /* armed: the second click fires. lit like the down cta with a halo that breathes, and a fuse under the label
+     burning down the four seconds it waits (the selectors outrank :hover, where the pointer always is right after
+     the first click) */
+  .tm-bp-act-down[data-armed],
+  .tm-bp-act-down[data-armed]:hover:not(:disabled) {
+    color: #fff1f1;
+    text-shadow: 0 1px 0 rgb(0 0 0 / 0.3);
+    border-color: rgb(255 150 150 / 0.6);
+    background:
+      linear-gradient(180deg, rgb(255 190 190 / 0.26) 0%, rgb(255 77 79 / 0.05) 50%, rgb(255 77 79 / 0.16) 100%),
+      linear-gradient(180deg, #8a2427 0%, #591518 100%);
+    box-shadow: inset 0 1px 0 rgb(255 220 220 / 0.38), 0 0 18px -3px rgb(var(--tm-bp-down) / calc(0.7 * var(--glow)));
+    animation: tm-bp-armed 1.6s ease-in-out infinite;
+  }
+  .tm-bp-act-down[data-armed]::after {
+    content: "";
+    position: absolute;
+    left: 9px;
+    right: 9px;
+    bottom: 3px;
+    height: 1.5px;
+    border-radius: 1px;
+    background: linear-gradient(90deg, rgb(255 220 220 / 0.35), rgb(255 235 235 / 0.95));
+    box-shadow: 0 0 6px rgb(255 120 120 / 0.8);
+    transform-origin: left center;
+    animation: tm-bp-fuse 4s linear forwards;
+    pointer-events: none;
+  }
+  [data-theme="light"] .tm-bp-act-down[data-armed],
+  [data-theme="light"] .tm-bp-act-down[data-armed]:hover:not(:disabled) {
+    color: #fff;
+    text-shadow: none;
+    background: linear-gradient(180deg, #e2555a, #c53a40);
+    border-color: #b9353b;
+  }
+  [data-theme="light"] .tm-bp-act-down[data-armed]::after { background: rgb(255 255 255 / 0.85); box-shadow: none; }
+
+  /* labels that trade places in one grid cell: the button keeps the width of the longest, so nothing shifts */
+  .tm-bp-stack { display: inline-grid; }
+  .tm-bp-stack > span { grid-area: 1 / 1; visibility: hidden; text-align: center; }
+  .tm-bp-stack > span[data-on] { visibility: visible; }
+  .tm-bp-act-ghost {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    color: var(--color-muted);
+  }
+  .tm-bp-act-ghost:hover { color: var(--color-fg); background: var(--row-hover); border-color: transparent; }
+
+  /* quiet icon button (csv) */
+  .tm-bp-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 27px;
+    padding-inline: 7px;
+    border-radius: 8px;
+    font-family: var(--font-label);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    color: var(--color-muted);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+  }
+  .tm-bp-icon-btn:hover:not(:disabled) { color: var(--color-fg); background: var(--row-hover); border-color: var(--hair); }
+  .tm-bp-icon-btn:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  .tm-bp-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* tp / sl: the two triggers in their colours, a pencil to edit */
+  .tm-bp-tpsl {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 27px;
+    padding-inline: 8px;
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--tm-bp-quiet);
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+  }
+  .tm-bp-tpsl:hover { color: var(--color-fg-2); background: var(--row-hover); border-color: var(--hair); }
+  .tm-bp-tpsl:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  .tm-bp-tpsl svg { flex: none; color: var(--color-brand); opacity: 0.85; }
+  .tm-bp-tpsl:has(.tm-bp-tpsl-v) { height: 36px; }
+  .tm-bp-tpsl-v { align-items: flex-end; gap: 2px; font-size: 11.5px; line-height: 1.15; }
+  .tm-bp-tpsl-v i {
+    font-style: normal;
+    font-family: var(--font-label);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: var(--tm-bp-quiet);
+  }
+
+  /* own positions: a side-coloured edge, as a pro terminal marks them */
+  .tm-bp-table tr[data-side="long"] > td:first-child { box-shadow: inset 2px 0 0 rgb(var(--tm-bp-up) / 0.9); }
+  .tm-bp-table tr[data-side="short"] > td:first-child { box-shadow: inset 2px 0 0 rgb(var(--tm-bp-down) / 0.9); }
+
+  /* new rows land with a mint wash and a lit edge */
+  .tm-bp-table tr[data-new] > td { animation: tm-bp-new 2s var(--ease-out); }
+  .tm-bp-table tr[data-new] > td:first-child { animation-name: tm-bp-new-edge; }
+
+  /* ---------- progress + meters ---------- */
+  .tm-bp-prog {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .tm-bp-track {
+    position: relative;
+    flex: none;
+    width: 64px;
+    height: 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--recess);
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+  .tm-bp-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--p, 0%);
+    border-radius: inherit;
+    background: linear-gradient(90deg, #2aa98f, var(--color-brand) 70%, var(--color-brand-2));
+    box-shadow: 0 0 8px rgb(var(--tm-bp-mint) / calc(0.6 * var(--glow)));
+    transition: width 0.6s var(--ease-out);
+  }
+  .tm-bp-fill[data-tone="warn"] { background: linear-gradient(90deg, #b8801f, #f5b236); box-shadow: 0 0 8px rgb(var(--tm-bp-warn) / calc(0.6 * var(--glow))); }
+  .tm-bp-fill[data-tone="down"] { background: linear-gradient(90deg, #b3292b, #ff5a5c); box-shadow: 0 0 8px rgb(var(--tm-bp-down) / calc(0.6 * var(--glow))); }
+
+  /* status dot for a running twap */
+  .tm-bp-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: none;
+    background: radial-gradient(circle at 35% 35%, #d9fff6, #4de3c1 60%);
+    box-shadow: 0 0 8px rgb(77 227 193 / calc(0.9 * var(--glow)));
+  }
+
+  /* ---------- tp/sl editor: a lit footer that rises over the table ---------- */
+  .tm-bp-editor {
+    position: relative;
+    z-index: 3;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 12px 16px;
+    border-top: 1px solid var(--hair-2);
+    background:
+      radial-gradient(60% 140% at 0% 0%, rgb(var(--tm-bp-mint) / calc(0.07 * var(--glow))), transparent 70%),
+      linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), 0 -14px 28px -18px rgb(0 0 0 / calc(0.8 * var(--glow)));
+    animation: tm-bp-rise 0.38s var(--ease-out);
+  }
+  /* the mint top rim says which row this belongs to (that row is lit the same) */
+  .tm-bp-editor::before {
+    content: "";
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    top: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(var(--tm-bp-mint) / 0.55) 30%, rgb(var(--tm-bp-mint) / 0.55) 70%, transparent);
+    pointer-events: none;
+  }
+  .tm-bp-editor-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+  .tm-bp-editor-id {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .tm-bp-editor-ref { margin-left: auto; font-family: var(--font-label); font-size: 10.5px; color: var(--tm-bp-quiet); white-space: nowrap; }
+  .tm-bp-editor-ref b { font-weight: 500; color: var(--color-fg-2); }
+  .tm-bp-editor-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+  .tm-bp-editor-acts { display: inline-flex; align-items: center; gap: 6px; margin-left: 2px; }
+  .tm-bp-field {
+    display: inline-flex;
+    align-items: center;
+    flex: 1 1 150px;
+    max-width: 230px;
+    height: 34px;
+    padding-left: 10px;
+    border-radius: 9px;
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    border: 1px solid var(--hair);
+    box-shadow: inset 0 1px 0 var(--inset-hi);
+    transition: border-color 0.2s, box-shadow 0.3s var(--ease-out);
+  }
+  .tm-bp-field:focus-within {
+    border-color: rgb(77 227 193 / 0.45);
+    box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 3px rgb(77 227 193 / calc(0.12 * var(--glow))), 0 0 18px -6px rgb(77 227 193 / calc(0.6 * var(--glow)));
+  }
+  .tm-bp-field[data-warn] { border-color: rgb(var(--tm-bp-warn) / 0.45); }
+  /* the trigger's distance from the mark, as you type */
+  .tm-bp-field-pct {
+    flex: none;
+    padding-right: 10px;
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    color: var(--tm-bp-quiet);
+  }
+  .tm-bp-field-pct[data-warn] { color: var(--tm-bp-warn-text); }
+  .tm-bp-field > span {
+    flex: none;
+    font-family: var(--font-label);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+  }
+  .tm-bp-field input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    padding: 0 9px 0 8px;
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-size: 12.5px;
+    color: var(--color-fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .tm-bp-field input::placeholder { color: var(--color-dim); }
+  .tm-bp-editor-foot { display: flex; align-items: center; gap: 6px 16px; min-height: 20px; }
+  .tm-bp-editor-note { min-width: 0; font-size: 11px; color: var(--color-muted); }
+  .tm-bp-editor-note[data-warn] { color: var(--tm-bp-warn-text); }
+  .tm-bp-editor-keys {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+    font-family: var(--font-label);
+    font-size: 10px;
+    color: var(--tm-bp-quiet);
+    white-space: nowrap;
+  }
+  .tm-bp-editor-keys .kbd { height: 18px; padding-inline: 5px; font-size: 9.5px; }
+  .tm-bp-editor-keys .kbd:not(:first-child) { margin-left: 7px; }
+  @media (pointer: coarse) {
+    .tm-bp-editor-keys { display: none; }
+  }
+  @container tm-bp (max-width: 539px) {
+    .tm-bp-editor-keys { display: none; }
+  }
+
+  /* the row being edited is lit like the editor's rim (the pinned action column's opaque tone takes the tint too) */
+  .tm-bp-table tr[data-editing] {
+    --tm-bp-solid: color-mix(in srgb, color-mix(in srgb, var(--surface-top) 40%, var(--surface-bot)) 94.5%, rgb(var(--tm-bp-mint)));
+    --tm-bp-solid-hover: color-mix(in srgb, var(--tm-bp-solid) 96.5%, #fff);
+  }
+  [data-theme="light"] .tm-bp-table tr[data-editing] {
+    --tm-bp-solid: color-mix(in srgb, color-mix(in srgb, var(--surface-top) 40%, var(--surface-bot)) 97.5%, rgb(var(--tm-bp-mint)));
+    --tm-bp-solid-hover: color-mix(in srgb, var(--tm-bp-solid) 96.5%, #1c1d21);
+  }
+  /* (the :hover twin outranks the pinned column's hover shorthand, which would reset the tint under it) */
+  .tm-bp-table tbody tr[data-editing] > td,
+  .tm-bp-table tbody tr[data-editing]:hover > td { background-color: rgb(var(--tm-bp-mint) / calc(0.055 * var(--glow))); }
+  .tm-bp-tpsl[data-on] { color: var(--color-fg-2); background: rgb(var(--tm-bp-mint) / 0.08); border-color: rgb(var(--tm-bp-mint) / 0.35); }
+
+  /* liquidation close by: the price turns down-red with a glow, a red dot breathes beside it */
+  .tm-bp-liq { display: inline-flex; align-items: center; gap: 8px; vertical-align: middle; }
+  .tm-bp-liq[data-near] .tm-bp-warn { color: var(--tm-bp-down-text); text-shadow: 0 0 12px rgb(var(--tm-bp-down) / calc(0.55 * var(--glow))); }
+  .tm-bp-liq[data-near] .tm-bp-sub { color: var(--tm-bp-down-text); }
+  .tm-bp-riskdot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ffd0d0, #ff4d4f 62%);
+    box-shadow: 0 0 8px rgb(255 77 79 / calc(0.85 * var(--glow)));
+  }
+
+  /* ---------- empty states: an icon in a breathing glow ring ---------- */
+  .tm-bp-empty {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    height: 100%;
+    padding: 30px 24px 34px;
+    text-align: center;
+    /* a soft pool of light under the ring */
+    background: radial-gradient(260px 150px at 50% calc(50% - 42px), rgb(var(--tm-bp-mint) / calc(0.05 * var(--glow))), transparent 72%);
+  }
+  .tm-bp-empty:has(.tm-bp-ring[data-tone="thesis"]) {
+    background: radial-gradient(260px 150px at 50% calc(50% - 42px), rgb(var(--tm-bp-thesis) / calc(0.06 * var(--glow))), transparent 72%);
+  }
+  .tm-bp-empty:has(.tm-bp-ring[data-tone="neutral"]) { background: none; }
+  .tm-bp-ring {
+    --tone: var(--tm-bp-mint);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    margin-bottom: 16px;
+    border-radius: 50%;
+    color: var(--color-brand-2);
+    background: radial-gradient(circle at 50% 30%, rgb(var(--tone) / 0.24), rgb(var(--tone) / 0.05) 72%);
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--tone) / 0.34),
+      inset 0 1px 0 rgb(255 255 255 / calc(0.1 * var(--glow))),
+      0 0 26px -4px rgb(var(--tone) / calc(0.55 * var(--glow)));
+  }
+  .tm-bp-ring::before,
+  .tm-bp-ring::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .tm-bp-ring::before {
+    inset: -8px;
+    box-shadow: inset 0 0 0 1px rgb(var(--tone) / 0.16);
+    animation: tm-bp-halo 4.8s ease-in-out infinite;
+  }
+  .tm-bp-ring::after {
+    inset: -17px;
+    box-shadow: inset 0 0 0 1px rgb(var(--tone) / 0.07);
+    animation: tm-bp-halo 4.8s ease-in-out 0.6s infinite;
+  }
+  .tm-bp-ring svg { width: 19px; height: 19px; filter: drop-shadow(0 0 5px rgb(var(--tone) / calc(0.6 * var(--glow)))); }
+  .tm-bp-ring[data-tone="thesis"] { --tone: var(--tm-bp-thesis); color: var(--tm-bp-thesis-text); }
+  .tm-bp-ring[data-tone="neutral"] { --tone: 149 161 172; color: var(--color-fg-2); }
+  [data-theme="light"] .tm-bp-ring { color: var(--color-brand); }
+  [data-theme="light"] .tm-bp-ring[data-tone="thesis"] { color: var(--color-thesis); }
+  [data-theme="light"] .tm-bp-ring[data-tone="neutral"] { --tone: 102 106 116; color: var(--color-muted); }
+  .tm-bp-empty-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-fg);
+  }
+  .tm-bp-empty-hint {
+    max-width: 340px;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--color-muted);
+    text-wrap: balance;
+  }
+  .tm-bp-empty-act {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  /* ---------- loading rows: lit glass in the shape of the rows to come ---------- */
+  .tm-bp-skel td { height: 47px; }
+  .tm-bp-tape .tm-bp-skel td { height: 44px; }
+  .tm-bp-skel .skeleton {
+    display: block;
+    height: 9px;
+    border-radius: 5px;
+    /* lighter than the panel, never a dark hole: a faint bar with a slow light sweep */
+    background: linear-gradient(100deg, rgb(255 255 255 / 0.035) 30%, rgb(255 255 255 / 0.1) 50%, rgb(255 255 255 / 0.035) 70%) 0 0 / 220% 100%;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.025);
+  }
+  [data-theme="light"] .tm-bp-skel .skeleton {
+    background-image: linear-gradient(100deg, rgb(28 29 33 / 0.05) 30%, rgb(28 29 33 / 0.095) 50%, rgb(28 29 33 / 0.05) 70%);
+    box-shadow: none;
+  }
+  .tm-bp-skel-who { display: flex; align-items: center; gap: 10px; }
+  .tm-bp-skel-2 { display: flex; flex-direction: column; gap: 6px; }
+  .tm-bp-skel-r { align-items: flex-end; }
+  .tm-bp-skel .tm-bp-skel-sub { height: 7px; opacity: 0.7; }
+  .tm-bp-skel .tm-bp-skel-av { width: 28px; height: 28px; border-radius: 50%; flex: none; }
+  .tm-bp-skel .tm-bp-skel-pill { width: 64px; height: 21px; border-radius: 999px; }
+
+  /* ---------- thesis view: the feed's cards, tiled ---------- */
+  .tm-bp-theses {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  }
+  .tm-bp-theses > * { box-shadow: 1px 0 0 var(--row); }
+
+  /* ---------- foot grip: drag to resize the deck ---------- */
+  .tm-bp-grip {
+    position: relative;
+    flex: none;
+    display: none;
+    height: 12px;
+    cursor: ns-resize;
+    touch-action: none;
+    outline: none;
+  }
+  @media (min-width: 768px) {
+    .tm-bp-grip { display: block; }
+  }
+  .tm-bp-grip::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 4px;
+    width: 34px;
+    height: 4px;
+    margin-left: -17px;
+    border-radius: 4px;
+    background: var(--hair-2);
+    transition: background-color 0.2s, box-shadow 0.3s, width 0.3s var(--ease-out), margin 0.3s var(--ease-out);
+  }
+  .tm-bp-grip:hover::before,
+  .tm-bp-grip:focus-visible::before,
+  .tm-bp-grip[data-drag]::before {
+    width: 64px;
+    margin-left: -32px;
+    background: rgb(var(--tm-bp-mint) / 0.75);
+    box-shadow: 0 0 12px rgb(var(--tm-bp-mint) / calc(0.65 * var(--glow)));
+  }
+  .tm-bp-grip:focus-visible::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 80px;
+    height: 12px;
+    margin-left: -40px;
+    border-radius: 6px;
+    box-shadow: 0 0 0 2px var(--color-brand);
+  }
+  .tm-bp[data-resizing] { user-select: none; }
+  .tm-bp[data-resizing] * { cursor: ns-resize !important; }
+
+  /* ---------- filters (type / side / market): select pills in the rail's recipe, lit while they narrow ---------- */
+  .tm-bp-filters {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .tm-bp-sel {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    height: 27px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--color-muted);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair-2);
+    transition: color 0.2s, box-shadow 0.25s var(--ease-out);
+  }
+  .tm-bp-sel:hover { color: var(--color-fg); }
+  .tm-bp-sel select {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 100%;
+    max-width: 150px;
+    padding: 0 23px 0 10px;
+    border-radius: inherit;
+    /* size to the chosen option, not the longest one (falls back to the longest where unsupported) */
+    field-sizing: content;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    outline: none;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    color-scheme: dark;
+  }
+  [data-theme="light"] .tm-bp-sel select { color-scheme: light; }
+  .tm-bp-sel option { background: var(--color-panel); color: var(--color-fg); }
+  .tm-bp-sel > svg { position: absolute; right: 8px; pointer-events: none; color: var(--color-dim); transition: color 0.2s; }
+  .tm-bp-sel[data-icon] { padding-left: 7px; }
+  .tm-bp-sel[data-icon] select { padding-left: 6px; }
+  .tm-bp-sel:focus-within {
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px rgb(var(--tm-bp-mint) / 0.55), 0 0 0 3px rgb(var(--tm-bp-mint) / calc(0.14 * var(--glow)));
+  }
+  .tm-bp-sel[data-on] {
+    color: var(--tm-bp-mint-text);
+    background: linear-gradient(180deg, rgb(var(--tm-bp-mint) / 0.16), rgb(var(--tm-bp-mint) / 0.05));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-bp-mint) / 0.36), 0 0 12px -4px rgb(var(--tm-bp-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-bp-sel[data-on] > svg { color: var(--tm-bp-mint-text); }
+  .tm-bp-sel[data-on]:focus-within {
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-bp-mint) / 0.6), 0 0 0 3px rgb(var(--tm-bp-mint) / calc(0.16 * var(--glow))), 0 0 12px -4px rgb(var(--tm-bp-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-bp-reset {
+    height: 27px;
+    padding-inline: 8px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--color-muted);
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+  }
+  .tm-bp-reset:hover { color: var(--color-fg); background: var(--row-hover); }
+  .tm-bp-reset:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+
+  /* another market's name opens its page: quiet until pointed at */
+  .tm-bp-mlink {
+    color: inherit;
+    border-radius: 3px;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 3px;
+    transition: color 0.2s, text-decoration-color 0.2s;
+  }
+  .tm-bp-mlink:hover { color: var(--tm-bp-mint-text); text-decoration-color: rgb(var(--tm-bp-mint) / 0.5); }
+  .tm-bp-mlink:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+
+  /* sell a spot coin for usdc: the row's own action, in mint glass (the down tint stays for destructive ones) */
+  .tm-bp-act-mint {
+    color: var(--tm-bp-mint-text);
+    border-color: rgb(var(--tm-bp-mint) / 0.32);
+    background: linear-gradient(180deg, rgb(var(--tm-bp-mint) / 0.16), rgb(var(--tm-bp-mint) / 0.05));
+  }
+  .tm-bp-act-mint:hover:not(:disabled) {
+    color: var(--tm-bp-mint-text);
+    border-color: rgb(var(--tm-bp-mint) / 0.55);
+    background: linear-gradient(180deg, rgb(var(--tm-bp-mint) / 0.26), rgb(var(--tm-bp-mint) / 0.09));
+    box-shadow: inset 0 1px 0 rgb(214 255 245 / calc(0.14 * var(--glow))), 0 0 16px -4px rgb(var(--tm-bp-mint) / calc(0.6 * var(--glow)));
+  }
+
+  /* a quiet line under the balances: where native deposits land */
+  .tm-bp-table .tm-bp-note td {
+    height: auto;
+    padding-block: 13px 15px;
+    white-space: normal;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--color-muted);
+    border-bottom: 0;
+  }
+
+  /* a long chase error stays on one line; its title carries the rest */
+  .tm-bp-err { max-width: 136px; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---------- your positions' theses: the latest as a periwinkle quote, a pen to post another ---------- */
+  .tm-bp-table .tm-bp-c-pth { padding-left: 18px; }
+  .tm-bp-pth {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .tm-bp-pth-q { flex: 0 1 auto; padding-block: 3px; }
+  .tm-bp-pth-none {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--tm-bp-quiet);
+  }
+  .tm-bp-pth-btn,
+  .tm-bp-pth-mini {
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--tm-bp-thesis-text);
+    cursor: pointer;
+    /* no thesis yet: an invitation, a dashed periwinkle ring */
+    border: 1px dashed rgb(var(--tm-bp-thesis) / 0.5);
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s, box-shadow 0.25s;
+  }
+  .tm-bp-pth-btn {
+    display: inline-flex;
+    gap: 5px;
+    height: 24px;
+    padding-inline: 8px 9px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  /* the phone's pen sits beside the coin's name: a small pill, its tap target padded out past its edge */
+  .tm-bp-pth-mini { position: relative; width: 26px; height: 20px; border-radius: 999px; }
+  .tm-bp-pth-mini::after { content: ""; position: absolute; inset: -10px -6px; }
+  /* one posted: the thesis pill's periwinkle glass */
+  .tm-bp-pth-btn[data-has],
+  .tm-bp-pth-mini[data-has] {
+    border-style: solid;
+    border-color: rgb(var(--tm-bp-thesis) / 0.34);
+    background: linear-gradient(180deg, rgb(var(--tm-bp-thesis) / 0.22), rgb(var(--tm-bp-thesis) / 0.08));
+    box-shadow: 0 0 12px -5px rgb(var(--tm-bp-thesis) / calc(0.6 * var(--glow)));
+  }
+  .tm-bp-pth-btn:hover,
+  .tm-bp-pth-mini:hover,
+  .tm-bp-pth-btn[data-on],
+  .tm-bp-pth-mini[data-on] {
+    border-style: solid;
+    border-color: rgb(var(--tm-bp-thesis) / 0.62);
+    background-color: rgb(var(--tm-bp-thesis) / 0.14);
+    box-shadow: 0 0 14px -4px rgb(var(--tm-bp-thesis) / calc(0.7 * var(--glow)));
+  }
+  .tm-bp-pth-btn:focus-visible,
+  .tm-bp-pth-mini:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+  /* on paper the periwinkle deepens to hold 4.5:1 on its own tint */
+  [data-theme="light"] .tm-bp-pth-btn,
+  [data-theme="light"] .tm-bp-pth-mini,
+  [data-theme="light"] .tm-bp-thesis-word { color: color-mix(in srgb, var(--color-thesis) 84%, #000); }
+  /* a wide deck gives the quote the room left over; a narrower one keeps just the pen */
+  @container tm-bp (min-width: 1000px) {
+    .tm-bp-table .tm-bp-c-pth { width: 30%; max-width: 0; }
+  }
+  @container tm-bp (max-width: 999px) {
+    .tm-bp-pth-q,
+    .tm-bp-pth-none,
+    .tm-bp-pth-long { display: none; }
+  }
+  /* the other side of a folding column: what stands in for it, shown only below its width
+     (s640: the thesis pen beside a position's name; s900: a chase's clock under its status; s1000: a balance's contract) */
+  .tm-bp-s640,
+  .tm-bp-s900,
+  .tm-bp-s1000 { display: none; }
+  @container tm-bp (max-width: 999px) {
+    .tm-bp-s1000 { display: inline; }
+  }
+  @container tm-bp (max-width: 899px) {
+    .tm-bp-s900 { display: inline; }
+  }
+  @container tm-bp (max-width: 639px) {
+    .tm-bp-s640 { display: inline-flex; }
+  }
+
+  /* the thesis composer: the tp / sl footer in the thesis colour */
+  .tm-bp-editor[data-tone="thesis"] {
+    background:
+      radial-gradient(60% 140% at 0% 0%, rgb(var(--tm-bp-thesis) / calc(0.1 * var(--glow))), transparent 70%),
+      linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+  }
+  .tm-bp-editor[data-tone="thesis"]::before {
+    background: linear-gradient(90deg, transparent, rgb(var(--tm-bp-thesis) / 0.7) 30%, rgb(var(--tm-bp-thesis) / 0.7) 70%, transparent);
+  }
+  .tm-bp-thesis-word { color: var(--tm-bp-thesis-text); }
+  .tm-bp-editor-ref[data-warn] { color: var(--tm-bp-warn-text); }
+  .tm-bp-editor-note[data-err] { color: var(--tm-bp-down-text); }
+  .tm-bp-compose {
+    display: block;
+    border-radius: 10px;
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    border: 1px solid var(--hair);
+    box-shadow: inset 0 1px 0 var(--inset-hi);
+    transition: border-color 0.2s, box-shadow 0.3s var(--ease-out);
+  }
+  .tm-bp-compose:focus-within {
+    border-color: rgb(77 227 193 / 0.45);
+    box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 3px rgb(77 227 193 / calc(0.12 * var(--glow))), 0 0 18px -6px rgb(77 227 193 / calc(0.6 * var(--glow)));
+  }
+  .tm-bp-compose textarea {
+    display: block;
+    width: 100%;
+    min-height: 56px;
+    padding: 9px 12px;
+    resize: none;
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--color-fg);
+  }
+  .tm-bp-compose textarea::placeholder { color: var(--color-dim); }
+  /* the row being written about is lit like the composer's rim (the pinned column's opaque tone takes the tint too) */
+  .tm-bp-table tr[data-composing] {
+    --tm-bp-solid: color-mix(in srgb, color-mix(in srgb, var(--surface-top) 40%, var(--surface-bot)) 93.5%, rgb(var(--tm-bp-thesis)));
+    --tm-bp-solid-hover: color-mix(in srgb, var(--tm-bp-solid) 96.5%, #fff);
+  }
+  [data-theme="light"] .tm-bp-table tr[data-composing] {
+    --tm-bp-solid: color-mix(in srgb, color-mix(in srgb, var(--surface-top) 40%, var(--surface-bot)) 97%, rgb(var(--tm-bp-thesis)));
+    --tm-bp-solid-hover: color-mix(in srgb, var(--tm-bp-solid) 96.5%, #1c1d21);
+  }
+  .tm-bp-table tbody tr[data-composing] > td,
+  .tm-bp-table tbody tr[data-composing]:hover > td { background-color: rgb(var(--tm-bp-thesis) / calc(0.065 * var(--glow))); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tm-bp-ring::before,
+    .tm-bp-ring::after,
+    .tm-bp-act-down[data-armed],
+    .tm-bp-act-down[data-armed]::after,
+    .tm-bp-editor,
+    .tm-bp-tab > i[data-bump],
+    .tm-bp-tab > i[data-bump]::after,
+    .tm-bp-table tr[data-new] > td { animation: none !important; }
+    .tm-bp-fill { transition: none; }
+  }
+}
+
+@keyframes tm-bp-halo {
+  0%, 100% { opacity: 0.35; transform: scale(0.96); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+@keyframes tm-bp-new {
+  from { background-color: rgb(var(--tm-bp-mint) / calc(0.12 * var(--glow))); }
+  to { background-color: transparent; }
+}
+@keyframes tm-bp-new-edge {
+  from { background-color: rgb(var(--tm-bp-mint) / calc(0.12 * var(--glow))); box-shadow: inset 2px 0 0 rgb(var(--tm-bp-mint) / 0.95); }
+  to { background-color: transparent; box-shadow: inset 2px 0 0 rgb(var(--tm-bp-mint) / 0); }
+}
+@keyframes tm-bp-armed {
+  0%, 100% { box-shadow: inset 0 1px 0 rgb(255 220 220 / 0.38), 0 0 12px -4px rgb(255 77 79 / calc(0.5 * var(--glow))); }
+  50% { box-shadow: inset 0 1px 0 rgb(255 220 220 / 0.38), 0 0 22px -2px rgb(255 77 79 / calc(0.85 * var(--glow))); }
+}
+@keyframes tm-bp-veil {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes tm-bp-fuse {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+@keyframes tm-bp-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tm-bp-bump {
+  0% { transform: scale(1); }
+  28% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+@keyframes tm-bp-bump-ring {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.9); }
+}

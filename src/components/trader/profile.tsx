@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { livePnl, useMids } from "@/hooks/use-market";
+import { livePnl, useMarketIdentity, useMids } from "@/hooks/use-market";
 import { api } from "@/lib/client";
 import { fmtDuration, fmtPct, fmtPx, fmtUsd, shortAddr, timeAgo } from "@/lib/format";
 import type { TraderStats } from "@/lib/queries";
@@ -47,6 +47,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
   const p = q.data;
   const { signedIn } = useAuth();
   const mids = useMids();
+  const mk = useMarketIdentity();
   const qc = useQueryClient();
   const [posTab, setPosTab] = useState<"open" | "closed">("open");
   const [range, setRange] = useState<Range>("7D");
@@ -168,10 +169,10 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
             {topTrades.map((t, i) => {
               const roe = t.sizeUsd ? ((t.realisedPnl ?? 0) * t.leverage) / t.sizeUsd : 0;
               return (
-                <Link key={t.id} href={`/m/${t.coin}`} className="card-2 px-3 py-2 min-w-[200px] hover:bg-panel-3 transition-colors">
+                <Link key={t.id} href={mk(t.coin).href} className="card-2 px-3 py-2 min-w-[200px] hover:bg-panel-3 transition-colors">
                   <div className="text-[11px] text-muted"><span className="text-fg-2 font-semibold">#{i + 1}</span> Trade</div>
                   <div className="flex items-center gap-2 mt-1">
-                    <CoinIcon coin={t.coin} size={18} />
+                    <CoinIcon coin={mk(t.coin).icon} size={18} />
                     <Pnl value={t.realisedPnl} className="font-semibold" />
                     <span className={`num text-[11px] ${roe >= 0 ? "text-up" : "text-down"}`}>({roe >= 0 ? "▲" : "▼"} {Math.abs(roe * 100).toFixed(1)}%)</span>
                   </div>
@@ -218,8 +219,8 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
             {pinned ? (
               <section className="card p-4">
                 <div className="flex items-center gap-2">
-                  <CoinIcon coin={pinned.coin} size={22} />
-                  <span className="font-semibold">{pinned.coin}</span>
+                  <CoinIcon coin={mk(pinned.coin).icon} size={22} />
+                  <span className="font-semibold">{mk(pinned.coin).name}</span>
                   <span className="pill pill-thesis">Thesis</span>
                   <span className="pill pill-neutral">{pinnedIsChoice ? "Pinned" : "Most liked"}</span>
                   <span className="ml-auto"><OutcomePill outcome={pinned.outcome} /></span>
@@ -263,7 +264,7 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                       const long = /long/i.test(f.dir) && !/short >/i.test(f.dir);
                       return (
                         <tr key={f.id} className="row-hover border-b border-line/60">
-                          <td className="px-4 py-2"><Link href={`/m/${f.coin}`} className="flex items-center gap-2 font-medium"><CoinIcon coin={f.coin} size={22} />{f.coin}</Link></td>
+                          <td className="px-4 py-2"><Link href={mk(f.coin).href} className="flex items-center gap-2 font-medium"><CoinIcon coin={mk(f.coin).icon} size={22} />{mk(f.coin).name}</Link></td>
                           <td className="px-2 py-2"><span className={`pill ${f.liquidation ? "pill-liq" : open ? (long ? "pill-up" : "pill-down") : "pill-neutral"}`}>{f.liquidation ? "Liquidated" : f.dir}</span></td>
                           <td className="num px-2 py-2 text-right font-medium">{fmtUsd(f.usd)}</td>
                           <td className={`num px-2 py-2 text-right hidden sm:table-cell ${f.closedPnl > 0 ? "text-up" : f.closedPnl < 0 ? "text-down" : "text-dim"}`}>{f.closedPnl ? fmtUsd(f.closedPnl, { sign: true }) : ""}</td>
@@ -296,15 +297,15 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                 const roe = o.sizeUsd ? (pnl * o.leverage) / o.sizeUsd : 0;
                 return (
                   <div key={o.coin} className="flex items-center gap-3 px-4 py-2.5 border-b border-line/60 row-hover">
-                    <CoinIcon coin={o.coin} size={32} />
+                    <CoinIcon coin={mk(o.coin).icon} size={32} />
                     <div className="leading-tight min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <Link href={`/m/${o.coin}`} className="font-semibold hover:underline">{o.coin}</Link>
+                        <Link href={mk(o.coin).href} className="font-semibold hover:underline">{mk(o.coin).name}</Link>
                         <SidePill side={o.side} />
                         <span className="pill pill-neutral num">{o.leverage}x</span>
                         {o.thesis && <span className="pill pill-thesis">Thesis</span>}
                       </div>
-                      <div className="text-[11px] text-dim num mt-0.5" suppressHydrationWarning>{o.size} {o.coin} · entry {fmtPx(o.entryPx)}{o.liquidationPx ? ` · liq ${fmtPx(o.liquidationPx)}` : ""}{o.openedAt ? ` · ${fmtDuration(Date.now() - new Date(o.openedAt).getTime())}` : ""}</div>
+                      <div className="text-[11px] text-dim num mt-0.5" suppressHydrationWarning>{o.size} {mk(o.coin).base} · entry {fmtPx(o.entryPx)}{o.liquidationPx ? ` · liq ${fmtPx(o.liquidationPx)}` : ""}{o.openedAt ? ` · ${fmtDuration(Date.now() - new Date(o.openedAt).getTime())}` : ""}</div>
                     </div>
                     <div className="text-right leading-tight">
                       <div className="num font-semibold">{fmtUsd(o.sizeUsd)}</div>
@@ -312,9 +313,9 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                     </div>
                     {!p.isMe && o.id && (
                       <Link
-                        href={`/m/${o.coin}?${new URLSearchParams({ copy: o.id, from: p.address, side: o.side, lev: String(o.leverage), name }).toString()}`}
+                        href={`${mk(o.coin).href}?${new URLSearchParams({ copy: o.id, from: p.address, side: o.side, lev: String(o.leverage), name }).toString()}`}
                         className="btn h-8 px-2.5 text-[11px] font-semibold border-brand/40 text-brand hover:bg-brand/10 shrink-0"
-                        title={`Open the same ${o.side === "SHORT" ? "short" : "long"} on ${o.coin}`}
+                        title={`Open the same ${o.side === "SHORT" ? "short" : "long"} on ${mk(o.coin).name}`}
                       >
                         <Icon.copy /> Copy
                       </Link>
@@ -331,10 +332,10 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
                 const roe = c.sizeUsd ? ((c.realisedPnl ?? 0) * c.leverage) / c.sizeUsd : 0;
                 return (
                   <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-line/60 row-hover">
-                    <CoinIcon coin={c.coin} size={32} />
+                    <CoinIcon coin={mk(c.coin).icon} size={32} />
                     <div className="leading-tight min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <Link href={`/m/${c.coin}`} className="font-semibold hover:underline">{c.coin}</Link>
+                        <Link href={mk(c.coin).href} className="font-semibold hover:underline">{mk(c.coin).name}</Link>
                         <SidePill side={c.side} />
                         <span className="pill pill-neutral num">{c.leverage}x</span>
                         {c.liquidated && <span className="pill pill-liq">Liquidated</span>}
@@ -368,8 +369,8 @@ export function TraderProfile({ handle, initial }: { handle: string; initial: Pr
               return (
                 <article key={t.id} className="px-4 py-3 border-b border-line/60">
                   <div className="flex items-center gap-2 text-xs flex-wrap">
-                    <CoinIcon coin={t.coin} size={18} />
-                    <Link href={`/m/${t.coin}`} className="font-semibold text-[13px] hover:underline">{t.coin}</Link>
+                    <CoinIcon coin={mk(t.coin).icon} size={18} />
+                    <Link href={mk(t.coin).href} className="font-semibold text-[13px] hover:underline">{mk(t.coin).name}</Link>
                     {t.position && <span className={`num ${t.position.side === "LONG" ? "text-up" : "text-down"}`}>{t.position.side === "LONG" ? "Long" : "Short"} {fmtUsd(t.position.sizeUsd, { compact: true })} · {t.position.leverage}x</span>}
                     <span className="ml-auto text-dim num" suppressHydrationWarning>{timeAgo(t.createdAt)}</span>
                   </div>

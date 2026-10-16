@@ -1,0 +1,1663 @@
+/* =====================================================================
+   the terminal layout (.tm-lay-*): header, chart + book, the panel, the
+   ticket column and its side cards, composed on one 12px grid.
+   the layout answers to the width it is given (the rail can be wide,
+   narrow or folded), not the window:
+     < 640   one column: header, chart, book, panel, ticket, cards
+     640+    chart | book side by side with seams; the ticket (beside the
+             cards) right under them, then the panel
+     1000+   a desk: the ticket column stands to the right, sticky, and
+             scrolls on its own while the market scrolls under the bar;
+             a slim map in its gutter shows what sits below the ticket
+   the dom runs header, chart + book, ticket + cards, panel: the order the
+   640+ layouts read in, so tab order follows what you see there.
+   the seams glow mint when you reach for them (with a glass tag that says
+   how they work, and a fold button atop the book's). the side cards speak
+   the landing mock's language: mono micro labels, a big lit number, split
+   bars with light in them, colored chips, quiet glass buttons.
+   glows scale with --glow (paper = 45%).
+   ===================================================================== */
+
+@layer components {
+  .tm-lay-cq {
+    container: tm-lay / inline-size;
+  }
+  .tm-lay {
+    /* rgb triplets so every tint and glow can carry its own alpha */
+    --tm-lay-mint: 77 227 193;
+    --tm-lay-mint-2: 151 252 228;
+    --tm-lay-up: 34 211 107;
+    --tm-lay-down: 255 77 79;
+    --tm-lay-thesis: 107 147 255;
+    --tm-lay-gold: 245 178 54;
+    /* text in the mock's luminous tints on ink */
+    --tm-lay-up-text: color-mix(in srgb, var(--color-up) 68%, #e9fff3);
+    --tm-lay-down-text: color-mix(in srgb, var(--color-down) 74%, #fff0f0);
+    --tm-lay-mint-text: var(--color-brand-2);
+    --tm-lay-thesis-text: #b9cbff;
+    /* the quiet ink for micro labels and secondary figures: dim on ink (5:1), deepened on paper (dim is 3:1 there) */
+    --tm-lay-quiet: var(--color-dim);
+    --tm-lay-gap: 12px;
+    /* pane sizes: a remembered size (on <html>, see layout-split.tsx) or a default that follows the width */
+    --tm-lay-side-w: clamp(320px, calc(16cqw + 92px), 344px);
+    --tm-lay-book-d: clamp(240px, calc(18cqw + 48px), 300px);
+    --tm-lay-row-d: clamp(380px, calc(100dvh - 420px), 760px);
+    --tm-lay-row-h: clamp(320px, var(--tm-lay-row, var(--tm-lay-row-d)), max(320px, 75dvh));
+    display: flex;
+    flex-direction: column;
+    gap: var(--tm-lay-gap);
+    padding-bottom: var(--tm-lay-gap);
+  }
+  [data-theme="light"] .tm-lay {
+    --tm-lay-mint: 15 159 152;
+    --tm-lay-mint-2: 18 179 168;
+    --tm-lay-up: 31 157 85;
+    --tm-lay-down: 217 68 74;
+    --tm-lay-thesis: 63 106 224;
+    --tm-lay-gold: 168 114 28;
+    /* deepened on paper to keep 4.5:1 */
+    --tm-lay-up-text: #157a40;
+    --tm-lay-down-text: #c53a40;
+    --tm-lay-mint-text: #0a7a74;
+    --tm-lay-thesis-text: var(--color-thesis);
+    --tm-lay-quiet: #6b6f79;
+  }
+
+  /* ---------- phones: one column ---------- */
+  .tm-lay-col,
+  .tm-lay-side,
+  .tm-lay-side-in {
+    display: contents;
+  }
+  /* a phone reads the market first: the panel of traders comes up before the ticket and the cards */
+  .tm-lay-bottom {
+    order: 1;
+  }
+  .tm-lay-ticket,
+  .tm-lay-cards {
+    order: 2;
+  }
+  .tm-lay-head {
+    min-width: 0;
+  }
+  .tm-lay-desk {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--tm-lay-gap);
+    min-width: 0;
+  }
+  .tm-lay-chart {
+    position: relative;
+    height: 420px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .tm-lay-book {
+    height: 400px;
+    min-width: 0;
+    min-height: 0;
+  }
+  .tm-lay-bottom {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .tm-lay-ticket {
+    min-width: 0;
+  }
+  .tm-lay-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tm-lay-gap);
+    min-width: 0;
+  }
+  .tm-lay-split {
+    display: none;
+  }
+  /* the side column's map exists only on the desk (see 1000+), the book's fold button only beside its seam (640+) */
+  .tm-lay-map,
+  .tm-lay-foldbtn {
+    display: none;
+  }
+
+  /* the chart is the hero: its glass gives off a little teal light into the gaps around it.
+     (a shadow, not a layer: no stacking context, so the chart's own fullscreen still rises over everything) */
+  .tm-lay .tm-lay-chart {
+    box-shadow:
+      inset 0 1px 0 var(--inset-hi),
+      var(--shadow-card),
+      0 0 0 1px rgb(var(--tm-lay-mint) / calc(0.035 * var(--glow))),
+      0 26px 70px -34px rgb(var(--tm-lay-mint) / calc(0.42 * var(--glow)));
+  }
+  /* and where the light from above lands on its rim, a specular catch (as on the mock's window and the ticket) */
+  .tm-lay-chart::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 20%;
+    right: 20%;
+    height: 1px;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgb(214 255 245 / calc(0.55 * var(--glow))) 50%, transparent);
+    box-shadow: 0 0 14px 1px rgb(var(--tm-lay-mint-2) / calc(0.28 * var(--glow)));
+  }
+  [data-theme="light"] .tm-lay-chart::after {
+    background: linear-gradient(90deg, transparent, rgb(var(--tm-lay-mint) / 0.3) 50%, transparent);
+    box-shadow: none;
+  }
+
+  /* ---------- the folded book: a slim glass dock in its place ---------- */
+  .tm-lay-dock {
+    display: none;
+  }
+  html[data-tm-lay-fold] .tm-lay-book {
+    height: auto;
+  }
+  html[data-tm-lay-fold] .tm-lay-book > :not(.tm-lay-dock) {
+    display: none;
+  }
+  html[data-tm-lay-fold] .tm-lay-dock {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 44px;
+    padding-inline: 8px 14px;
+    border-radius: var(--radius-card);
+    font-family: var(--font-label);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+    border: 1px solid var(--edge);
+    border-top-color: var(--edge-top);
+    box-shadow: inset 0 1px 0 var(--inset-hi), var(--shadow-card);
+    transition: color 0.2s, border-color 0.25s, box-shadow 0.3s var(--ease-out);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tm-lay-dock-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    color: var(--color-fg-2);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair-2);
+    transition: color 0.2s, box-shadow 0.3s var(--ease-out);
+  }
+  .tm-lay-dock-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tm-lay-dock:hover {
+    color: var(--color-fg);
+    border-color: rgb(var(--tm-lay-mint) / 0.28);
+    box-shadow: inset 0 1px 0 var(--inset-hi), var(--shadow-card), 0 0 22px -8px rgb(var(--tm-lay-mint) / calc(0.55 * var(--glow)));
+  }
+  .tm-lay-dock:hover .tm-lay-dock-btn {
+    color: var(--tm-lay-mint-text);
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px rgb(var(--tm-lay-mint) / 0.45), 0 0 12px -2px rgb(var(--tm-lay-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-lay-dock:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+  /* phones: the dock reads across, pointing down to where the book opens */
+  .tm-lay-dock-btn svg {
+    transform: rotate(-90deg);
+  }
+  /* while a drag would fold the book, the book fades: let go to fold it */
+  html[data-tm-lay-folding] .tm-lay-book {
+    opacity: 0.32;
+    transition: opacity 0.2s ease;
+  }
+
+  /* ---------- small tablets: the ticket beside the cards ---------- */
+  @container tm-lay (min-width: 600px) {
+    .tm-lay-side {
+      order: 2;
+      display: block;
+      min-width: 0;
+    }
+    .tm-lay-side-in {
+      display: grid;
+      grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+      align-items: start;
+      gap: var(--tm-lay-gap);
+    }
+  }
+
+  /* ---------- 640+: chart | book with a seam between, a seam under the row ---------- */
+  @container tm-lay (min-width: 640px) {
+    .tm-lay {
+      /* the book: remembered or default, never under 240, never squeezing the chart under 360 */
+      --tm-lay-book-w: clamp(240px, var(--tm-lay-book, var(--tm-lay-book-d)), max(240px, min(420px, 100cqw - 372px)));
+    }
+    .tm-lay-desk {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) var(--tm-lay-book-w);
+      column-gap: var(--tm-lay-gap);
+      height: var(--tm-lay-row-h);
+    }
+    .tm-lay-chart,
+    .tm-lay-book {
+      height: auto;
+      min-height: 0;
+    }
+    .tm-lay-split {
+      display: block;
+    }
+    /* the ticket comes straight after the chart row: in reach without scrolling past the panel */
+    .tm-lay-side,
+    .tm-lay-bottom {
+      order: 0;
+    }
+    /* the folded book: a 40px dock, the chart takes the rest */
+    html[data-tm-lay-fold] .tm-lay {
+      --tm-lay-book-w: 40px;
+    }
+    html[data-tm-lay-fold] .tm-lay-split-v {
+      display: none;
+    }
+    /* the book's fold button: a small glass bead at the top of its seam, level with the panes' toolbars.
+       it shows while the seam is reached for (and on keyboard focus), never while a seam is dragged */
+    .tm-lay-foldbtn {
+      position: absolute;
+      z-index: 5;
+      top: 13px;
+      right: calc(var(--tm-lay-book-w) + var(--tm-lay-gap) / 2 - 11px);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      color: var(--color-fg-2);
+      cursor: pointer;
+      background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+      box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 1px var(--hair-2), 0 6px 14px -6px rgb(0 0 0 / calc(0.8 * var(--glow)));
+      opacity: 0;
+      transform: scale(0.8);
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.3s var(--ease-out), color 0.2s, box-shadow 0.3s var(--ease-out);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tm-lay-desk:has(.tm-lay-split-v:hover) .tm-lay-foldbtn,
+    .tm-lay-foldbtn:hover,
+    .tm-lay-foldbtn:focus-visible {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+    .tm-lay-foldbtn:hover {
+      color: var(--tm-lay-mint-text);
+      box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 1px rgb(var(--tm-lay-mint) / 0.5), 0 0 14px rgb(var(--tm-lay-mint) / calc(0.5 * var(--glow)));
+    }
+    .tm-lay-foldbtn:focus-visible {
+      outline: 2px solid var(--color-brand);
+      outline-offset: 2px;
+    }
+    .tm-lay-desk[data-tm-lay-drag] .tm-lay-foldbtn,
+    html[data-tm-lay-fold] .tm-lay-foldbtn {
+      display: none;
+    }
+    /* its name, in the seams' glass tag, to its left */
+    .tm-lay-foldbtn::after {
+      content: attr(data-tip);
+      position: absolute;
+      right: calc(100% + 8px);
+      top: 50%;
+      translate: 0 -50%;
+      padding: 5px 9px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.2;
+      white-space: nowrap;
+      color: var(--color-fg-2);
+      background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+      box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 1px var(--hair-2), var(--shadow-pop);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+    .tm-lay-foldbtn:hover::after {
+      opacity: 1;
+      transition: opacity 0.2s ease 0.4s;
+    }
+    html[data-tm-lay-fold] .tm-lay-dock {
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 14px;
+      height: 100%;
+      padding: 7px 0 16px;
+    }
+    .tm-lay-dock-btn svg {
+      transform: none;
+    }
+    .tm-lay-dock-label {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+    }
+    /* its name in the same glass tag as the seams', to the left over the chart */
+    html[data-tm-lay-fold] .tm-lay-dock::after {
+      content: attr(data-tip);
+      position: absolute;
+      z-index: 2;
+      right: calc(100% + 8px);
+      top: 50%;
+      translate: 0 -50%;
+      padding: 5px 9px;
+      border-radius: 8px;
+      font-family: var(--font-sans);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0;
+      text-transform: none;
+      line-height: 1.2;
+      white-space: nowrap;
+      color: var(--color-fg-2);
+      background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+      box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 1px var(--hair-2), var(--shadow-pop);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+    html[data-tm-lay-fold] .tm-lay-dock:hover::after {
+      opacity: 1;
+      transition: opacity 0.2s ease 0.45s;
+    }
+  }
+
+  /* ---------- 1000+: the desk. ticket column to the right, sticky, scrolling on its own ---------- */
+  @container tm-lay (min-width: 1000px) {
+    .tm-lay {
+      --tm-lay-book-w: clamp(240px, var(--tm-lay-book, var(--tm-lay-book-d)), max(240px, min(420px, 100cqw - var(--tm-lay-side-w) - 384px)));
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) var(--tm-lay-side-w);
+      /* the panel's row takes any height the ticket column needs beyond the market's, so nothing stretches */
+      grid-template-rows: auto 1fr;
+      align-items: start;
+      gap: var(--tm-lay-gap);
+      /* the last card meets the rim of the frame, level with the rail and the ticket column */
+      padding-bottom: 0;
+    }
+    .tm-lay-col {
+      grid-column: 1;
+      grid-row: 1;
+      display: flex;
+      flex-direction: column;
+      gap: var(--tm-lay-gap);
+      min-width: 0;
+    }
+    .tm-lay-bottom {
+      grid-column: 1;
+      grid-row: 2;
+    }
+    /* the column's shell: sticky to the frame's content edge (chrome scrolls main with a 12px top padding,
+       which sticky respects); it holds the scroller and, in the gutter beside it, the map */
+    .tm-lay-side {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      position: sticky;
+      top: 0;
+      display: block;
+    }
+    .tm-lay-side-in {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--tm-lay-gap);
+      max-height: calc(100dvh - var(--tm-chrome-bar-h, 52px) - var(--tm-chrome-tick-h, 30px) - 2 * var(--tm-chrome-gap, 12px));
+      /* room for the ticket's halo on its inner edge (the gap is empty) */
+      margin-left: calc(-1 * var(--tm-lay-gap));
+      padding-left: var(--tm-lay-gap);
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
+      scrollbar-width: none;
+    }
+    .tm-lay-side-in::-webkit-scrollbar {
+      display: none;
+    }
+    .tm-lay-cards {
+      flex: none;
+    }
+    /* a soft top edge once the column has scrolled ("t" or "tb"); the bottom stays crisp so the ticket's cta is never veiled */
+    .tm-lay-side-in[data-fade^="t"] {
+      -webkit-mask: linear-gradient(180deg, transparent, #000 22px);
+      mask: linear-gradient(180deg, transparent, #000 22px);
+    }
+
+    /* ---------- the column's map, in the gutter beside the ticket (layout-side.tsx) ----------
+       shown only while the column holds more than it shows: a hairline track, a thumb lit for what is
+       in view, a dot per section (filled while it is in view). quiet at rest, brighter on hover and while
+       the column moves; the dots name their section on hover and glide there on click. */
+    .tm-lay-map {
+      position: absolute;
+      z-index: 3;
+      top: 0;
+      bottom: 0;
+      left: calc(-1 * var(--tm-lay-gap));
+      display: block;
+      width: var(--tm-lay-gap);
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.5s var(--ease-out), visibility 0s linear 0.5s;
+    }
+    .tm-lay-map[data-on] {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.6s var(--ease-out) 0.2s, visibility 0s;
+    }
+  }
+
+  .tm-lay-map-track {
+    position: absolute;
+    left: 50%;
+    top: 10px;
+    bottom: 10px;
+    width: 1px;
+    margin-left: -0.5px;
+    pointer-events: auto;
+    background: linear-gradient(180deg, transparent, var(--hair-2) 6%, var(--hair-2) 94%, transparent);
+  }
+  /* the track is a hairline; its press target is the gutter's width */
+  .tm-lay-map-track::before {
+    content: "";
+    position: absolute;
+    inset: 0 -5.5px;
+  }
+  .tm-lay-map-thumb {
+    position: absolute;
+    left: 50%;
+    top: 10px;
+    width: 3px;
+    margin-left: -1.5px;
+    border-radius: 3px;
+    pointer-events: auto;
+    cursor: grab;
+    touch-action: none;
+    background: linear-gradient(180deg, rgb(var(--tm-lay-mint-2) / 0.8), rgb(var(--tm-lay-mint) / 0.45));
+    box-shadow: 0 0 8px rgb(var(--tm-lay-mint) / calc(0.3 * var(--glow)));
+    opacity: 0.65;
+    will-change: transform;
+    transition: opacity 0.35s, width 0.2s var(--ease-out), margin 0.2s var(--ease-out), box-shadow 0.35s;
+  }
+  .tm-lay-map-thumb::before {
+    content: "";
+    position: absolute;
+    inset: 0 -4.5px;
+  }
+  /* paper: the teal is darker and carries no light, so the thumb is drawn denser */
+  [data-theme="light"] .tm-lay-map-thumb {
+    background: linear-gradient(180deg, rgb(var(--tm-lay-mint) / 0.85), rgb(var(--tm-lay-mint) / 0.55));
+    box-shadow: none;
+    opacity: 0.75;
+  }
+  .tm-lay-side:hover .tm-lay-map-thumb,
+  .tm-lay-map[data-active] .tm-lay-map-thumb,
+  .tm-lay-map-thumb[data-drag] {
+    opacity: 1;
+    box-shadow: 0 0 12px rgb(var(--tm-lay-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-lay-map-thumb:hover,
+  .tm-lay-map-thumb[data-drag] {
+    width: 5px;
+    margin-left: -2.5px;
+  }
+  .tm-lay-map-thumb[data-drag] {
+    cursor: grabbing;
+  }
+  .tm-lay-map-dot {
+    position: absolute;
+    left: 50%;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 50%;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  /* hollow while its section is out of view, lit while it is in */
+  .tm-lay-map-dot::before {
+    content: "";
+    position: absolute;
+    inset: 2.5px;
+    border-radius: 50%;
+    background: var(--color-bg);
+    box-shadow: inset 0 0 0 1.5px rgb(var(--tm-lay-mint) / 0.5);
+    transition: background-color 0.3s, box-shadow 0.3s, transform 0.25s var(--ease-out);
+  }
+  .tm-lay-map-dot[data-in]::before {
+    background: radial-gradient(circle at 35% 35%, #effffb, rgb(var(--tm-lay-mint-2)) 55%, rgb(var(--tm-lay-mint)));
+    box-shadow: 0 0 8px rgb(var(--tm-lay-mint) / calc(0.75 * var(--glow)));
+  }
+  .tm-lay-map-dot:hover::before {
+    transform: scale(1.35);
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-lay-mint) / 0.75), 0 0 10px rgb(var(--tm-lay-mint) / calc(0.6 * var(--glow)));
+  }
+  /* the section's name, in a small glass tag to its left */
+  .tm-lay-map-dot::after {
+    content: attr(data-tip);
+    position: absolute;
+    right: 17px;
+    top: 50%;
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    color: var(--color-fg);
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 1px var(--hair-2), var(--shadow-pop);
+    opacity: 0;
+    transform: translate(4px, -50%);
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.25s var(--ease-out);
+  }
+  .tm-lay-map-dot:hover::after {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+
+  /* ---------- the seams ---------- */
+  .tm-lay-split {
+    position: absolute;
+    z-index: 4;
+    touch-action: none;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tm-lay-split-v {
+    top: 0;
+    bottom: 0;
+    right: var(--tm-lay-book-w);
+    width: var(--tm-lay-gap);
+    cursor: col-resize;
+  }
+  .tm-lay-split-h {
+    left: 0;
+    right: 0;
+    top: 100%;
+    height: var(--tm-lay-gap);
+    cursor: row-resize;
+  }
+  /* the hairline: invisible at rest, a mint filament with light in it when reached for */
+  .tm-lay-split::before {
+    content: "";
+    position: absolute;
+    border-radius: 2px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.45s var(--ease-out);
+  }
+  .tm-lay-split-v::before {
+    left: 50%;
+    top: 12px;
+    bottom: 12px;
+    width: 2px;
+    margin-left: -1px;
+    transform: scaleY(0.55);
+    background: linear-gradient(180deg, transparent, rgb(var(--tm-lay-mint) / 0.55) 16%, rgb(var(--tm-lay-mint-2) / 0.95) 50%, rgb(var(--tm-lay-mint) / 0.55) 84%, transparent);
+    box-shadow: 0 0 10px rgb(var(--tm-lay-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-lay-split-h::before {
+    top: 50%;
+    left: 14px;
+    right: 14px;
+    height: 2px;
+    margin-top: -1px;
+    transform: scaleX(0.55);
+    background: linear-gradient(90deg, transparent, rgb(var(--tm-lay-mint) / 0.55) 16%, rgb(var(--tm-lay-mint-2) / 0.95) 50%, rgb(var(--tm-lay-mint) / 0.55) 84%, transparent);
+    box-shadow: 0 0 10px rgb(var(--tm-lay-mint) / calc(0.6 * var(--glow)));
+  }
+  /* the grip: a quiet capsule at rest, a lit glass bead on hover, drag and focus (it grows by transform, not layout) */
+  .tm-lay-split-grip {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    border-radius: 999px;
+    pointer-events: none;
+    background: var(--hair-2);
+    transition: background-color 0.25s, box-shadow 0.3s var(--ease-out), transform 0.35s var(--ease-out);
+  }
+  .tm-lay-split-v .tm-lay-split-grip {
+    width: 6px;
+    height: 36px;
+    margin: -18px 0 0 -3px;
+    transform: scale(0.67, 0.72);
+  }
+  .tm-lay-split-h .tm-lay-split-grip {
+    width: 36px;
+    height: 6px;
+    margin: -3px 0 0 -18px;
+    transform: scale(0.72, 0.67);
+  }
+  .tm-lay-split:hover::before,
+  .tm-lay-split[data-drag]::before,
+  .tm-lay-split:focus-visible::before {
+    opacity: 1;
+    transform: none;
+  }
+  .tm-lay-split:hover .tm-lay-split-grip,
+  .tm-lay-split[data-drag] .tm-lay-split-grip,
+  .tm-lay-split:focus-visible .tm-lay-split-grip {
+    transform: none;
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-lay-mint) / 0.55), 0 0 12px rgb(var(--tm-lay-mint) / calc(0.55 * var(--glow)));
+  }
+  .tm-lay-split:focus-visible .tm-lay-split-grip {
+    box-shadow: 0 0 0 2px var(--color-brand), 0 0 14px rgb(var(--tm-lay-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-lay-split[data-drag]::before {
+    box-shadow: 0 0 14px rgb(var(--tm-lay-mint) / calc(0.8 * var(--glow)));
+  }
+  [data-theme="light"] .tm-lay-split:hover .tm-lay-split-grip,
+  [data-theme="light"] .tm-lay-split[data-drag] .tm-lay-split-grip {
+    background: linear-gradient(180deg, #ffffff, #f1f1ec);
+  }
+  /* how to use a seam, in a small glass tag once the pointer rests on it (never while dragging) */
+  .tm-lay-split::after {
+    content: attr(data-tip);
+    position: absolute;
+    z-index: 2;
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    line-height: 1.2;
+    white-space: nowrap;
+    color: var(--color-fg-2);
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), 0 0 0 1px var(--hair-2), var(--shadow-pop);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+  }
+  .tm-lay-split-v::after {
+    right: calc(100% + 6px);
+    top: 50%;
+    translate: 0 -50%;
+  }
+  .tm-lay-split-h::after {
+    left: 50%;
+    bottom: calc(100% + 4px);
+    translate: -50% 0;
+  }
+  .tm-lay-split:hover:not([data-drag])::after {
+    opacity: 1;
+    transition: opacity 0.2s ease 0.55s;
+  }
+  /* while a seam is held: a clear veil over everything carries its cursor and keeps the panes' hovers quiet */
+  .tm-lay-veil {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    cursor: col-resize;
+    user-select: none;
+  }
+  .tm-lay-veil[data-dir="row"] {
+    cursor: row-resize;
+  }
+
+  /* =====================================================================
+     the chart placeholder: server-rendered in the chart's own shape, the
+     last three days as a lit area, the "now" point breathing, a sweep of
+     light across it until the real chart paints over
+     ===================================================================== */
+  .tm-lay-ph {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: linear-gradient(180deg, var(--surface-top) 0%, var(--surface-bot) 100%);
+  }
+  .tm-lay-ph-bar,
+  .tm-lay-ph-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-inline: 12px;
+  }
+  .tm-lay-ph-bar {
+    height: 44px;
+    border-bottom: 1px solid var(--hair);
+    background: linear-gradient(180deg, rgb(255 255 255 / calc(0.024 * var(--glow))), transparent);
+  }
+  .tm-lay-ph-foot {
+    height: 36px;
+    border-top: 1px solid var(--hair);
+  }
+  .tm-lay-ph-bar i,
+  .tm-lay-ph-foot i {
+    flex: none;
+    width: 24px;
+    height: 12px;
+    border-radius: 6px;
+    background: var(--row);
+  }
+  .tm-lay-ph-bar i[data-on] {
+    width: 30px;
+    height: 24px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgb(var(--tm-lay-mint) / 0.19), rgb(var(--tm-lay-mint) / 0.06));
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-lay-mint) / 0.28), 0 0 14px -4px rgb(var(--tm-lay-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-lay-ph-bar b {
+    flex: none;
+    width: 1px;
+    height: 16px;
+    margin-inline: 4px;
+    background: var(--hair-2);
+  }
+  .tm-lay-ph-plot {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    /* faint price grid */
+    background: repeating-linear-gradient(180deg, transparent 0 calc(20% - 1px), rgb(255 255 255 / calc(0.04 * var(--glow))) calc(20% - 1px) 20%);
+  }
+  [data-theme="light"] .tm-lay-ph-plot {
+    background: repeating-linear-gradient(180deg, transparent 0 calc(20% - 1px), rgb(28 29 33 / 0.05) calc(20% - 1px) 20%);
+  }
+  .tm-lay-ph-plot::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(58% 68% at 82% 42%, rgb(var(--tm-lay-mint) / calc(0.07 * var(--glow))), transparent 72%),
+      radial-gradient(40% 50% at 8% 96%, rgb(var(--tm-lay-thesis) / calc(0.045 * var(--glow))), transparent 72%);
+  }
+  .tm-lay-ph-axis {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 78px;
+    border-left: 1px solid var(--hair);
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+  }
+  .tm-lay-ph-axis i {
+    position: absolute;
+    left: 12px;
+    width: 46px;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--row);
+  }
+  .tm-lay-ph-line {
+    position: absolute;
+    left: 0;
+    right: 78px;
+    top: 16%;
+    bottom: 12%;
+  }
+  .tm-lay-ph-line svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .tm-lay-ph-stroke {
+    fill: none;
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 4px rgb(var(--tm-lay-mint) / calc(0.5 * var(--glow))));
+  }
+  /* the price now: a lit pin at the end of the line, its level dashed across to the axis */
+  .tm-lay-ph-now {
+    position: absolute;
+    left: 100%;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ffffff, rgb(var(--tm-lay-mint-2)) 55%, rgb(var(--tm-lay-mint)));
+    box-shadow: 0 0 0 3px rgb(var(--tm-lay-mint) / 0.18), 0 0 14px 2px rgb(var(--tm-lay-mint) / calc(0.7 * var(--glow)));
+  }
+  .tm-lay-ph-now::after {
+    content: "";
+    position: absolute;
+    inset: -26px;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgb(var(--tm-lay-mint) / calc(0.22 * var(--glow))), transparent);
+    animation: tm-lay-breathe 4.2s ease-in-out infinite;
+  }
+  .tm-lay-ph-level {
+    position: absolute;
+    left: 0;
+    right: -78px;
+    height: 0;
+    border-top: 1px dashed rgb(var(--tm-lay-mint-2) / calc(0.45 * var(--glow) + 0.1));
+  }
+  .tm-lay-ph-tag {
+    position: absolute;
+    right: -74px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 70px;
+    height: 20px;
+    margin-top: -10px;
+    border-radius: 6px;
+    font-family: var(--font-label);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #03241d;
+    white-space: nowrap;
+    overflow: hidden;
+    background: linear-gradient(180deg, #c4fff1, #6ff2d3 45%, #3fcfae);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 0 16px -2px rgb(var(--tm-lay-mint) / calc(0.85 * var(--glow)));
+  }
+  [data-theme="light"] .tm-lay-ph-tag {
+    color: #ffffff;
+    background: linear-gradient(180deg, #19b9ad, #0f9f98);
+  }
+  .tm-lay-ph-legend {
+    position: absolute;
+    left: 12px;
+    top: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    color: var(--color-fg-2);
+    white-space: nowrap;
+  }
+  .tm-lay-ph-legend > span {
+    color: var(--color-dim);
+  }
+  .tm-lay-ph-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #e8fff9, rgb(var(--tm-lay-mint)) 62%);
+    box-shadow: 0 0 8px rgb(var(--tm-lay-mint) / calc(0.9 * var(--glow)));
+  }
+  /* a sweep of light, transform only */
+  .tm-lay-ph-sweep {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .tm-lay-ph-sweep::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 45%;
+    background: linear-gradient(100deg, transparent, rgb(255 255 255 / calc(0.045 * var(--glow))) 42%, rgb(var(--tm-lay-mint) / calc(0.06 * var(--glow))) 55%, transparent);
+    transform: translate3d(-110%, 0, 0);
+    animation: tm-lay-sweep 2.2s var(--ease-io) infinite;
+  }
+  [data-theme="light"] .tm-lay-ph-sweep::before {
+    background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.7) 50%, transparent);
+  }
+  /* once the chart has drawn its first candles (it drops [data-first]) the placeholder fades out under it and
+     its sweep and breathing stop: nothing keeps animating beneath an opaque chart for the life of the page */
+  .tm-lay-chart:has(.tm-chart:not([data-first])) .tm-lay-ph {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.6s var(--ease-out), visibility 0s linear 0.6s;
+  }
+  .tm-lay-chart:has(.tm-chart:not([data-first])) :is(.tm-lay-ph-now, .tm-lay-ph-sweep)::before,
+  .tm-lay-chart:has(.tm-chart:not([data-first])) :is(.tm-lay-ph-now, .tm-lay-ph-sweep)::after {
+    animation-play-state: paused;
+  }
+
+  /* =====================================================================
+     side cards: one header recipe, then each card's body
+     ===================================================================== */
+  .tm-lay-card {
+    position: relative;
+    padding: 14px;
+    font-size: 12.5px;
+  }
+  /* the specular catch on the rim, as on the ticket */
+  .tm-lay-card::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    left: 22%;
+    right: 22%;
+    height: 1px;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgb(214 255 245 / calc(0.4 * var(--glow))) 50%, transparent);
+  }
+  [data-theme="light"] .tm-lay-card::before {
+    background: linear-gradient(90deg, transparent, rgb(var(--tm-lay-mint) / 0.22) 50%, transparent);
+  }
+  .tm-lay-ch {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+  }
+  .tm-lay-ch-ico {
+    --tone: var(--tm-lay-mint);
+    position: relative;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    color: rgb(var(--tone));
+    background:
+      linear-gradient(180deg, rgb(var(--tone) / 0.2), rgb(var(--tone) / 0.05) 60%, rgb(var(--tone) / 0.1)),
+      linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / calc(0.14 * var(--glow))),
+      inset 0 0 0 1px rgb(var(--tone) / 0.26),
+      0 6px 16px -8px rgb(var(--tone) / calc(0.7 * var(--glow)));
+  }
+  .tm-lay-ch-ico[data-tone="thesis"] {
+    --tone: var(--tm-lay-thesis);
+    color: var(--tm-lay-thesis-text);
+  }
+  .tm-lay-ch-ico[data-tone="mint"] {
+    color: var(--tm-lay-mint-text);
+  }
+  .tm-lay-ch-ico svg {
+    filter: drop-shadow(0 0 5px rgb(var(--tone) / calc(0.7 * var(--glow))));
+  }
+  .tm-lay-ch-title {
+    min-width: 0;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -0.012em;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tm-lay-ch-sub {
+    margin-top: 2px;
+    font-size: 11.5px;
+    line-height: 1.2;
+    color: var(--color-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tm-lay-ch-end {
+    margin-left: auto;
+    flex: none;
+  }
+  /* mono micro tag at the end of a header: 24H · BTC with a live dot */
+  .tm-lay-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 20px;
+    padding-inline: 7px;
+    border-radius: 999px;
+    font-family: var(--font-label);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 0 0 1px var(--hair);
+    white-space: nowrap;
+  }
+  .tm-lay-live {
+    position: relative;
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #e8fff9, rgb(var(--tm-lay-mint)) 62%);
+    box-shadow: 0 0 7px rgb(var(--tm-lay-mint) / calc(0.9 * var(--glow)));
+  }
+  .tm-lay-live::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgb(var(--tm-lay-mint));
+    animation: tm-lay-ping 2.6s var(--ease-out) infinite;
+  }
+  .tm-lay-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding-inline: 8px 6px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--tm-lay-mint-text);
+    transition: background-color 0.2s, box-shadow 0.25s, color 0.2s;
+  }
+  .tm-lay-link svg {
+    transition: transform 0.3s var(--ease-out);
+  }
+  .tm-lay-link:hover {
+    background: rgb(var(--tm-lay-mint) / 0.08);
+    box-shadow: inset 0 0 0 1px rgb(var(--tm-lay-mint) / 0.22);
+  }
+  .tm-lay-link:hover svg {
+    transform: translateX(2px);
+  }
+  .tm-lay-link:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 1px;
+  }
+  /* a mono label row that opens a section inside a card */
+  .tm-lay-sect {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 14px;
+    margin-bottom: 7px;
+  }
+  .tm-lay-up {
+    color: var(--tm-lay-up-text);
+  }
+  .tm-lay-down {
+    color: var(--tm-lay-down-text);
+  }
+  .tm-lay-flat {
+    color: var(--color-fg-2);
+  }
+  /* an empty side (no longs, $0 of shorts) or a figure not yet known: quiet, never red or green */
+  .tm-lay-zero {
+    color: var(--color-muted);
+  }
+  /* micro labels inside the cards take the quiet ink (paper deepens it to 4.5:1) */
+  .tm-lay-card .label-caps,
+  .tm-lay-card .chip-label {
+    color: var(--tm-lay-quiet);
+  }
+  /* "live": the figures under it follow the price as it moves */
+  .tm-lay-sect-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* ---------- the split bar: long light on the left, short light on the right ---------- */
+  .tm-lay-bar {
+    position: relative;
+    display: flex;
+    gap: 3px;
+    height: 10px;
+    padding: 2px;
+    border-radius: 999px;
+    background: var(--recess);
+    box-shadow: inset 0 0 0 1px var(--hair), inset 0 1px 2px rgb(0 0 0 / calc(0.45 * var(--glow)));
+  }
+  .tm-lay-bar > i {
+    flex: 1 1 0;
+    min-width: 4px;
+    border-radius: 999px;
+  }
+  .tm-lay-bar-l {
+    background: linear-gradient(90deg, rgb(var(--tm-lay-up) / 0.45), rgb(var(--tm-lay-up)) 70%, color-mix(in srgb, rgb(var(--tm-lay-up)) 60%, #ffffff));
+    box-shadow: 0 0 10px -1px rgb(var(--tm-lay-up) / calc(0.75 * var(--glow))), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  }
+  .tm-lay-bar-r {
+    background: linear-gradient(90deg, color-mix(in srgb, rgb(var(--tm-lay-down)) 60%, #ffffff), rgb(var(--tm-lay-down)) 30%, rgb(var(--tm-lay-down) / 0.45));
+    box-shadow: 0 0 10px -1px rgb(var(--tm-lay-down) / calc(0.65 * var(--glow))), inset 0 1px 0 rgb(255 255 255 / 0.22);
+  }
+  /* the losing side dims, so the eye lands on who leads */
+  .tm-lay-bar[data-lead="long"] .tm-lay-bar-r,
+  .tm-lay-bar[data-lead="short"] .tm-lay-bar-l {
+    opacity: 0.62;
+    box-shadow: none;
+  }
+  .tm-lay-bar[data-empty] > i {
+    background: var(--row);
+    box-shadow: none;
+  }
+  .tm-lay-bar-sm {
+    height: 8px;
+  }
+  .tm-lay-legs {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tm-lay-legs b {
+    font-weight: 600;
+  }
+  .tm-lay-legs small {
+    font-size: 11px;
+    color: var(--color-muted);
+  }
+  .tm-lay-legs > span:last-child {
+    text-align: right;
+  }
+  /* three legs: the middle one sits truly centred, whatever the widths either side */
+  .tm-lay-legs-3 {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+  .tm-lay-legs-3 > span {
+    white-space: nowrap;
+  }
+  .tm-lay-legs-sk {
+    display: block;
+    width: 34%;
+    height: 10px;
+    margin-block: 2px;
+    border-radius: 4px;
+  }
+
+  /* ---------- position flow ---------- */
+  /* a faint pool of the leading side's light behind the number */
+  .tm-lay-card.tm-lay-flow[data-dir="up"] {
+    background:
+      radial-gradient(75% 55% at 12% 42%, rgb(var(--tm-lay-up) / calc(0.075 * var(--glow))), transparent 72%),
+      linear-gradient(180deg, var(--surface-top) 0%, var(--surface-bot) 100%);
+  }
+  .tm-lay-card.tm-lay-flow[data-dir="down"] {
+    background:
+      radial-gradient(75% 55% at 12% 42%, rgb(var(--tm-lay-down) / calc(0.07 * var(--glow))), transparent 72%),
+      linear-gradient(180deg, var(--surface-top) 0%, var(--surface-bot) 100%);
+  }
+  .tm-lay-flow-hero {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .tm-lay-flow-net {
+    margin-top: 4px;
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.035em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .tm-lay-flow-net.tm-lay-up {
+    text-shadow: 0 0 22px rgb(var(--tm-lay-up) / calc(0.55 * var(--glow)));
+  }
+  .tm-lay-flow-net.tm-lay-down {
+    text-shadow: 0 0 22px rgb(var(--tm-lay-down) / calc(0.5 * var(--glow)));
+  }
+  .tm-lay-flow-net.tm-lay-zero {
+    color: var(--color-fg-2);
+  }
+  .tm-lay-flow .tm-lay-bar {
+    margin-top: 14px;
+  }
+  .tm-lay-flow-fills {
+    font-family: var(--font-label);
+    font-size: 10px;
+    color: var(--tm-lay-quiet);
+  }
+  .tm-lay-flow-fills b {
+    font-weight: 600;
+    color: var(--color-fg-2);
+  }
+  .tm-lay-flow .pill {
+    margin-bottom: 2px;
+  }
+
+  /* ---------- traders to follow ---------- */
+  .tm-lay-tf-list {
+    margin: 10px -6px -4px;
+  }
+  .tm-lay-tf-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 50px;
+    padding: 7px 6px;
+    border-radius: 10px;
+    transition: background-color 0.2s;
+  }
+  .tm-lay-tf-row + .tm-lay-tf-row::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 6px;
+    right: 6px;
+    height: 1px;
+    background: var(--row);
+  }
+  .tm-lay-tf-row:hover {
+    background: var(--row-hover);
+  }
+  .tm-lay-tf-row:hover + .tm-lay-tf-row::before,
+  .tm-lay-tf-row:hover::before {
+    opacity: 0;
+  }
+  .tm-lay-av {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 3px 9px -3px rgb(0 0 0 / 0.7);
+    transition: box-shadow 0.3s var(--ease-out);
+  }
+  .tm-lay-av::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle at 30% 22%, rgb(255 255 255 / 0.45), rgb(255 255 255 / 0) 46%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18), inset 0 -3px 6px rgb(0 0 0 / 0.2);
+  }
+  [data-theme="light"] .tm-lay-av {
+    box-shadow: 0 0 0 1px rgb(28 29 33 / 0.08), 0 2px 6px -2px rgb(28 29 33 / 0.3);
+  }
+  /* spheres, as across the terminal (feed, panel, the mock): the name sits beside it, so the initials go */
+  .tm-lay-av > span:not(.tm-lay-rank) {
+    color: transparent !important;
+    user-select: none;
+  }
+  .tm-lay-tf-row:hover .tm-lay-av {
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 0 0 3px rgb(var(--tm-lay-thesis) / calc(0.16 * var(--glow))), 0 3px 9px -3px rgb(0 0 0 / 0.7);
+  }
+  .tm-lay-av:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+  /* rank, as a tiny lit coin on the avatar's shoulder */
+  .tm-lay-rank {
+    position: absolute;
+    z-index: 1;
+    left: -4px;
+    bottom: -3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 15px;
+    height: 15px;
+    padding-inline: 3px;
+    border-radius: 999px;
+    font-family: var(--font-label);
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--color-fg-2);
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bot));
+    box-shadow: 0 0 0 1.5px var(--surface-bot), inset 0 0 0 1px var(--hair-2);
+  }
+  .tm-lay-rank[data-r="1"] {
+    color: #2a1a00;
+    background: linear-gradient(180deg, #ffe9b0, #f5b236);
+    box-shadow: 0 0 0 1.5px var(--surface-bot), 0 0 10px -2px rgb(var(--tm-lay-gold) / calc(0.9 * var(--glow)));
+  }
+  .tm-lay-rank[data-r="2"] {
+    color: #1d2329;
+    background: linear-gradient(180deg, #f3f6f8, #a9b4bd);
+    box-shadow: 0 0 0 1.5px var(--surface-bot);
+  }
+  .tm-lay-rank[data-r="3"] {
+    color: #2a1405;
+    background: linear-gradient(180deg, #ffd2ad, #c9824a);
+    box-shadow: 0 0 0 1.5px var(--surface-bot);
+  }
+  .tm-lay-tf-who {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1 1 auto;
+    line-height: 1.2;
+  }
+  .tm-lay-tf-name {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tm-lay-tf-name:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .tm-lay-tf-name:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 1px;
+    border-radius: 4px;
+  }
+  .tm-lay-tf-meta {
+    margin-top: 3px;
+    font-family: var(--font-label);
+    font-size: 10px;
+    color: var(--tm-lay-quiet);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tm-lay-tf-pnl {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tm-lay-tf-pnl b {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .tm-lay-tf-pnl b.tm-lay-up {
+    text-shadow: 0 0 14px rgb(var(--tm-lay-up) / calc(0.5 * var(--glow)));
+  }
+  .tm-lay-tf-pnl b.tm-lay-down {
+    text-shadow: 0 0 14px rgb(var(--tm-lay-down) / calc(0.45 * var(--glow)));
+  }
+  .tm-lay-tf-pnl small {
+    font-family: var(--font-label);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: var(--tm-lay-quiet);
+  }
+  /* follow: a quiet glass pill with a plus (five in a column should not shout); following: mint, with a check */
+  .tm-lay-follow {
+    position: relative;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 26px;
+    padding-inline: 9px 11px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-fg-2);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair-2), 0 1px 2px rgb(0 0 0 / calc(0.25 * var(--glow)));
+    transition: color 0.2s, background-color 0.2s, box-shadow 0.3s var(--ease-out), transform 0.15s;
+  }
+  .tm-lay-follow svg {
+    color: var(--color-muted);
+    transition: color 0.2s;
+  }
+  .tm-lay-follow:hover {
+    color: var(--color-fg);
+    background-color: var(--row-hover);
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px rgb(var(--tm-lay-thesis) / 0.45), 0 0 16px -6px rgb(var(--tm-lay-thesis) / calc(0.7 * var(--glow)));
+  }
+  .tm-lay-follow:hover svg {
+    color: var(--tm-lay-thesis-text);
+  }
+  .tm-lay-follow:active {
+    transform: translateY(1px);
+  }
+  .tm-lay-follow:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+  .tm-lay-follow[aria-pressed="true"] {
+    color: var(--tm-lay-mint-text);
+    background: linear-gradient(180deg, rgb(var(--tm-lay-mint) / 0.16), rgb(var(--tm-lay-mint) / 0.05));
+    box-shadow: inset 0 1px 0 rgb(var(--tm-lay-mint-2) / 0.16), inset 0 0 0 1px rgb(var(--tm-lay-mint) / 0.32), 0 0 14px -5px rgb(var(--tm-lay-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-lay-follow[aria-pressed="true"] svg {
+    color: currentColor;
+  }
+  .tm-lay-follow[aria-busy="true"] {
+    opacity: 0.6;
+    cursor: progress;
+  }
+  .tm-lay-tf-skel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 50px;
+    padding-inline: 6px;
+  }
+
+  /* ---------- about ---------- */
+  .tm-lay-coin {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 0 0 4px rgb(255 255 255 / calc(0.035 * var(--glow))), 0 4px 14px -4px rgb(0 0 0 / 0.7);
+  }
+  .tm-lay-coin::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle at 32% 24%, rgb(255 255 255 / 0.28), rgb(255 255 255 / 0) 48%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14), inset 0 -2px 4px rgb(0 0 0 / 0.16);
+  }
+  [data-theme="light"] .tm-lay-coin {
+    box-shadow: 0 0 0 1px rgb(28 29 33 / 0.08), 0 0 0 4px rgb(28 29 33 / 0.03), 0 2px 6px -2px rgb(28 29 33 / 0.3);
+  }
+  .tm-lay-chgs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .tm-lay-chg {
+    --tone: 255 255 255;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    height: 42px;
+    padding-inline: 9px;
+    border-radius: 10px;
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair);
+    white-space: nowrap;
+  }
+  /* tinted glass in the move's colour; only the day (below) gives off light, so four chips never glow at once */
+  .tm-lay-chg[data-dir="up"] {
+    --tone: var(--tm-lay-up);
+    background: linear-gradient(180deg, rgb(var(--tm-lay-up) / 0.12), rgb(var(--tm-lay-up) / 0.03));
+    box-shadow: inset 0 1px 0 rgb(var(--tm-lay-up) / 0.12), inset 0 0 0 1px rgb(var(--tm-lay-up) / 0.22);
+  }
+  .tm-lay-chg[data-dir="down"] {
+    --tone: var(--tm-lay-down);
+    background: linear-gradient(180deg, rgb(var(--tm-lay-down) / 0.12), rgb(var(--tm-lay-down) / 0.03));
+    box-shadow: inset 0 1px 0 rgb(var(--tm-lay-down) / 0.12), inset 0 0 0 1px rgb(var(--tm-lay-down) / 0.24);
+  }
+  /* the day: the frame the header also quotes, a touch brighter and lit */
+  .tm-lay-chg[data-day][data-dir="up"] {
+    box-shadow: inset 0 1px 0 rgb(var(--tm-lay-up) / 0.2), inset 0 0 0 1px rgb(var(--tm-lay-up) / 0.4), 0 0 18px -6px rgb(var(--tm-lay-up) / calc(0.75 * var(--glow)));
+  }
+  .tm-lay-chg[data-day][data-dir="down"] {
+    box-shadow: inset 0 1px 0 rgb(var(--tm-lay-down) / 0.2), inset 0 0 0 1px rgb(var(--tm-lay-down) / 0.42), 0 0 18px -6px rgb(var(--tm-lay-down) / calc(0.7 * var(--glow)));
+  }
+  .tm-lay-chg .chip-label {
+    font-size: 9px;
+  }
+  .tm-lay-chg b {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tm-lay-chg[data-day] b.tm-lay-up {
+    text-shadow: 0 0 12px rgb(var(--tm-lay-up) / calc(0.45 * var(--glow)));
+  }
+  .tm-lay-chg[data-day] b.tm-lay-down {
+    text-shadow: 0 0 12px rgb(var(--tm-lay-down) / calc(0.4 * var(--glow)));
+  }
+  .tm-lay-chg b.tm-lay-flat {
+    color: var(--tm-lay-quiet);
+  }
+  .tm-lay-chg-sk {
+    display: block;
+    width: 70%;
+    height: 9px;
+    margin-top: 2px;
+    border-radius: 4px;
+  }
+  .tm-lay-tracked {
+    margin-top: 10px;
+  }
+  .tm-lay-tracked .tm-lay-legs {
+    margin-top: 0;
+    margin-bottom: 6px;
+  }
+  .tm-lay-none {
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--tm-lay-quiet);
+  }
+  /* the spec sheet: mono labels left, values right, hairlines between */
+  .tm-lay-spec {
+    margin-top: 14px;
+    padding-top: 4px;
+    border-top: 1px solid var(--hair);
+  }
+  .tm-lay-spec > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding-block: 6px;
+  }
+  .tm-lay-spec > div + div {
+    border-top: 1px dashed var(--row);
+  }
+  .tm-lay-spec dt {
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    color: var(--tm-lay-quiet);
+  }
+  .tm-lay-spec dd {
+    font-size: 12.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-fg);
+  }
+  .tm-lay-spec dd.tm-lay-mint {
+    color: var(--tm-lay-mint-text);
+    text-shadow: 0 0 12px rgb(var(--tm-lay-mint) / calc(0.4 * var(--glow)));
+  }
+  .tm-lay-spec dd.tm-lay-down {
+    color: var(--tm-lay-down-text);
+  }
+  .tm-lay-acts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .tm-lay-act {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    padding-inline: 10px;
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-fg-2);
+    white-space: nowrap;
+    background: linear-gradient(180deg, var(--inset-top), var(--inset-bot));
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair);
+    transition: color 0.2s, background-color 0.2s, box-shadow 0.3s var(--ease-out);
+  }
+  .tm-lay-act svg {
+    color: var(--color-muted);
+    transition: color 0.2s;
+  }
+  .tm-lay-act:hover {
+    color: var(--color-fg);
+    background-color: var(--row-hover);
+    box-shadow: inset 0 1px 0 var(--inset-hi), inset 0 0 0 1px var(--hair-2), 0 0 16px -8px rgb(var(--tm-lay-mint) / calc(0.6 * var(--glow)));
+  }
+  .tm-lay-act:hover svg {
+    color: var(--tm-lay-mint-text);
+  }
+  .tm-lay-act:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  /* ---------- motion ---------- */
+  @keyframes tm-lay-breathe {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @keyframes tm-lay-ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.6;
+    }
+    80%,
+    100% {
+      transform: scale(3);
+      opacity: 0;
+    }
+  }
+  @keyframes tm-lay-sweep {
+    0% {
+      transform: translate3d(-110%, 0, 0);
+    }
+    100% {
+      transform: translate3d(240%, 0, 0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tm-lay-ph-now::after,
+    .tm-lay-ph-sweep::before,
+    .tm-lay-live::after {
+      animation: none !important;
+    }
+    .tm-lay-split::before,
+    .tm-lay-split-grip,
+    .tm-lay-map-thumb,
+    .tm-lay-map-dot::before {
+      transition: none;
+    }
+  }
+}

@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { fmtUsd, userLabel, userPath } from "@/lib/format";
 
 /* ---------- identity ---------- */
 
-export function Avatar({ address, url, size = 28, handle, ring }: { address: string; url?: string | null; size?: number; handle?: string | null; ring?: boolean }) {
-  const h1 = parseInt(address.slice(2, 8), 16) % 360;
-  const h2 = (h1 + 40 + (parseInt(address.slice(-4), 16) % 80)) % 360;
+/** a profile picture, or a glossy sphere tinted from the address (pass `initials` to print the handle's first letters on it) */
+export function Avatar({ address, url, size = 28, handle, ring, initials }: { address: string; url?: string | null; size?: number; handle?: string | null; ring?: boolean; initials?: boolean }) {
+  const h1 = (parseInt(address.slice(2, 8), 16) || 0) % 360;
+  const h2 = (h1 + 40 + ((parseInt(address.slice(-4), 16) || 0) % 80)) % 360;
   const label = (handle ?? address.slice(2, 4)).slice(0, 2).toUpperCase();
   const cls = `rounded-full shrink-0 ${ring ? "ring-2 ring-bg" : ""}`;
   return url ? (
@@ -15,28 +16,45 @@ export function Avatar({ address, url, size = 28, handle, ring }: { address: str
     <img src={url} alt="" width={size} height={size} className={`${cls} object-cover`} style={{ width: size, height: size }} />
   ) : (
     <span
-      className={`${cls} inline-flex items-center justify-center font-bold text-black/75`}
-      style={{ width: size, height: size, fontSize: Math.max(9, size * 0.36), background: `linear-gradient(135deg, hsl(${h1} 72% 62%), hsl(${h2} 70% 42%))` }}
+      aria-hidden
+      className={`${cls} inline-flex items-center justify-center font-bold text-black/70`}
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.max(9, size * 0.36),
+        background: `radial-gradient(circle at 32% 26%, hsl(${h1} 95% 88% / 0.95), transparent 46%), linear-gradient(140deg, hsl(${h1} 72% 62%), hsl(${h2} 70% 38%))`,
+        boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.16), inset 0 -2px 4px rgb(0 0 0 / 0.25), 0 2px 8px -2px rgb(0 0 0 / 0.45)",
+      }}
     >
-      {label}
+      {initials ? label : null}
     </span>
   );
 }
 
 const ICON_BASE = "https://app.hyperliquid.xyz/coins";
 
+/** a market's icon from hyperliquid's set. pass the symbol ("BTC", "SOL"), or a builder dex's full id ("xyz:GOLD"),
+    which is how hyperliquid names those icons. a missing icon becomes a tinted disc with the symbol's first letter */
 export function CoinIcon({ coin, size = 20, className = "" }: { coin: string; size?: number; className?: string }) {
   const [broken, setBroken] = useState(false);
-  const hue = (coin.charCodeAt(0) * 47 + (coin.charCodeAt(1) || 0) * 13) % 360;
+  const ref = useRef<HTMLImageElement>(null);
+  // an icon that failed before hydration never fires onError on the client: catch it once mounted
+  useEffect(() => {
+    const img = ref.current;
+    if (img && img.complete && img.naturalWidth === 0) setBroken(true);
+  }, [coin]);
+  useEffect(() => setBroken(false), [coin]);
+  const sym = coin.includes(":") ? coin.slice(coin.indexOf(":") + 1) : coin;
+  const hue = (sym.charCodeAt(0) * 47 + (sym.charCodeAt(1) || 0) * 13) % 360;
   if (broken)
     return (
       <span className={`rounded-full inline-flex items-center justify-center font-bold text-white/90 shrink-0 ${className}`} style={{ width: size, height: size, fontSize: size * 0.42, background: `hsl(${hue} 45% 32%)` }}>
-        {coin.slice(0, 1)}
+        {sym.slice(0, 1)}
       </span>
     );
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={`${ICON_BASE}/${coin}.svg`} alt="" width={size} height={size} onError={() => setBroken(true)} className={`rounded-full shrink-0 bg-panel-3 ${className}`} style={{ width: size, height: size }} />
+    <img ref={ref} src={`${ICON_BASE}/${coin}.svg`} alt="" width={size} height={size} onError={() => setBroken(true)} className={`coin-icon rounded-full shrink-0 bg-panel-3 ${className}`} style={{ width: size, height: size }} />
   );
 }
 
