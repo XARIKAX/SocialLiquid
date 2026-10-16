@@ -51,8 +51,10 @@ model User {
   /// data urls after client-side resize (avatar ≤ ~120kb, banner ≤ ~500kb)
   avatarUrl String?
   bannerUrl String?
-  /// the Solana wallet this account signed to link, for keys (which live on Solana). base58, case-sensitive
-  solanaAddress String? @unique
+  /// the Solana wallet this account signed to link, for keys (which live on Solana). base58, case-sensitive.
+  /// one account per wallet is enforced by the link route rather than a unique constraint: adding a constraint to
+  /// an existing table trips `prisma db push`'s data-loss guard on deploy, which took production down once
+  solanaAddress String?
   /// set when the wallet signed in. a row without it is a shadow user (someone followed the address).
   claimedAt DateTime?
   createdAt DateTime @default(now())
@@ -91,6 +93,7 @@ model User {
   feedReads        FeedRead[]
 
   @@index([inviteCode])
+  @@index([solanaAddress])
 }
 
 model AgentKey {

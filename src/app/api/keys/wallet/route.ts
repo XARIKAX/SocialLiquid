@@ -37,7 +37,7 @@ export const POST = handler(async (req: Request) => {
     const held = await prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM (SELECT trader FROM "KeyTrade" WHERE account = ${user.solanaAddress} GROUP BY trader HAVING SUM(CASE WHEN "isBuy" THEN amount ELSE -amount END) > 0) h`;
     if (Number(held[0]?.n ?? 0) > 0) throw new HttpError(409, `your keys are in ${short(user.solanaAddress)}. switch your wallet back to it, or sell them first`);
   }
-  const taken = await prisma.user.findUnique({ where: { solanaAddress: address }, select: { id: true } });
+  const taken = await prisma.user.findFirst({ where: { solanaAddress: address, NOT: { id: user.id } }, select: { id: true } });
   if (taken) throw new HttpError(409, "that wallet is linked to another account");
   await prisma.user.update({ where: { id: user.id }, data: { solanaAddress: address } });
   // a trader who listed from this wallet before linking it
