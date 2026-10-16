@@ -1,12 +1,13 @@
 /**
  * pay out what the worker accrued from copier builder fees (KeyFeeAccrual):
- *  - the holder share goes into the keys contract with depositFees(trader, amount), split there across that
- *    trader's holders by keys held right now. it is sent from KEYS_DISTRIBUTOR_KEY, a HyperEVM wallet holding
- *    USDC (and a little HYPE for gas). move the builder's earnings to it first; the dry run prints how much.
+ *  - the holder share goes into the keys program on Solana with deposit_fees, split there across that trader's
+ *    holders by keys held right now. it is sent from KEYS_DISTRIBUTOR_KEY, a Solana wallet holding USDC (and a
+ *    little SOL for fees). the builder earns in USDC on Hyperliquid: withdraw it and bridge it to that wallet with
+ *    Circle's CCTP first; the dry run prints how much is needed.
  *  - the trader's share is sent on Hyperliquid with usdSend from the builder wallet (BUILDER_PRIVATE_KEY) to the
  *    creator's payout address.
- * a trader with no key holders yet has nothing to deposit into: those rows are marked skipped and the protocol
- * keeps them, as it does for traders who never set up keys.
+ * a trader with no key holders yet (or no key) has nothing to deposit into: those rows are marked skipped and the
+ * protocol keeps them, as it does for traders who never set up keys.
  *
  * run:  pnpm keys:distribute            dry run: what would be paid, and to whom
  *       pnpm keys:distribute --execute  send it
@@ -14,14 +15,13 @@
  *        --only holders | creators
  */
 import "dotenv/config";
+import bs58 from "bs58";
 import { ExchangeClient, HttpTransport } from "@nktkas/hyperliquid";
-import { createWalletClient, erc20Abi, http, maxUint256, parseUnits, type Address } from "viem";
+import { Keypair, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
 import { privateKeyToAccount } from "viem/accounts";
 import { prisma } from "../src/lib/db";
 import { HL_MOCK, IS_TESTNET } from "../src/lib/env";
-import { KEYS_CONTRACT, KEYS_USDC } from "../src/lib/keys";
-import { KEYS_ABI } from "../src/lib/keys-abi";
-import { evm, hyperEvm, HYPEREVM_RPC, readTrader } from "../src/lib/keys-chain";
+import { connection, program, readTrader } from "../src/lib/keys-chain";
 
 const args = process.argv.slice(2);
 const execute = args.includes("--execute");
@@ -33,7 +33,14 @@ const MIN = Number(flag("--min") ?? 1);
 const only = flag("--only");
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
-if (execute && HL_MOCK) throw new Error("HL_MOCK is set: refusing to send real payouts from a mock environment");
+if (execute && HL_MOCK && only !== "holders") throw new Error("HL_MOCK is set: refusing to send real payouts on Hyperliquid from a mock environment");
+
+/** a Solana secret key as base58 (what Phantom exports) or a JSON byte array (what solana-keygen writes) */
+function solanaKey(v: string | undefined): Keypair | null {
+  if (!v) return null;
+  const t = v.trim();
+  return Keypair.fromSecretKey(t.startsWith("[") ? Uint8Array.from(JSON.parse(t) as number[]) : bs58.decode(t));
+}
 
 async function holders() {
   const rows = await prisma.keyFeeAccrual.findMany({ where: { holderStatus: "pending" }, orderBy: { periodStart: "asc" } });
@@ -46,18 +53,20 @@ async function holders() {
   }
   console.log(`\nholder share: ${byTrader.size} trader(s), ${usd([...byTrader.values()].reduce((a, b) => a + b.amount, 0))} pending`);
   if (!byTrader.size) return;
-  if (!KEYS_CONTRACT || !KEYS_USDC) {
-    console.log("  NEXT_PUBLIC_KEYS_CONTRACT / NEXT_PUBLIC_KEYS_USDC not set: nothing can be deposited yet");
+  const k = program();
+  if (!k) {
+    console.log("  NEXT_PUBLIC_KEYS_PROGRAM_ID not set: nothing can be deposited yet");
     return;
   }
-  const key = process.env.KEYS_DISTRIBUTOR_KEY as `0x${string}` | undefined;
-  const account = key ? privateKeyToAccount(key) : null;
-  const wallet = account ? createWalletClient({ account, chain: hyperEvm, transport: http(HYPEREVM_RPC) }) : null;
-  const plan: { trader: string; ids: string[]; amount: bigint }[] = [];
+  // accruals are by hyperliquid address; keys live under the Solana wallet each trader linked
+  const users = await prisma.user.findMany({ where: { address: { in: [...byTrader.keys()] } }, select: { address: true, solanaAddress: true } });
+  const walletOf = new Map(users.map((u) => [u.address, u.solanaAddress]));
+  const plan: { trader: string; wallet: string; ids: string[]; amount: bigint }[] = [];
   for (const [trader, x] of byTrader) {
-    const state = await readTrader(trader);
-    if (!state) throw new Error("could not reach HyperEVM");
-    if (!state.listed || state.supply === 0) {
+    const wallet = walletOf.get(trader) ?? null;
+    const state = wallet ? await readTrader(wallet) : { listed: false, supply: 0, reserve: 0 };
+    if (!state) throw new Error("could not reach Solana");
+    if (!wallet || !state.listed || state.supply === 0) {
       console.log(`  ${trader}: no key holders, ${usd(x.amount)} stays with the protocol`);
       if (execute) await prisma.keyFeeAccrual.updateMany({ where: { id: { in: x.ids } }, data: { holderStatus: "skipped" } });
       continue;
@@ -67,31 +76,27 @@ async function holders() {
       continue;
     }
     // floor to the cent so the deposit never exceeds what was accrued
-    plan.push({ trader, ids: x.ids, amount: parseUnits((Math.floor(x.amount * 100) / 100).toFixed(2), 6) });
-    console.log(`  ${trader}: deposit ${usd(x.amount)} for ${state.supply} key(s)`);
+    plan.push({ trader, wallet, ids: x.ids, amount: BigInt(Math.floor(x.amount * 100)) * 10_000n });
+    console.log(`  ${trader}: deposit ${usd(x.amount)} for ${state.supply} key(s) of ${wallet}`);
   }
-  const total = plan.reduce((a, p) => a + p.amount, 0n);
   if (!plan.length) return;
-  if (!wallet || !account) {
-    console.log(`  set KEYS_DISTRIBUTOR_KEY to deposit. it needs ${Number(total) / 1e6} USDC on HyperEVM plus HYPE for gas`);
+  const total = plan.reduce((a, p) => a + p.amount, 0n);
+  const payer = solanaKey(process.env.KEYS_DISTRIBUTOR_KEY);
+  if (!payer) {
+    console.log(`  set KEYS_DISTRIBUTOR_KEY to deposit. it needs ${Number(total) / 1e6} USDC in its Solana wallet plus a little SOL for fees`);
     return;
   }
-  const bal = await evm().readContract({ address: KEYS_USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
-  console.log(`  distributor ${account.address} holds ${Number(bal) / 1e6} USDC, needs ${Number(total) / 1e6}`);
+  const conn = connection();
+  const from = k.ata(payer.publicKey);
+  const info = await conn.getAccountInfo(from);
+  const bal = info ? Buffer.from(info.data).readBigUInt64LE(64) : 0n;
+  console.log(`  distributor ${payer.publicKey.toBase58()} holds ${Number(bal) / 1e6} USDC, needs ${Number(total) / 1e6}`);
   if (!execute) return;
-  if (bal < total) throw new Error("distributor is short of USDC on HyperEVM; top it up and run again");
-  const allowance = await evm().readContract({ address: KEYS_USDC, abi: erc20Abi, functionName: "allowance", args: [account.address, KEYS_CONTRACT] });
-  if (allowance < total) {
-    const h = await wallet.writeContract({ address: KEYS_USDC, abi: erc20Abi, functionName: "approve", args: [KEYS_CONTRACT, maxUint256] });
-    await evm().waitForTransactionReceipt({ hash: h });
-    console.log(`  approved the keys contract (${h})`);
-  }
+  if (bal < total) throw new Error("the distributor is short of USDC on Solana; top it up and run again");
   for (const p of plan) {
-    const h = await wallet.writeContract({ address: KEYS_CONTRACT, abi: KEYS_ABI, functionName: "depositFees", args: [p.trader as Address, p.amount] });
-    const r = await evm().waitForTransactionReceipt({ hash: h });
-    if (r.status !== "success") throw new Error(`deposit for ${p.trader} reverted (${h})`);
-    await prisma.keyFeeAccrual.updateMany({ where: { id: { in: p.ids } }, data: { holderStatus: "deposited", holderTx: h } });
-    console.log(`  deposited for ${p.trader}: ${h}`);
+    const sig = await sendAndConfirmTransaction(conn, new Transaction().add(k.depositFees({ depositor: payer.publicKey, trader: p.wallet, amount: p.amount })), [payer], { commitment: "confirmed" });
+    await prisma.keyFeeAccrual.updateMany({ where: { id: { in: p.ids } }, data: { holderStatus: "deposited", holderTx: sig } });
+    console.log(`  deposited for ${p.trader}: ${sig}`);
   }
 }
 

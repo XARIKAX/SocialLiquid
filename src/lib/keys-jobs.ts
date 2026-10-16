@@ -1,9 +1,8 @@
 /**
  * background work for keys, run by the worker:
  *  - accrue: each closed UTC day, the builder fees paid on copies of a trader's positions are split into the
- *    holder share (deposited into the keys contract for that trader's holders) and the trader's own share.
+ *    holder share (deposited into the keys program for that trader's holders) and the trader's own share.
  *    scripts/keys-distribute.ts pays both out; this only records what is owed.
- *  - remind: a subscriber whose paid month ends within three days gets one alert to renew.
  */
 import { prisma } from "./db";
 import { CREATOR_FEE_SHARE, HOLDER_SHARE } from "./keys";
@@ -66,24 +65,6 @@ export async function accrueKeyFees(days = 7): Promise<number> {
         n++;
       }
     }
-  }
-  return n;
-}
-
-/** one renewal alert per paid period, three days before it ends, unless the subscriber cancelled */
-export async function remindRenewals(): Promise<number> {
-  const now = Date.now();
-  const due = await prisma.subscription.findMany({
-    where: { cancelledAt: null, paidUntil: { gt: new Date(now), lte: new Date(now + 3 * DAY) }, creator: { priceUsd: { gt: 0 } } },
-    include: { creator: { select: { priceUsd: true, user: { select: { address: true, handle: true } } } } },
-  });
-  let n = 0;
-  for (const s of due) {
-    const actor = s.creator.user.address;
-    const sent = await prisma.notification.findFirst({ where: { userId: s.subscriberId, type: "SUB_ENDING", actorAddress: actor, createdAt: { gt: new Date(s.paidUntil.getTime() - 4 * DAY) } }, select: { id: true } });
-    if (sent) continue;
-    await prisma.notification.create({ data: { userId: s.subscriberId, type: "SUB_ENDING", actorAddress: actor, payload: { handle: s.creator.user.handle, paidUntil: s.paidUntil.toISOString(), price: Number(s.creator.priceUsd) } } });
-    n++;
   }
   return n;
 }

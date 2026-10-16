@@ -5,7 +5,7 @@ import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export type Note = { id: string; type: "COPIED" | "REPLY" | "REACTION" | "THESIS_SETTLED" | "CREATOR_POST" | "SUB_ENDING"; actorAddress: string | null; actor: UserLite | null; coin: string | null; eventId: string | null; thesisId: string | null; positionId: string | null; payload: Record<string, unknown>; createdAt: string };
+export type Note = { id: string; type: "COPIED" | "REPLY" | "REACTION" | "THESIS_SETTLED" | "CREATOR_POST"; actorAddress: string | null; actor: UserLite | null; coin: string | null; eventId: string | null; thesisId: string | null; positionId: string | null; payload: Record<string, unknown>; createdAt: string };
 
 /** latest events from the traders the caller follows, the caller's social notifications, and how many of both arrived since the bell was last opened */
 export const GET = handler(async () => {

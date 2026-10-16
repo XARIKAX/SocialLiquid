@@ -60,7 +60,7 @@ export const wagmiConfig = createConfig({
       : []),
     lazy(coinbaseWallet({ appName: "socialLiquid", appLogoUrl: typeof window !== "undefined" ? `${window.location.origin}/brand/mark-512.png` : "https://socialliquid.fun/brand/mark-512.png", preference: "all" })),
   ],
-  transports: { [arbitrum.id]: http(), [arbitrumSepolia.id]: http(), [mainnet.id]: http(), [hyperEvm.id]: http(process.env.NEXT_PUBLIC_HYPEREVM_RPC || undefined), [base.id]: http(), [optimism.id]: http(), [polygon.id]: http(), [avalanche.id]: http() },
+  transports: { [arbitrum.id]: http(), [arbitrumSepolia.id]: http(), [mainnet.id]: http(), [hyperEvm.id]: http(), [base.id]: http(), [optimism.id]: http(), [polygon.id]: http(), [avalanche.id]: http() },
   ssr: true,
 });
 

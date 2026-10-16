@@ -2,14 +2,14 @@
 /** /keys: the front door. who is live, who is trending, what they are posting, and the pitch to creators */
 import Link from "next/link";
 import { useKeys } from "@/hooks/use-keys";
-import { SUB_PRICE_MAX, subSplit } from "@/lib/keys";
+import { HOLDER_SHARE, KEY_START_MAX, KEY_START_MIN, KEY_TRADER_CUT, offerTitle } from "@/lib/keys";
 import type { KeysFeedPost, KeysTrader } from "@/lib/keys-model";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
-import { Face, KeyCard, KeysState, ResetPreview, Verified, priceLabel, sidePill, usdBig } from "./parts";
+import { Face, KeyCard, KeysState, ResetPreview, Verified, sidePill, usdBig } from "./parts";
 
 /** what a locked post shows under the blur: the real text never reaches the browser */
-const LOCKED_TEXT = "Entry, invalidation and targets are in this call, with the reasoning behind the size. Subscribe to read it.";
+const LOCKED_TEXT = "Entry, invalidation and targets are in this call, with the reasoning behind the size. Hold a key to read it.";
 
 export function KeysHub() {
   const data = useKeys();
@@ -20,9 +20,9 @@ export function KeysHub() {
   const trending = preview ? ["basedwhale", "memewitch", "nyx"].map((h) => data.byHandle(h)!) : [...traders].sort((a, b) => b.pnl30d - a.pnl30d).slice(0, 3);
   // the floating widgets: someone in a trade, a paid feed, and money paid out
   const opener = live[0] ?? null;
-  const paid = traders.find((t) => t.sub.price > 0 && t !== opener) ?? traders.find((t) => t.sub.price > 0) ?? null;
+  // a key card widget: the busiest feed that is not already the opener
+  const pass = traders.find((t) => t.key.listed && t !== opener && t.feed.offers.length) ?? traders.find((t) => t.key.listed) ?? null;
   const payout = preview ? { v: "+$84.20", l: "key payout" } : platform.paidToHolders30d > 0 ? { v: fmtUsd(platform.paidToHolders30d, { compact: true }), l: "paid to holders this month" } : null;
-  const keep = Math.round((subSplit(100).creator / 100) * 100);
   return (
     <div className="space-y-20 @3xl:space-y-24" data-testid="keys-hub">
       {/* hero */}
@@ -39,7 +39,7 @@ export function KeysHub() {
             who are <span className="k-brand-glow">actually up.</span>
           </h1>
           <p className="mt-6 text-[17px] @3xl:text-[19px] leading-relaxed text-fg-2 max-w-[540px]">
-            Every position verified onchain. Subscribe to a trader&apos;s private calls, own a share of them with a key, and trade alongside them on Hyperliquid — in one place.
+            Every position verified onchain. Buy a trader&apos;s key to unlock their private calls, own a share of them, and trade alongside them on Hyperliquid — in one place.
           </p>
           <div className="flex flex-wrap gap-3 mt-8">
             <Link href="/keys/market" className="btn btn-primary btn-glow h-14 px-7 text-[15.5px] rounded-[16px]" data-testid="hub-explore">
@@ -77,17 +77,17 @@ export function KeysHub() {
               <span className="text-[11.5px] text-muted">{opener.live.opened.replace(" ago", "")}</span>
             </div>
           )}
-          {paid && (
+          {pass && (
             <div className="absolute left-0 bottom-[2%] w-[280px] rotate-[4deg] k-glass rounded-[22px] p-5">
               <div className="flex items-center gap-3">
-                <Face who={paid} size={42} />
+                <Face who={pass} size={42} />
                 <div className="min-w-0">
-                  <div className="text-[15px] font-bold truncate">{paid.handle}</div>
-                  <div className="num text-[12px] text-muted">{fmtNum(paid.sub.subscribers)} {paid.sub.subscribers === 1 ? "subscriber" : "subscribers"}</div>
+                  <div className="text-[15px] font-bold truncate">{pass.handle}</div>
+                  <div className="num text-[12px] text-muted">{fmtNum(pass.key.holders)} {pass.key.holders === 1 ? "holder" : "holders"} reading</div>
                 </div>
               </div>
-              <div className="flex items-baseline gap-1 mt-4"><span className="num text-[32px] font-semibold tracking-tight">${paid.sub.price}</span><span className="text-[13.5px] text-muted">/ month</span></div>
-              <div className="btn btn-primary w-full h-11 mt-3 rounded-[12px] text-[14px]">Subscribe</div>
+              <div className="flex items-center gap-2 mt-4 text-[13px] text-fg-2"><Icon.lock /> {pass.feed.offers.slice(0, 2).map((o) => offerTitle(o)).join(" · ") || "Private feed"}</div>
+              <div className="btn btn-primary w-full h-11 mt-3 rounded-[12px] text-[14px]">Unlock with a key · {fmtUsd(pass.key.price)}</div>
             </div>
           )}
           {payout && (
@@ -154,7 +154,7 @@ export function KeysHub() {
         </div>
         <div className="grid @2xl:grid-cols-2 @5xl:grid-cols-3 gap-5 mt-8">
           {trending.map((t) => (
-            <TrendingCard key={t.handle} t={t} subscribed={!!me.subs[t.handle]} />
+            <TrendingCard key={t.handle} t={t} held={(me.keys[t.handle]?.qty ?? 0) > 0} />
           ))}
         </div>
       </section>}
@@ -163,13 +163,13 @@ export function KeysHub() {
       {feed.length > 0 && <section>
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h2 className="text-[34px] @3xl:text-[42px] font-bold tracking-[-0.04em]">From the feed</h2>
-          <span className="text-[14px] text-muted">Subscriber calls unlock when you subscribe</span>
+          <span className="text-[14px] text-muted">Holders-only calls unlock with a key</span>
         </div>
         <div className="grid @3xl:grid-cols-2 gap-4 mt-8">
           {feed.map((p) => {
             const t = data.byHandle(p.handle);
             if (!t) return null;
-            return <FeedPost key={p.id ?? p.handle + p.when} t={t} post={p} unlocked={preview ? !p.locked || !!me.subs[p.handle] : !p.locked} showLive={preview} />;
+            return <FeedPost key={p.id ?? p.handle + p.when} t={t} post={p} unlocked={preview ? !p.locked || (me.keys[p.handle]?.qty ?? 0) > 0 : !p.locked} showLive={preview} />;
           })}
         </div>
       </section>}
@@ -178,14 +178,14 @@ export function KeysHub() {
       <section className="k-glow-panel p-8 @3xl:p-14 grid @4xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-10 items-center">
         <div>
           <h2 className="k-display text-[40px] @3xl:text-[56px] font-bold">Get paid for<br />being right.</h2>
-          <p className="mt-5 text-[17px] leading-relaxed text-fg-2 max-w-[500px]">Charge what you want for your calls — or nothing at all. Sell keys in yourself. Earn every time a follower trades on your call.</p>
+          <p className="mt-5 text-[17px] leading-relaxed text-fg-2 max-w-[500px]">Your key is the pass to your calls. Set where it starts, and the price climbs with every key people buy. Earn on every key sold, and every time a follower trades on your call.</p>
           <Link href="/keys/studio" className="btn btn-primary btn-glow h-14 px-7 mt-8 text-[15.5px] rounded-[16px]">Open creator studio</Link>
         </div>
         <div className="space-y-3">
           {[
-            { v: `$0–$${SUB_PRICE_MAX}`, l: "a month — you set the price" },
-            { v: `${keep}%`, l: "of every subscription is yours", brand: true },
-            { v: "Instant", l: "subscribers pay you directly, in USDC" },
+            { v: `$${KEY_START_MIN}–$${KEY_START_MAX.toLocaleString("en-US")}`, l: "your key's starting price — you choose" },
+            { v: `${Math.round(KEY_TRADER_CUT * 100)}%`, l: "of every key sold is yours, paid in USDC as it sells", brand: true },
+            { v: `${Math.round(HOLDER_SHARE * 100)}%`, l: "of your copiers' trading fees go to your holders" },
           ].map((r) => (
             <div key={r.l} className="card-2 !rounded-[18px] px-6 py-5 flex items-center gap-5">
               <span className={`num text-[26px] font-semibold tracking-tight min-w-[118px] ${r.brand ? "text-brand" : ""}`}>{r.v}</span>
@@ -200,7 +200,7 @@ export function KeysHub() {
   );
 }
 
-function TrendingCard({ t, subscribed }: { t: KeysTrader; subscribed: boolean }) {
+function TrendingCard({ t, held }: { t: KeysTrader; held: boolean }) {
   return (
     <article className="card overflow-hidden !rounded-[26px]" data-testid={`trending-${t.handle}`}>
       <div className="k-banner h-[112px]" style={{ "--a": t.colors[0], "--b": t.colors[1] } as React.CSSProperties} />
@@ -222,14 +222,14 @@ function TrendingCard({ t, subscribed }: { t: KeysTrader; subscribed: boolean })
             <div className={`num text-[12px] ${t.key.change24h >= 0 ? "text-up" : "text-down"}`}>{t.key.change24h >= 0 ? "+" : ""}{t.key.change24h}% today</div>
           </div>
           <div className="card-2 !rounded-[14px] px-4 py-3">
-            <div className="text-[12px] text-muted">Subscription</div>
-            <div className="num text-[18px] font-semibold mt-0.5">{priceLabel(t.sub.price)}{t.sub.price > 0 && <span className="text-[12.5px] text-muted">/mo</span>}</div>
-            <div className="num text-[12px] text-muted">{fmtNum(t.sub.subscribers)} subscribers</div>
+            <div className="text-[12px] text-muted">Holders</div>
+            <div className="num text-[18px] font-semibold mt-0.5">{fmtNum(t.key.holders)}</div>
+            <div className="num text-[12px] text-brand">{t.key.yieldPct}% yield</div>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2.5 mt-4">
-          <Link href={`/keys/${t.handle}`} className="btn btn-primary h-12 rounded-[14px] text-[14px]">{subscribed ? "Subscribed" : "Subscribe"}</Link>
-          <Link href={`/keys/${t.handle}#key`} className="btn h-12 rounded-[14px] text-[14px]"><Icon.key /> {t.key.listed ? "Buy key" : "Key"}</Link>
+          <Link href={`/keys/${t.handle}#key`} className="btn btn-primary h-12 rounded-[14px] text-[14px]">{held ? <><Icon.check /> Holder</> : <><Icon.key /> Buy key</>}</Link>
+          <Link href={`/keys/${t.handle}`} className="btn h-12 rounded-[14px] text-[14px]">{held ? "Open feed" : "View feed"}</Link>
         </div>
       </div>
     </article>
@@ -250,7 +250,7 @@ function FeedPost({ t, post, unlocked, showLive }: { t: KeysTrader; post: KeysFe
           </div>
           <div className="text-[12.5px] text-muted">{post.when}</div>
         </div>
-        {post.locked && <span className={`pill ${locked ? "pill-warn" : "pill-brand"}`}>{locked ? "Subscribers" : "Unlocked"}</span>}
+        {post.locked && <span className={`pill ${locked ? "pill-warn" : "pill-brand"}`}>{locked ? "Key holders" : "Unlocked"}</span>}
       </div>
       <p className={`mt-4 text-[16px] leading-relaxed text-fg whitespace-pre-line ${locked ? "k-locked" : ""}`} aria-hidden={locked}>{post.text || LOCKED_TEXT}</p>
       {pos && (
@@ -270,8 +270,8 @@ function FeedPost({ t, post, unlocked, showLive }: { t: KeysTrader; post: KeysFe
       {locked && (
         <div className="k-veil absolute inset-x-0 bottom-0 top-[76px] flex flex-col items-center justify-center gap-3 px-6 text-center">
           <span className="w-12 h-12 rounded-full bg-warn/10 text-warn inline-flex items-center justify-center ring-1 ring-warn/30"><Icon.lock /></span>
-          <span className="text-[15px] font-semibold">Pre-trade call for subscribers</span>
-          <Link href={`/keys/${t.handle}`} className="btn btn-primary h-11 px-5 rounded-[13px]">Unlock for {priceLabel(t.sub.price)}{t.sub.price > 0 ? "/mo" : ""}</Link>
+          <span className="text-[15px] font-semibold">Pre-trade call for key holders</span>
+          <Link href={`/keys/${t.handle}#key`} className="btn btn-primary h-11 px-5 rounded-[13px]">Unlock with a key · {fmtUsd(t.key.price)}</Link>
         </div>
       )}
     </article>

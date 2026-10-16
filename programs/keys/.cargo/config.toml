@@ -1,0 +1,3 @@
+# the solana platform tools ship rust 1.84: resolve dependencies to versions that build with it
+[resolver]
+incompatible-rust-versions = "fallback"

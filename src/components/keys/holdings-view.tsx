@@ -1,13 +1,13 @@
 "use client";
-/** /keys/holdings: what you can claim, the keys you hold, the traders you subscribe to and what they paid you */
+/** /keys/holdings: what you can claim, the keys you hold, the feeds they unlock and what they paid you */
 import Link from "next/link";
 import { useConnectModal } from "@/components/connect-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { useBusy, useKeys, useKeysActions } from "@/hooks/use-keys";
-import { keyYearly } from "@/lib/keys";
+import { cadenceLabel, keyYearly } from "@/lib/keys";
 import { fmtUsd } from "@/lib/format";
 import { Empty, Icon } from "../ui";
-import { Face, KeysState, ResetPreview, priceLabel } from "./parts";
+import { Face, KeysState, ResetPreview } from "./parts";
 
 export function KeysHoldings() {
   const data = useKeys();
@@ -26,14 +26,13 @@ export function KeysHoldings() {
   const earned = rows.reduce((a, r) => a + r.h.earned, 0);
   const yearly = rows.reduce((a, r) => a + keyYearly(r.t.key.price, r.h.qty, r.t.key.yieldPct), 0);
   const blended = value > 0 ? (yearly / value) * 100 : 0;
-  const subs = Object.entries(demo.subs).map(([handle, s]) => ({ t: data.byHandle(handle)!, s })).filter((r) => r.t);
-  const monthly = subs.filter((r) => !r.s.cancelled).reduce((a, r) => a + r.t.sub.price, 0);
+  const unread = rows.reduce((a, r) => a + (r.h.unread ?? 0), 0);
 
   if (live && !data.signedIn) {
     return (
       <KeysState
-        title="Your keys and subscriptions"
-        body="Sign in with your wallet to see the keys you hold, the fee share waiting for you and the traders you subscribe to."
+        title="Your keys"
+        body="Sign in with your wallet to see the keys you hold, the feeds they unlock and the fee share waiting for you."
         action={<button type="button" className="btn btn-primary btn-glow h-12 px-6 rounded-[14px]" onClick={() => (auth.isConnected ? auth.signIn() : connect.open())} disabled={auth.busy}>{auth.isConnected ? "Sign in" : "Connect wallet"}</button>}
       />
     );
@@ -50,7 +49,7 @@ export function KeysHoldings() {
         </div>
         <div className="flex flex-col gap-2.5 min-w-[240px]">
           <button type="button" className="btn btn-primary btn-glow h-[58px] px-10 rounded-[18px] text-[16px]" onClick={() => runClaim(actions.claim)} disabled={demo.claimable <= 0 || claiming} data-testid="holdings-claim">{claiming ? "Claiming…" : "Claim USDC"}</button>
-          <span className="text-[13px] text-muted text-center">Paid to your wallet on HyperEVM</span>
+          <span className="text-[13px] text-muted text-center">Paid in USDC to your Solana wallet</span>
         </div>
       </section>
 
@@ -110,30 +109,23 @@ export function KeysHoldings() {
       </section>
 
       <div className="grid @5xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-10 items-start">
-        {/* subscriptions */}
+        {/* feeds: every key you hold is a pass to that trader's private feed */}
         <section>
           <div className="flex items-baseline justify-between gap-4">
-            <h2 className="text-[32px] font-bold tracking-[-0.035em]">Subscriptions</h2>
-            {monthly > 0 && <span className="num text-[14px] text-muted">${monthly} a month</span>}
+            <h2 className="text-[32px] font-bold tracking-[-0.035em]">Your feeds</h2>
+            {unread > 0 && <span className="num text-[14px] text-muted">{unread} new {unread === 1 ? "post" : "posts"}</span>}
           </div>
-          <div className="space-y-3 mt-6" data-testid="holdings-subs">
-            {subs.length === 0 && <Empty title="No subscriptions" hint="Subscribe to a trader to get their calls before the entry." />}
-            {subs.map(({ t, s }) => (
+          <div className="space-y-3 mt-6" data-testid="holdings-feeds">
+            {rows.length === 0 && <Empty title="No feeds yet" hint="Hold a trader's key and their calls, alerts and lessons unlock here." />}
+            {rows.map(({ t, h }) => (
               <div key={t.handle} className="card !rounded-[22px] px-5 py-4 flex items-center gap-4">
-                <Link href={`/keys/${t.handle}`} onClick={() => actions.markRead(t.handle)}><Face who={t} size={50} ring={t.live ? "live" : "off"} /></Link>
+                <Link href={`/keys/${t.handle}`} onClick={() => actions.markRead(t.handle)}><Face who={t} size={50} ring={t.live ? "live" : "off"} live={!!t.live} /></Link>
                 <div className="min-w-0 flex-1">
                   <Link href={`/keys/${t.handle}`} onClick={() => actions.markRead(t.handle)} className="text-[16px] font-bold hover:underline">{t.handle}</Link>
-                  <div className="num text-[13px] text-muted mt-0.5">
-                    {priceLabel(t.sub.price)}{t.sub.price > 0 ? " a month" : ""}
-                    {t.sub.price > 0 && (live ? ` · ${s.cancelled ? "ends" : "paid to"} ${s.renews}` : ` · renews ${s.renews}`)}
-                  </div>
+                  <div className="text-[13px] text-muted mt-0.5 truncate">{cadenceLabel(t.feed.cadence)}{t.live ? ` · in a ${t.live.coin} ${t.live.side.toLowerCase()} now` : ""}</div>
                 </div>
-                {s.unread > 0 && <span className="pill pill-brand num">{s.unread} new</span>}
-                {live && s.cancelled ? (
-                  <button type="button" className="btn btn-sm" onClick={() => actions.subscribe(t)}>Renew</button>
-                ) : (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => actions.unsubscribe(t)}>{t.sub.price > 0 ? "Cancel" : "Unfollow"}</button>
-                )}
+                {(h.unread ?? 0) > 0 && <span className="pill pill-brand num">{h.unread} new</span>}
+                <Link href={`/keys/${t.handle}`} onClick={() => actions.markRead(t.handle)} className="btn btn-sm">Open</Link>
               </div>
             ))}
           </div>

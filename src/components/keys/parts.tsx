@@ -23,7 +23,8 @@ export function KeysFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const data = useKeys();
   const toast = useKeysToast();
-  const unread = Object.values(data.me.subs).reduce((a, s) => a + s.unread, 0);
+  // new posts across every feed the viewer's keys unlock
+  const unread = Object.values(data.me.keys).reduce((a, h) => a + (h.unread ?? 0), 0);
   return (
     <div className="@container pb-10 overflow-x-clip" data-testid="keys-section">
       <div className="sticky top-0 z-20 -mx-px px-px pt-px pb-3 bg-bg/85 backdrop-blur">
@@ -39,7 +40,7 @@ export function KeysFrame({ children }: { children: ReactNode }) {
           {data.mode === "preview" ? (
             <span className="pill pill-warn ml-auto" title="Sample traders and numbers. Nothing in the preview is bought or charged.">Preview · sample data</span>
           ) : (
-            <span className="pill pill-brand ml-auto" title="Payments in USDC on Hyperliquid, keys on HyperEVM">Live · USDC</span>
+            <span className="pill pill-brand ml-auto" title="Keys trade in USDC on Solana; holding one unlocks a trader's feed">Live · USDC</span>
           )}
         </div>
       </div>
@@ -226,7 +227,7 @@ export function ResetPreview() {
 }
 
 export const sidePill = (label: string) => (label.startsWith("LONG") ? "pill-up" : "pill-down");
-export const priceLabel = (p: number) => (p > 0 ? `$${p}` : "Free");
+export const priceLabel = (p: number) => (p > 0 ? `$${Number.isInteger(p) ? p : p.toFixed(2)}` : "Free");
 /** fmtUsd compact, plus billions */
 /** whole dollars for projections and totals where cents are noise */
 export const usdWhole = (n: number) => `${n < 0 ? "-" : ""}$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;

@@ -1,0 +1,15 @@
+{
+  "name": "socialliquid-keys-program",
+  "private": true,
+  "type": "module",
+  "description": "the socialLiquid keys Solana program: build, test and deploy. separate from the app build",
+  "scripts": {
+    "build": "cargo-build-sbf",
+    "test": "cargo-build-sbf && node --import tsx --test test/*.test.ts",
+    "init": "node --import tsx scripts/init.ts"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "1.98.4",
+    "litesvm": "0.7.0"
+  }
+}

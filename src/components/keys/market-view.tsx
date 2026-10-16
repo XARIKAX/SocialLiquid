@@ -7,14 +7,14 @@ import { HOLDER_SHARE } from "@/lib/keys";
 import type { KeysTrader } from "@/lib/keys-model";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { Icon } from "../ui";
-import { Face, KeysState, ResetPreview, Sparkline, priceLabel, usdBig } from "./parts";
+import { Face, KeysState, ResetPreview, Sparkline, usdBig } from "./parts";
 
 type Sort = "top" | "rising" | "yield" | "cheap";
 const SORTS: { key: Sort; label: string; by: (a: KeysTrader, b: KeysTrader) => number }[] = [
   { key: "top", label: "Top", by: (a, b) => b.key.price * b.key.minted - a.key.price * a.key.minted },
   { key: "rising", label: "Rising", by: (a, b) => b.key.change24h - a.key.change24h },
   { key: "yield", label: "Highest yield", by: (a, b) => b.key.yieldPct - a.key.yieldPct },
-  { key: "cheap", label: "Cheapest sub", by: (a, b) => a.sub.price - b.sub.price },
+  { key: "cheap", label: "Cheapest key", by: (a, b) => a.key.price - b.key.price },
 ];
 
 export function KeysMarket() {
@@ -50,7 +50,7 @@ export function KeysMarket() {
           the <span className="k-brand-glow">best traders.</span>
         </h1>
         <p className="mt-6 mx-auto max-w-[600px] text-[17px] leading-relaxed text-fg-2">
-          A key is a share of a trader. Holders split {Math.round(HOLDER_SHARE * 100)}% of the trading fees that trader&apos;s followers generate, paid in USDC. Each key costs a little more than the one before it, and every key can always be sold back.
+          A key is a share of a trader and the pass to their private feed. Holders read every call, and split {Math.round(HOLDER_SHARE * 100)}% of the trading fees that trader&apos;s followers generate, paid in USDC. Each key costs a little more than the one before it, and every key can always be sold back.
         </p>
         <div className="card inline-grid grid-cols-3 mt-9 !rounded-[22px] overflow-hidden text-left">
           {[
@@ -101,7 +101,7 @@ export function KeysMarket() {
                 <th className="font-medium py-4 text-right">Key price</th>
                 <th className="font-medium py-4"><span className="sr-only">30-day trend</span></th>
                 <th className="font-medium py-4 text-right">Yield</th>
-                <th className="font-medium py-4 text-right">Subscription</th>
+                <th className="font-medium py-4 text-right">Holders</th>
                 <th className="py-4 pr-7"><span className="sr-only">Buy</span></th>
               </tr>
             </thead>
@@ -125,7 +125,7 @@ export function KeysMarket() {
                   </td>
                   <td className="py-4 pl-4"><Sparkline data={t.key.history} /></td>
                   <td className="py-4 text-right num text-[15.5px] font-semibold text-brand">{t.key.yieldPct}%</td>
-                  <td className="py-4 text-right num text-[14.5px] text-fg-2">{priceLabel(t.sub.price)}{t.sub.price > 0 && <span className="text-muted">/mo</span>}</td>
+                  <td className="py-4 text-right num text-[14.5px] text-fg-2">{fmtNum(t.key.holders)}</td>
                   <td className="py-4 pr-7 text-right">
                     <Link href={`/keys/${t.handle}#key`} className="btn h-10 px-4 rounded-[12px]">Buy</Link>
                   </td>
@@ -158,7 +158,7 @@ function PodiumCard({ t, rank }: { t: KeysTrader; rank: number }) {
           {[
             { v: `${t.key.yieldPct}%`, l: "yield", brand: true },
             { v: fmtNum(t.key.holders), l: "holders" },
-            { v: priceLabel(t.sub.price), l: "sub / mo" },
+            { v: fmtUsd(t.key.start), l: "started at" },
           ].map((s) => (
             <div key={s.l} className="card-2 !rounded-[13px] py-3 px-1">
               <div className={`num text-[15.5px] font-semibold ${s.brand ? "text-brand" : ""}`}>{s.v}</div>
