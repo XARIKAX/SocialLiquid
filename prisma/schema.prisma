@@ -256,6 +256,8 @@ model TrackedAddress {
   spotSyncedAt DateTime?
   /// when the position history was rebuilt from the exchange's fill records (once per address)
   historySyncedAt DateTime?
+  /// perps account value at the last poll, for size filters on the boards
+  accountValue Decimal? @db.Decimal(30, 6)
   createdAt    DateTime      @default(now())
 
   @@index([lastPolledAt])
@@ -294,6 +296,17 @@ model HlLeaderboardEntry {
   /// "leaderboard" = hyperliquid's stats feed verbatim, "portfolio" = rebuilt from the portfolio api for the featured traders
   source       String   @default("leaderboard")
   updatedAt    DateTime @default(now())
+  /// rank within each window (by pnl, winners only; null = not a winner in that window). `rank` itself is the 30d rank
+  rank1d       Int?
+  rank7d       Int?
+  rankAll      Int?
+  /// the same ranks at the previous refresh, for movers
+  prev1d       Int?
+  prev7d       Int?
+  prev30d      Int?
+  prevAll      Int?
+  /// when this address first appeared in the mirrored pool
+  firstSeenAt  DateTime?
 
   @@index([address])
 }

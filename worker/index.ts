@@ -17,7 +17,7 @@ import { accrueKeyFees } from "../src/lib/keys-jobs";
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 5000);
 const WEIGHT_BUDGET_PER_MIN = Number(process.env.HL_WEIGHT_BUDGET_PER_MIN ?? 1000);
 const SEED_COUNT = Number(process.env.SEED_COUNT ?? 200);
-const HL_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 100);
+const HL_TOP_N = Number(process.env.HL_LEADERBOARD_TOP_N ?? 150);
 const HL_LEADERBOARD_REFRESH_MS = Number(process.env.HL_LEADERBOARD_REFRESH_MS ?? 60 * 60_000);
 const CONCURRENCY = 4;
 /** hyperliquid allows 10 unique users across user-specific ws subscriptions per ip */

@@ -230,8 +230,8 @@ export async function syncAddress(addressRaw: string, opts: { forceFills?: boole
   const maxFillTime = fills.reduce((m, f) => Math.max(m, f.time), Number(tracked?.lastFillTime ?? 0));
   await prisma.trackedAddress.upsert({
     where: { address },
-    create: { address, source: "DISCOVERED", lastPolledAt: new Date(), lastFillTime: BigInt(maxFillTime) },
-    update: { lastPolledAt: new Date(), lastFillTime: BigInt(maxFillTime) },
+    create: { address, source: "DISCOVERED", lastPolledAt: new Date(), lastFillTime: BigInt(maxFillTime), accountValue: d(Number(state.marginSummary.accountValue)) },
+    update: { lastPolledAt: new Date(), lastFillTime: BigInt(maxFillTime), accountValue: d(Number(state.marginSummary.accountValue)) },
   });
 
   return { address, opened, closed, fills: fills.length, weight };
@@ -292,7 +292,26 @@ type BoardRow = {
   pnl7d: string; roi7d: string; vlm7d: string;
   pnl1d: string; roi1d: string; vlm1d: string;
   pnlAll: string; roiAll: string; vlmAll: string;
+  rank1d?: number | null; rank7d?: number | null; rankAll?: number | null;
+  prev1d?: number | null; prev7d?: number | null; prev30d?: number | null; prevAll?: number | null;
+  firstSeenAt?: Date | null;
 };
+
+/** per-window ranks among winners, and the previous refresh's ranks for the movers view */
+async function decorateRanks(rows: BoardRow[]): Promise<BoardRow[]> {
+  const prev = new Map((await prisma.hlLeaderboardEntry.findMany({ select: { address: true, rank: true, rank1d: true, rank7d: true, rankAll: true, firstSeenAt: true } })).map((e) => [e.address, e]));
+  const now = new Date();
+  const rankBy = (key: "pnl1d" | "pnl7d" | "pnlAll") => {
+    const m = new Map<string, number>();
+    [...rows].filter((r) => Number(r[key]) > 0).sort((a, b) => Number(b[key]) - Number(a[key])).forEach((r, i) => m.set(r.address, i + 1));
+    return m;
+  };
+  const r1 = rankBy("pnl1d"), r7 = rankBy("pnl7d"), rA = rankBy("pnlAll");
+  return rows.map((r) => {
+    const p = prev.get(r.address);
+    return { ...r, rank1d: r1.get(r.address) ?? null, rank7d: r7.get(r.address) ?? null, rankAll: rA.get(r.address) ?? null, prev1d: p?.rank1d ?? null, prev7d: p?.rank7d ?? null, prev30d: p?.rank ?? null, prevAll: p?.rankAll ?? null, firstSeenAt: p?.firstSeenAt ?? now };
+  });
+}
 
 /** rows ranked by 30d pnl (hyperliquid's default), every window stored */
 function rowsFromLeaderboard(pool: HlLeaderboardRow[]): BoardRow[] {
@@ -369,7 +388,7 @@ export async function refreshHlLeaderboard(topN = 100): Promise<number> {
     }
   }
   const now = new Date();
-  const data = rows.map((r) => ({ ...r, updatedAt: now }));
+  const data = (await decorateRanks(rows)).map((r) => ({ ...r, updatedAt: now }));
   await prisma.$transaction([prisma.hlLeaderboardEntry.deleteMany({}), prisma.hlLeaderboardEntry.createMany({ data })]);
   await prisma.trackedAddress.createMany({
     data: data.map((d) => ({ address: d.address, source: "DISCOVERED" as const, displayName: d.displayName })),
