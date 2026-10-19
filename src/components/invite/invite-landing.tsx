@@ -47,7 +47,7 @@ export function InviteLanding({ code, inviter, stats }: Props) {
         </div>
       </section>
       <section className="card p-5 space-y-3">
-        <h1 className="text-[22px] font-semibold tracking-tight leading-tight">The social layer for Hyperliquid</h1>
+        <h1 className="text-[22px] font-semibold tracking-tight leading-tight">The social layer for perpetual markets</h1>
         <ul className="text-[13.5px] text-fg-2 space-y-1.5">
           <li className="flex gap-2"><span className="text-brand">•</span> See what real traders open the second they open it, with their thesis and track record.</li>
           <li className="flex gap-2"><span className="text-brand">•</span> Copy a trade in one tap. Every order routes straight to Hyperliquid; your funds never leave your wallet.</li>

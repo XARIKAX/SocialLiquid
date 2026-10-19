@@ -64,7 +64,7 @@ function Item({ m }: { m: Mkt }) {
 }
 
 /* shown when hyperliquid is unreachable: the product, in one line */
-const PHRASES = ["The social layer for Hyperliquid", "Follow the best traders", "Copy any trade in one click", "Non-custodial", "Every fill on-chain", "Hold or dump, in public"];
+const PHRASES = ["The social layer for perpetual markets", "Follow the best traders", "Copy any trade in one click", "Non-custodial", "Every fill on-chain", "Hold or dump, in public"];
 
 function Phrase({ p }: { p: string }) {
   return (

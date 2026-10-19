@@ -53,7 +53,7 @@ export const wagmiConfig = createConfig({
             walletConnect({
               projectId: WC_ID,
               showQrModal: true,
-              metadata: { name: "socialLiquid", description: "the social layer for hyperliquid", url: typeof window !== "undefined" ? window.location.origin : "https://socialliquid.fun", icons: [`${typeof window !== "undefined" ? window.location.origin : "https://socialliquid.fun"}/brand/mark-512.png`] },
+              metadata: { name: "socialLiquid", description: "the social layer for perpetual markets", url: typeof window !== "undefined" ? window.location.origin : "https://socialliquid.fun", icons: [`${typeof window !== "undefined" ? window.location.origin : "https://socialliquid.fun"}/brand/mark-512.png`] },
             }),
           ),
         ]

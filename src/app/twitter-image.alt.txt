@@ -1,1 +1,1 @@
-socialLiquid, the social layer for Hyperliquid
+socialLiquid, the social layer for perpetual markets

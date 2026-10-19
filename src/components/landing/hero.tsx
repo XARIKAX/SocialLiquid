@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { FeedItem } from "@/lib/queries";
 import { fmtUsd } from "@/lib/format";
-import { CaPill } from "./ca";
 import { Globe } from "./globe";
 import { CountUp } from "./motion";
 import { Arrow, Check, Disc, TrendArrow, usdCompact, vars } from "./parts";
@@ -21,7 +20,7 @@ export function Hero({ d }: { d: LandingData }) {
         </span>
         <h1 id="lp-hero-title" className="lp-h1 lp-hero-title" style={vars({ "--d": "0s" })}>
           <span className="lp-lit" style={vars({ "--d": "0.52s" })}>The social layer</span>
-          <span className="lp-grad" style={vars({ "--d": "0.68s" })}>for Hyperliquid.</span>
+          <span className="lp-grad" style={vars({ "--d": "0.68s" })}>for perpetual markets.</span>
         </h1>
         <p className="lp-lead" style={vars({ "--d": "0.84s" })}>
           Follow the best traders on Hyperliquid, see every position the second it opens, and trade alongside them. Post a thesis, put the position behind it, and let everyone watch you hold or dump.
@@ -33,7 +32,6 @@ export function Hero({ d }: { d: LandingData }) {
           <a href="#receipts" className="lp-btn lp-btn-ghost">
             Watch the feed
           </a>
-          <CaPill />
         </div>
         <div className="lp-hero-trust" style={vars({ "--d": "1.06s" })}>
           <span><Check /> Non-custodial</span>

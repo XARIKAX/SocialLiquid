@@ -33,7 +33,7 @@ export default async function Image({ params }: { params: Promise<{ code: string
         </div>
         <div style={{ display: "flex", flexDirection: "column", marginTop: 72, flex: 1 }}>
           <div style={{ display: "flex", fontSize: 40, color: "#8c8c98" }}>{who} invited you to</div>
-          <div style={{ display: "flex", fontSize: 72, fontWeight: 700, lineHeight: 1.1, marginTop: 8 }}>the social layer for hyperliquid</div>
+          <div style={{ display: "flex", fontSize: 72, fontWeight: 700, lineHeight: 1.1, marginTop: 8 }}>the social layer for perpetual markets</div>
           <div style={{ display: "flex", fontSize: 32, color: "#8c8c98", marginTop: 28 }}>see what traders open in real time · copy in one tap · perps and spot in one terminal</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 28, fontSize: 30, color: "#8c8c98" }}>

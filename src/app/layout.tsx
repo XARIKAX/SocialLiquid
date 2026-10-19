@@ -26,7 +26,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: { default: "socialLiquid", template: "%s · socialLiquid" },
-  description: "the social layer for hyperliquid. follow the best traders, see every position as it opens, post a thesis and trade alongside them.",
+  description: "the social layer for perpetual markets. follow the best traders, see every position as it opens, post a thesis and trade alongside them.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://socialliquid.fun"),
 };
 

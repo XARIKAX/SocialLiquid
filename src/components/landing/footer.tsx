@@ -48,7 +48,7 @@ export function Footer({ d }: { d: LandingData }) {
               <Wordmark size={24} />
             </Link>
             <p className="lp-footer-tag">
-              <span className="lp-lit">The social layer</span> <em className="lp-grad not-italic">for Hyperliquid.</em>
+              <span className="lp-lit">The social layer</span> <em className="lp-grad not-italic">for perpetual markets.</em>
             </p>
             <span className={up ? "lp-footer-status" : "lp-footer-status lp-footer-status-down"}>
               <span className={up ? "lp-live" : "lp-footer-status-idle"} aria-hidden />

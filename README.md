@@ -1,6 +1,6 @@
 # socialLiquid
 
-the social layer for hyperliquid. follow the best traders, see every position as it opens, and trade alongside them. traders post a thesis, open the position on hyperliquid through our frontend, and everyone watches the live position, the pnl, and whether they held or dumped.
+the social layer for perpetual markets. follow the best traders, see every position as it opens, and trade alongside them. traders post a thesis, open the position on hyperliquid through our frontend, and everyone watches the live position, the pnl, and whether they held or dumped.
 
 we do not run an exchange. every order routes to hyperliquid with our builder code and we earn a builder fee on each fill. the product is the frontend, the social layer, and the indexer.
 

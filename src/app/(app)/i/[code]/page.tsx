@@ -12,7 +12,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { code } = await params;
   const u = await inviterByCode(code);
   const who = u ? (u.displayName ?? (u.handle ? `@${u.handle}` : "a trader")) : "a trader";
-  return { title: `${who} invited you to socialLiquid`, description: "the social layer for hyperliquid. see what traders open in real time, copy them in one tap, trade perps and spot in the same terminal." };
+  return { title: `${who} invited you to socialLiquid`, description: "the social layer for perpetual markets. see what traders open in real time, copy them in one tap, trade perps and spot in the same terminal." };
 }
 
 export default async function InviteLandingPage({ params }: Props) {
